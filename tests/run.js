@@ -9,6 +9,7 @@ import { runTests } from './harness.js';
 import './world.test.js';
 import './core.test.js';
 import './save.test.js';
+import './indexeddb.test.js';
 
 const { passed, failed, results } = await runTests((r) => {
   const mark = r.ok ? 'PASS' : 'FAIL';

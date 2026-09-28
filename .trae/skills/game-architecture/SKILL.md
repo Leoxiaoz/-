@@ -71,7 +71,6 @@ description: "本单机足球经理模拟项目（HTML5+CSS3+JS，移动端优�
 
 - 目录结构与模块布局。
 - 加载接口形态（全量 vs 流式，DATABASE_SPEC D12）。
-- ID 形态（DATABASE_SPEC D6）。
-- 比赛模拟抽象层级（SIMULATION_SPEC S1/T6）——直接决定 Core 内部结构。
 
-> 详见各 SPEC 文档末尾的 TBD 汇总表。遇到这些点，**先报告、等决策**。
+> **已定**（见 `DECISIONS.md`）：ID 形态 = 类型前缀字符串（A4）；比赛抽象层级 = **时段制**（A2）。
+> 其余见各 SPEC 文档末尾的 TBD 汇总表。遇到未决点，**先报告、等决策**。

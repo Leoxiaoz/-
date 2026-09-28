@@ -50,8 +50,8 @@ export class AppView {
         const slot = await this.controller.save('slot1');
         this.setStatus(`已保存到存档 ${slot}`);
       } else if (action === 'load') {
-        const slot = await this.controller.load('slot1');
-        this.setStatus(`已读取存档 ${slot}`);
+        await this.controller.load('slot1');
+        this.setStatus('已读取存档 slot1');
       }
     } catch (err) {
       this.setStatus(reportError(err, this.logger ?? { error() {} }), true);

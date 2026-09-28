@@ -9,7 +9,7 @@
 import { createLogger } from './shared/logger.js';
 import { reportError } from './shared/errors.js';
 import { DataLoader } from './data/data-loader.js';
-import { LocalStorageSaveManager, MemorySaveManager } from './save/save-manager.js';
+import { IndexedDbSaveManager, LocalStorageSaveManager, MemorySaveManager } from './save/save-manager.js';
 import { SimulationCore } from './core/simulation.js';
 import { GameController } from './controller/game-controller.js';
 import { AppView } from './ui/app-view.js';
@@ -17,11 +17,20 @@ import { AppView } from './ui/app-view.js';
 /** 骨架阶段使用的最小测试世界。 */
 const DEFAULT_WORLD_DIR = 'data/worlds/test-world.fdb';
 
+/**
+ * 存档介质优先级（决策 A7）：IndexedDB（主）→ localStorage（降级）→ 内存（兜底）。
+ * 不静默失败：每次降级都记录原因。
+ */
 function pickSaveManager(logger) {
+  try {
+    return new IndexedDbSaveManager();
+  } catch (err) {
+    logger?.warn?.('IndexedDB 不可用，降级到 localStorage', err?.message);
+  }
   try {
     return new LocalStorageSaveManager();
   } catch (err) {
-    logger?.warn?.('localStorage 不可用，回退到内存存档', err?.message);
+    logger?.warn?.('localStorage 不可用，降级到内存存档', err?.message);
     return new MemorySaveManager();
   }
 }

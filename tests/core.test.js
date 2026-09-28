@@ -66,3 +66,17 @@ test('getTeamsByLeague 依据静态数据过滤', () => {
   assertEquals(getTeamsByLeague(state, 'lg_a').length, 1);
   assertEquals(getTeamsByLeague(state, 'lg_missing').length, 0);
 });
+
+test('headless：可批量推进 50 赛季天数且确定性可复现（A8 压力测试能力）', () => {
+  const sim = new SimulationCore();
+  const a = createGameState(world());
+  const b = createGameState(world());
+  const days = 50 * 365;
+  sim.advanceDays(a, days);
+  sim.advanceDays(b, days);
+  assertEquals(a.currentDate, b.currentDate, '同输入必须可复现');
+  // 2026-07-01 起算 18250 天（含插值闰年）的确定结果
+  assertEquals(a.currentDate, '2076-06-18');
+  // 说明：赛季滚动、比赛、成长等属未来系统，本阶段未实现，故 season 不变。
+  assertEquals(a.season, 1);
+});

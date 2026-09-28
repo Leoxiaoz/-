@@ -62,3 +62,14 @@ test('MemorySaveManager 读取不存在的槽会抛 SaveError', async () => {
   }
   assert(threw, '应抛出 SaveError');
 });
+
+test('deserializeState 对缺失字段提供兜底（向后兼容 A5）', () => {
+  const payload = deserializeState({
+    saveFormatVersion: SAVE_FORMAT_VERSION,
+    worldId: 'w_x',
+    currentDate: '2026-07-01',
+  });
+  assertEquals(payload.season, 1);
+  assertEquals(payload.runtime.events.length, 0);
+  assert(payload.runtime.competitions !== undefined, '应补全 competitions 容器（A1）');
+});

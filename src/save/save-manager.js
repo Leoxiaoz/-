@@ -34,8 +34,14 @@ export function serializeState(state) {
   };
 }
 
+/** 迁移函数表：把版本 N 的存档升级到 N+1（当前仅 v1，故为空）。 */
+const MIGRATIONS = {
+  // 0: (payload) => ({ ...payload, saveFormatVersion: 1 }),
+};
+
 /**
- * 反序列化存档载荷。仅做结构校验，应用（合并到运行时状态）由上层完成。
+ * 反序列化存档载荷。仅做结构校验与缺省兜底；应用到运行时状态由上层完成。
+ * 版本策略（决策 A5）：向后兼容——低版本可迁移，高版本拒绝。
  * @param {object|string} raw
  * @returns {object} 存档载荷
  */
@@ -51,13 +57,38 @@ export function deserializeState(raw) {
   if (!payload || typeof payload !== 'object') {
     throw new SaveError('存档内容为空或格式错误');
   }
-  if (payload.saveFormatVersion !== SAVE_FORMAT_VERSION) {
-    throw new SaveError('存档格式版本不兼容', {
-      context: { found: payload.saveFormatVersion, expected: SAVE_FORMAT_VERSION },
+
+  let version = payload.saveFormatVersion;
+  if (typeof version !== 'number') {
+    throw new SaveError('存档缺少格式版本', { context: { field: 'saveFormatVersion' } });
+  }
+  if (version > SAVE_FORMAT_VERSION) {
+    throw new SaveError('存档来自更新的版本，当前引擎无法读取', {
+      context: { found: version, supported: SAVE_FORMAT_VERSION },
     });
   }
+  while (version < SAVE_FORMAT_VERSION) {
+    const migrate = MIGRATIONS[version];
+    if (!migrate) {
+      throw new SaveError('缺少存档迁移函数', { context: { from: version, to: SAVE_FORMAT_VERSION } });
+    }
+    payload = migrate(payload);
+    version = payload.saveFormatVersion;
+  }
+
   if (typeof payload.worldId !== 'string' || typeof payload.currentDate !== 'string') {
     throw new SaveError('存档缺少必要字段', { context: { fields: 'worldId, currentDate' } });
+  }
+
+  // 缺省兜底（SAVE_SPEC §3：缺省字段必须有兜底）
+  if (typeof payload.season !== 'number') payload.season = 1;
+  if (!payload.runtime || typeof payload.runtime !== 'object') {
+    payload.runtime = { clubs: {}, players: {}, competitions: {}, events: [] };
+  } else {
+    payload.runtime.clubs ??= {};
+    payload.runtime.players ??= {};
+    payload.runtime.competitions ??= {};
+    payload.runtime.events ??= [];
   }
   return payload;
 }
@@ -101,7 +132,7 @@ export class MemorySaveManager extends SaveManager {
   }
 }
 
-/** localStorage 实现：骨架运行用（占位，介质未决）。 */
+/** localStorage 实现：轻量回退（A7 决策下仅作降级备用）。 */
 export class LocalStorageSaveManager extends SaveManager {
   /** @param {{storage?: Storage, prefix?: string}} [config] */
   constructor(config = {}) {
@@ -130,5 +161,82 @@ export class LocalStorageSaveManager extends SaveManager {
   }
   async remove(slot) {
     this.storage.removeItem(this.prefix + slot);
+  }
+}
+
+/**
+ * IndexedDB 实现（决策 A7：存档主介质）。
+ * 适配多槽、长存档与移动端容量需求；通过注入 `indexedDB` 便于在测试中替换。
+ */
+export class IndexedDbSaveManager extends SaveManager {
+  /**
+   * @param {{indexedDB?: IDBFactory, dbName?: string, storeName?: string, version?: number}} [config]
+   */
+  constructor(config = {}) {
+    super();
+    this.idb = config.indexedDB ?? globalThis.indexedDB;
+    this.dbName = config.dbName ?? 'fms';
+    this.storeName = config.storeName ?? 'saves';
+    this.version = config.version ?? 1;
+    if (!this.idb) {
+      throw new SaveError('当前环境没有可用的 IndexedDB');
+    }
+    this.#dbPromise = null;
+  }
+
+  #dbPromise;
+
+  #open() {
+    if (!this.#dbPromise) {
+      this.#dbPromise = new Promise((resolve, reject) => {
+        const req = this.idb.open(this.dbName, this.version);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(this.storeName)) {
+            db.createObjectStore(this.storeName);
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(new SaveError('打开 IndexedDB 失败', { cause: req.error }));
+      });
+    }
+    return this.#dbPromise;
+  }
+
+  async #tx(mode, fn) {
+    const db = await this.#open();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.storeName, mode);
+      const store = tx.objectStore(this.storeName);
+      let result;
+      try {
+        result = fn(store);
+      } catch (cause) {
+        reject(new SaveError('存档事务执行失败', { cause }));
+        return;
+      }
+      tx.oncomplete = () => resolve(result?.result);
+      tx.onerror = () => reject(new SaveError('存档事务失败', { cause: tx.error }));
+    });
+  }
+
+  async save(slot, state) {
+    const payload = serializeState(state);
+    await this.#tx('readwrite', (store) => store.put(payload, slot));
+  }
+
+  async load(slot) {
+    const payload = await this.#tx('readonly', (store) => store.get(slot));
+    if (payload == null) throw new SaveError('存档槽不存在', { context: { slot } });
+    return deserializeState(payload);
+  }
+
+  async list() {
+    const keys = await this.#tx('readonly', (store) => store.getAllKeys());
+    return (keys ?? []).map(String);
+  }
+
+  async remove(slot) {
+    await this.#tx('readwrite', (store) => store.delete(slot));
   }
 }

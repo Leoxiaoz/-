@@ -2,9 +2,10 @@
  * Game State（运行时世界状态模型）。
  * 层级归属：Simulation Core 层。纯数据与纯函数，**不依赖 DOM**、不读写存储。
  *
- * 分离原则（对应 DATABASE_SPEC §4）：
+ * 分离原则（决策 A3 / DATABASE_SPEC §4）：
  * - `static` 只**引用**已加载的数据库世界（只读），不复制，避免与数据库真相漂移；
  * - `runtime` 只保存**相对数据库的增量**，是存档需要持久化的部分。
+ *   判据：不随时间变化 → 库；随时间变化 → 档。
  */
 
 import { SimulationError } from '../shared/errors.js';
@@ -35,9 +36,10 @@ export function createGameState(world, options = {}) {
     static: world,
     runtime: {
       // 仅保存相对数据库的增量；本阶段为空壳，待相应系统设计完成后再填充
-      clubs: {},   // clubId -> { ... } 运行时俱乐部状态（财政/战术等）
-      players: {}, // playerId -> { ... } 运行时球员状态（能力/状态/伤病等）
-      events: [],  // 世界事件/日志（最小占位，非新闻系统）
+      clubs: {},        // clubId -> { ... } 运行时俱乐部状态（财政/战术等）
+      players: {},      // playerId -> { ... } 运行时球员状态（能力/状态/伤病等）
+      competitions: {}, // competitionId -> { 赛程/结果/进度 }（决策 A1：结果与赛程归存档）
+      events: [],       // 世界事件/日志（最小占位，非新闻系统）
     },
   };
 }

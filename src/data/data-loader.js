@@ -5,6 +5,10 @@
  *
  * 格式说明：下列文件名与字段为**骨架占位**，正式 `.fdb` 规范见
  * DATABASE_SPEC §5（物理形态 D8）与 §6（版本/兼容 D10）——两者尚未决定。
+ *
+ * ID 约定（决策 A4）：类型前缀字符串，库内唯一即可，跨库不强制相同。
+ * 前缀建议：cty_ / lg_ / clb_ / ply_ / mgr_ / std_ / ctr_ / trf_ / cmp_ / mat_；
+ * 新生代使用独立命名空间（如 ply_g_<seq>）。可选 externalRef 供 Mod / 合并映射。
  */
 
 import { DataError } from '../shared/errors.js';
