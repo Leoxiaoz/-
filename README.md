@@ -5,8 +5,9 @@
 当前内容：
 
 - `.trae/skills/game-architecture/` — **Game Architecture**（游戏架构规约，占位框架）
+- `.trae/skills/game-systems-logic/` — **Game Systems / Game Logic**（游戏系统 / 玩法逻辑规约，占位框架）
 
-> 状态：占位。待提供「游戏制作规划」后，据此正式定制 `game-architecture` Skill 具体内容。
+> 状态：占位。待提供「游戏制作规划」后，据此正式定制各 Skill 具体内容。
 
 ## Skill 结构
 
