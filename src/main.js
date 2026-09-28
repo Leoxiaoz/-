@@ -42,6 +42,8 @@ async function bootstrap() {
 
   try {
     await controller.startNewGame(DEFAULT_WORLD_DIR);
+    // 清除"正在启动…"占位，改为明确的就绪状态
+    view.setStatus(`已载入世界：${controller.getSnapshot()?.worldName ?? ''}`);
     logger.info('启动完成');
   } catch (err) {
     // 启动失败时给出可定位的错误，而不是静默白屏（mobile-ui-ux：边界态必须完整）

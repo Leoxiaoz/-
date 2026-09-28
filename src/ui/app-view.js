@@ -45,20 +45,21 @@ export class AppView {
     try {
       if (action === 'tick') {
         this.controller.tick();
-        this.#setStatus('已推进一天');
+        this.setStatus('已推进一天');
       } else if (action === 'save') {
         const slot = await this.controller.save('slot1');
-        this.#setStatus(`已保存到 ${slot}`);
+        this.setStatus(`已保存到存档 ${slot}`);
       } else if (action === 'load') {
         const slot = await this.controller.load('slot1');
-        this.#setStatus(`已读取 ${slot}（${slot ? slot : ''}）`);
+        this.setStatus(`已读取存档 ${slot}`);
       }
     } catch (err) {
-      this.#setStatus(reportError(err, this.logger ?? { error() {} }), true);
+      this.setStatus(reportError(err, this.logger ?? { error() {} }), true);
     }
   }
 
-  #setStatus(message, isError = false) {
+  /** 更新状态提示并重绘。公开方法，供组合根在启动完成后调用。 */
+  setStatus(message, isError = false) {
     this.status = { message, isError };
     this.render(this.controller.getSnapshot());
   }
