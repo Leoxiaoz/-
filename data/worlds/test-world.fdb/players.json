@@ -1,0 +1,7 @@
+[
+  { "id": "ply_001", "name": "Player A1", "teamId": "clb_a1", "position": "GK" },
+  { "id": "ply_002", "name": "Player A2", "teamId": "clb_a1", "position": "DF" },
+  { "id": "ply_003", "name": "Player A3", "teamId": "clb_a2", "position": "MF" },
+  { "id": "ply_004", "name": "Player B1", "teamId": "clb_b1", "position": "FW" },
+  { "id": "ply_005", "name": "Player B2", "teamId": "clb_b2", "position": "MF" }
+]

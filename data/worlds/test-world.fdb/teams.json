@@ -1,0 +1,6 @@
+[
+  { "id": "clb_a1", "name": "Alpha FC", "leagueId": "lg_a1" },
+  { "id": "clb_a2", "name": "Beta United", "leagueId": "lg_a1" },
+  { "id": "clb_b1", "name": "Gamma SC", "leagueId": "lg_b1" },
+  { "id": "clb_b2", "name": "Delta Town", "leagueId": "lg_b1" }
+]

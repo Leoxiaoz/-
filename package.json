@@ -1,0 +1,11 @@
+{
+  "name": "football-manager-sim",
+  "version": "0.1.0",
+  "private": true,
+  "description": "单机足球经理/足球世界模拟 — 最小可运行项目骨架",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/run.js",
+    "serve": "python3 -m http.server 8080"
+  }
+}

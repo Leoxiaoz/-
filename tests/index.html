@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>测试运行器 — Football Manager Sim</title>
+  <link rel="stylesheet" href="../styles/main.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="app__header">
+      <h1 class="app__title">测试运行器</h1>
+      <span class="app__badge">骨架 v0.1</span>
+    </header>
+    <main class="app__main">
+      <section class="card">
+        <h2 class="card__title">结果</h2>
+        <ul id="results" class="list"></ul>
+        <p id="summary" class="muted">运行中…</p>
+      </section>
+    </main>
+  </div>
+
+  <script type="module">
+    import { runTests } from './harness.js';
+    import './world.test.js';
+    import './core.test.js';
+    import './save.test.js';
+
+    const list = document.getElementById('results');
+    const summary = document.getElementById('summary');
+
+    const { passed, failed, results } = await runTests((r) => {
+      const li = document.createElement('li');
+      li.textContent = `${r.ok ? '✓' : '✗'} ${r.name}${r.ok ? '' : ` — ${r.error}`}`;
+      if (!r.ok) li.className = 'error';
+      list.appendChild(li);
+    });
+
+    summary.textContent = `合计：${passed} 通过，${failed} 失败（共 ${results.length} 个用例）`;
+  </script>
+</body>
+</html>
