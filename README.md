@@ -9,6 +9,7 @@
 - `.trae/skills/database-data-modeling/` — **Database / Data Modeling**（数据库 / 数据建模规约，占位框架）
 - `.trae/skills/testing-qa/` — **Testing / QA**（测试 / 质量保障规约，占位框架）
 - `.trae/skills/save-system/` — **Save System**（存档系统规约，占位框架）
+- `.trae/skills/mobile-ui-ux/` — **Mobile UI/UX**（移动端界面与交互规约，占位框架）
 
 > 状态：占位。待提供「游戏制作规划」后，据此正式定制各 Skill 具体内容。
 
