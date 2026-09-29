@@ -108,8 +108,8 @@ export class SimulationCore {
       score: `${result.homeGoals}-${result.awayGoals}`,
     });
 
-    // 赛后生态反馈（第 18 步）：出场/进球统计 + fitness/form 最小闭环；随后做伤病判定。
-    this.#applyPostMatch(state, [home, away], result);
+    // 赛后生态反馈（G1a）：统一消费 MatchResult.involvements（不再扫描 squadIds / 事件推导统计）。
+    this.#applyPostMatch(state, result);
 
     // 赛后最小伤病判定（第 17 步；不重构比赛模拟，不用首发/换人）。
     resolveMatchInjuries(state, {
@@ -122,30 +122,27 @@ export class SimulationCore {
   }
 
   /**
-   * 赛后生态反馈（第 18 步，最小闭环）：把比赛**实际使用**的球员记为出场（含分钟/进球），
-   * 并施加体能消耗与状态建立。实际使用球员由 `resolveMatchSquad` 解析（玩家阵容 / 自动选阵），
-   * 统计接口沿用 `recordAppearance`，未来以换人系统扩展时无需重写本层。
+   * 赛后生态反馈（G1a，统一入口）：消费比赛产出的 `MatchResult.involvements`，
+   * 为每名参与球员记录出场（分钟/进球/助攻/牌）并施加体能消耗与状态建立。
+   * 未出场球员不写入 involvements，因而天然不会被记为出场。
+   * 球员选择仍由 `resolveMatchSquad` 决定（Step 20，不变）；本层不再解析阵容或扫描事件。
    */
-  #applyPostMatch(state, sides, result) {
-    const goalsByScorer = new Map();
-    for (const ev of result.events) {
-      if (ev.type !== 'goal' || !ev.scorerId) continue;
-      goalsByScorer.set(ev.scorerId, (goalsByScorer.get(ev.scorerId) ?? 0) + 1);
-    }
-    for (const side of sides) {
-      for (const playerId of side.squadIds) {
-        recordAppearance(state, playerId, {
-          minutes: MATCH_LOAD_CONFIG.MINUTES_PER_MATCH,
-          goals: goalsByScorer.get(playerId) ?? 0,
-        });
-        const rt = getPlayerRuntime(state, playerId);
-        if (!rt) continue;
-        setVitals(state, playerId, {
-          fitness: rt.fitness - MATCH_LOAD_CONFIG.FITNESS_COST,
-          form: rt.form
-            + (MATCH_LOAD_CONFIG.FORM_BASELINE - rt.form) * MATCH_LOAD_CONFIG.FORM_RECOVER_RATE,
-        });
-      }
+  #applyPostMatch(state, result) {
+    for (const [playerId, inv] of Object.entries(result.involvements ?? {})) {
+      recordAppearance(state, playerId, {
+        minutes: inv.minutes,
+        goals: inv.goals,
+        assists: inv.assists,
+        yellow: inv.yellow,
+        red: inv.red,
+      });
+      const rt = getPlayerRuntime(state, playerId);
+      if (!rt) continue;
+      setVitals(state, playerId, {
+        fitness: rt.fitness - MATCH_LOAD_CONFIG.FITNESS_COST,
+        form: rt.form
+          + (MATCH_LOAD_CONFIG.FORM_BASELINE - rt.form) * MATCH_LOAD_CONFIG.FORM_RECOVER_RATE,
+      });
     }
   }
 
@@ -160,14 +157,13 @@ export class SimulationCore {
       // 实力必须基于**本场实际出场集合**，玩家阵容/阵型变化才能真实影响比赛。
       strength: computeTeamStrength(state, teamId, tactics, squad),
       // 传给比赛引擎的球员带**有效属性**（基础 + deltas，已夹取潜力上限），
-      // 使 `selectScorer` 按球员当前能力（而非静态基础）判分。
+      // 使 `selectScorer` 按球员当前能力（而非静态基础）判分；
+      // 参与统计改由 match 产出 `involvements`（G1a），本层不再单独维护 squadIds。
       players: squad.map((p) => ({
         id: p.id,
         position: p.position,
         ...getEffectiveAttributes(state, p.id),
       })),
-      // 出场统计用的稳定 ID 列表。
-      squadIds: squad.map((p) => p.id),
     };
   }
 

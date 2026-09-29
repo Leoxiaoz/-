@@ -31,8 +31,10 @@ import {
  *   均为**加法式**变更，旧档经 `initializeClubRuntime` 兜底补齐，非破坏性。
  * v7（G0）：新增 `membership`（运行期成员关系层：player→club / club→league，唯一真相源）。
  *   为**加法式**变更，旧档经 `initializeMembership` 从静态/新生代种子建立，非破坏性。
+ * v8（G1a）：`players[].stats.{season,career}` 统计线新增 `yellow` / `red`（黄/红牌聚合，当前恒为 0）。
+ *   为**加法式**变更，旧档经 `normalizeStatLine` 补齐为 0，非破坏性。
  */
-export const GAME_STATE_SCHEMA_VERSION = 7;
+export const GAME_STATE_SCHEMA_VERSION = 8;
 
 /**
  * 基于已加载的静态世界，创建一个最小运行时状态。

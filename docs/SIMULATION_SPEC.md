@@ -497,3 +497,39 @@
 - **测试**：`tests/membership.test.js`（19 项）——初始化、访问器等价与顺序契约、唯一真相源（篡改静态/镜像不改归属）、
   generated 同事件一致、退役出队、club→league、确定性、v6→v7 迁移、save/load 往返、校验器（致命/诊断）、
   managedClub/lineup 不受影响、10/50/100/200 赛季长期稳定。
+
+---
+
+## 26. 实现状态（第二阶段 · G1a：比赛球员参与结构，2026-09-29）
+
+> 制定者已确认规则（见 `DECISIONS.md` D-20）。本节描述**已实现**的比赛参与模型，与代码一致。
+> 目标：把"谁在 squadIds 里 = 出场 90 分钟"的**隐式**模型升级为统一的 `MatchResult.involvements`；
+> **不新增玩法**，不实现换人、评分、射门/控球/传球。
+
+- **模块**：[match.js](file:///workspace/src/core/match.js)（事件 + `buildInvolvements`）、
+  [simulation.js](file:///workspace/src/core/simulation.js) `#applyPostMatch`（消费 involvements）、
+  [player-runtime.js](file:///workspace/src/core/player-runtime.js)（统计线扩展）。
+- **`MatchResult` 结构**：
+  ```
+  { matchSeed, homeGoals, awayGoals,
+    events: [ { minute, teamId, type, actorId, assistId, segment, reason } ],
+    involvements: { [playerId]: { side, role, position, minutes, goals, assists, yellow, red } } }
+  ```
+  - **当前固定模型**：`role='starter'`、`minutes=90`、**不产生 `sub`**；未出场球员**不写入** involvements。
+  - 结构为未来 **D（换人/临场）** 预留 `role/minutes`，但本期不实现换人。
+- **事件模型**：统一为 `actorId`（替代原 `scorerId`）；`assistId` 无可靠来源，恒为 `null`。
+  **不新增随机源**、**不改比分算法**；`yellow/red/assist` 结构可表达但**当前恒为 0**（不制造随机牌/助攻）。
+- **统计迁移**：`recordAppearance` 可消费 `minutes/goals/assists/yellow/red`；`createStatLine` 统计线新增
+  `yellow` / `red`（当前恒 0）；`normalizeStatLine` 旧档补齐为 0。
+- **兼容（红线条目）**：
+  - Step 18：fitness 消耗 / form 更新口径**不变**（`FITNESS_COST` / `FORM_RECOVER_RATE`）。
+  - Step 20：`resolveMatchSquad` / managed lineup / bench 存储 / 首发 11 人选择逻辑**不变**。
+  - Step 17：`resolveMatchInjuries` **仍对全队**判定，**未**迁移到 involvements。
+  - 比分算法 / 比赛种子 / 6 时段进球逻辑**不变**。
+- **存档**：`GAME_STATE_SCHEMA_VERSION` 7→8（**加法式**）——唯一原因是统计线新增持久化字段 `yellow/red`；
+  旧档经 `normalizeStatLine` 补齐为 0，`MatchResult.involvements` **不进入存档**（仅运行期产物）。
+- **明确未实现（out-of-scope）**：换人 / 替补真正上场、临场战术、球员评分、射门/控球/传球系统、AI 决策、
+  转会、合同、财政、杯赛、多联赛、赛季驱动重构（G1b）。
+- **测试**：`tests/involvement.test.js`（12 项）——11 starter involvement、minutes=90、非出场不写入、
+  goal→actorId 与多球累计、assists/yellow/red 恒 0、position 一致、只消费 involvements、
+  season/career 聚合一致、fitness/form 一致、确定性、managed lineup 不受影响、save/load continuation。

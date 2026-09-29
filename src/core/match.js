@@ -16,7 +16,7 @@
  * 同一（比赛条件 + 种子）必须可复现（项目规则第 10 条）。
  */
 
-import { MATCH_CONFIG, MENTALITY } from './sim-config.js';
+import { MATCH_CONFIG, MENTALITY, MATCH_LOAD_CONFIG } from './sim-config.js';
 import { createRng, deriveMatchSeed } from './rng.js';
 
 /** 攻守倾向倍率（未知倾向回退 balanced）。 */
@@ -71,6 +71,8 @@ export function selectScorer(players, rng) {
 
 /**
  * 阶段 2：逐时段结算进球事件。
+ * 事件统一结构：`{ minute, teamId, type, actorId, assistId, segment, reason }`（G1a）。
+ * 本阶段仍只有 `goal` 事件；`assistId` 无可靠来源，恒为 null（不新增随机源）。
  * @returns {{events: object[], goals: number}}
  */
 export function simulateSegments({ teamId, players, expected, seedRng }) {
@@ -84,13 +86,14 @@ export function simulateSegments({ teamId, players, expected, seedRng }) {
     if (seedRng.next() < p) {
       const minuteRange = 90 / SEGMENTS;
       const minute = Math.min(90, Math.floor(i * minuteRange + seedRng.next() * minuteRange) + 1);
-      const scorerId = selectScorer(players, seedRng);
+      const actorId = selectScorer(players, seedRng);
       goals += 1;
       events.push({
         minute,
         teamId,
         type: 'goal',
-        scorerId,
+        actorId,
+        assistId: null, // 当前无可靠助攻来源，保持 null（不制造随机助攻）
         segment: i + 1,
         reason: `第 ${i + 1} 时段：实力与战术综合期望触发进球`,
       });
@@ -100,13 +103,49 @@ export function simulateSegments({ teamId, players, expected, seedRng }) {
 }
 
 /**
+ * 阶段 4b（G1a）：由「本场实际出场阵容 + 事件流」**确定性**派生每名球员的参与记录。
+ * - 当前模型：每名出场球员 role='starter'、minutes=MATCH_LOAD_CONFIG.MINUTES_PER_MATCH（90）。
+ * - 未出场球员**不写入** involvements。
+ * - goals/assists/yellow/red 由事件流累计；当前仅 goal 有来源，assist/yellow/red 恒为 0。
+ * - 结构为未来 D（换人：role='sub' + 可变 minutes）预留，但**本阶段不产生 sub**。
+ * @param {object[]} players 本场实际使用的球员（含 id/position）
+ * @param {'home'|'away'} side
+ * @param {object[]} events 该方的事件
+ * @returns {Record<string, object>} playerId → involvement
+ */
+export function buildInvolvements(players, side, events) {
+  const involvements = {};
+  for (const p of players) {
+    involvements[p.id] = {
+      side,
+      role: 'starter',
+      position: p.position,
+      minutes: MATCH_LOAD_CONFIG.MINUTES_PER_MATCH,
+      goals: 0,
+      assists: 0,
+      yellow: 0,
+      red: 0,
+    };
+  }
+  for (const ev of events) {
+    const rec = ev.actorId ? involvements[ev.actorId] : null;
+    if (!rec) continue;
+    if (ev.type === 'goal') rec.goals += 1;
+    else if (ev.type === 'assist') rec.assists += 1;
+    else if (ev.type === 'yellow') rec.yellow += 1;
+    else if (ev.type === 'red') rec.red += 1;
+  }
+  return involvements;
+}
+
+/**
  * 编排入口：模拟一场比赛。
  * @param {object} params
  * @param {object} params.home 主队 { strength, players, tactics, teamId }
  * @param {object} params.away 客队 同上
  * @param {object} params.context { worldId, season, round, homeId, awayId }
  * @param {string|number} [params.seed] 覆盖默认派生种子（默认由 context 派生，保证可复现）
- * @returns {{homeGoals: number, awayGoals: number, events: object[]}}
+ * @returns {{matchSeed, homeGoals, awayGoals, events, involvements}}
  */
 export function simulateMatch({ home, away, context, seed }) {
   const matchSeed = seed ?? deriveMatchSeed({
@@ -142,10 +181,17 @@ export function simulateMatch({ home, away, context, seed }) {
 
   const events = [...homeSeg.events, ...awaySeg.events].sort((a, b) => a.minute - b.minute);
 
+  // G1a：统一比赛参与结构（后处理由 involvements 驱动，不再分别扫描阵容/事件推导统计）。
+  const involvements = {
+    ...buildInvolvements(home.players, 'home', homeSeg.events),
+    ...buildInvolvements(away.players, 'away', awaySeg.events),
+  };
+
   return {
     matchSeed,
     homeGoals: homeSeg.goals,
     awayGoals: awaySeg.goals,
     events,
+    involvements,
   };
 }

@@ -51,9 +51,9 @@ function clamp(value, min, max, fallback) {
   return Math.min(max, Math.max(min, v));
 }
 
-/** 建立一条空统计线（出场 / 分钟 / 进球 / 助攻）。 */
+/** 建立一条空统计线（出场 / 分钟 / 进球 / 助攻 / 黄牌 / 红牌）。 */
 export function createStatLine() {
-  return { appearances: 0, minutes: 0, goals: 0, assists: 0 };
+  return { appearances: 0, minutes: 0, goals: 0, assists: 0, yellow: 0, red: 0 };
 }
 
 /** 规范化统计线：缺字段补 0，非法值夹取为非负整数。 */
@@ -68,6 +68,8 @@ function normalizeStatLine(line) {
     minutes: safe(src.minutes),
     goals: safe(src.goals),
     assists: safe(src.assists),
+    yellow: safe(src.yellow),
+    red: safe(src.red),
   };
 }
 
@@ -387,17 +389,21 @@ export function getEffectiveAttributes(state, playerId) {
 }
 
 /**
- * 记录一次出场（累加到本赛季与职业生涯；供未来比赛流程的赛后处理调用）。
+ * 记录一次出场（累加到本赛季与职业生涯；由赛后处理消费 `MatchResult.involvements` 调用，G1a）。
  * @param {object} state
  * @param {string} playerId
- * @param {{minutes?: number, goals?: number, assists?: number}} [line]
+ * @param {{minutes?: number, goals?: number, assists?: number, yellow?: number, red?: number}} [line]
  */
 export function recordAppearance(state, playerId, line = {}) {
   const rt = requirePlayerRuntime(state, playerId);
   const minutes = line.minutes ?? 0;
   const goals = line.goals ?? 0;
   const assists = line.assists ?? 0;
-  for (const [name, v] of [['minutes', minutes], ['goals', goals], ['assists', assists]]) {
+  const yellow = line.yellow ?? 0;
+  const red = line.red ?? 0;
+  for (const [name, v] of [
+    ['minutes', minutes], ['goals', goals], ['assists', assists], ['yellow', yellow], ['red', red],
+  ]) {
     if (!Number.isInteger(v) || v < 0) {
       throw new SimulationError(`recordAppearance 的 ${name} 需为非负整数`, {
         context: { playerId, field: name, value: v },
@@ -414,6 +420,8 @@ export function recordAppearance(state, playerId, line = {}) {
     statLine.minutes += minutes;
     statLine.goals += goals;
     statLine.assists += assists;
+    statLine.yellow += yellow;
+    statLine.red += red;
   }
   return rt;
 }

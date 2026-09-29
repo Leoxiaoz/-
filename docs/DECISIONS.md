@@ -255,6 +255,28 @@
 
 ---
 
+## D-20 比赛球员参与结构（G1a）（对应 SIMULATION_SPEC §26、SAVE_SPEC §3）
+
+- **背景（G1a）**：比赛对"球员参与"的表达是**隐式**的（谁在 `squadIds` 里 = 出场 90 分钟），
+  `simulation.js` 分别扫描阵容与事件推导统计，`assists/cards/sub` 无处表达；A（表现）与 D（换人）缺共同结构。
+- **已定规则（制定者确认）**：
+  - **统一结构**：`MatchResult.involvements = { [playerId]: { side, role, position, minutes, goals, assists, yellow, red } }`，
+    由「本场实际出场阵容 + 事件流」**确定性**派生（`buildInvolvements`）。未出场球员**不写入**。
+  - **事件统一**：`actorId`（替代 `scorerId`）+ `assistId`；当前仅 `goal` 有来源，`assistId` 恒 `null`；
+    **不新增随机源**、**不改比分算法**、**不制造随机黄/红牌与助攻**。
+  - **当前固定模型**：`role='starter'`、`minutes=90`、**不产生 sub**（为 D 预留 `role/minutes`，本期不实现换人）。
+  - **赛后消费**：`simulation.js#applyPostMatch` 改**只消费 involvements**（不再扫描 squadIds / 事件推导统计）。
+  - **统计迁移**：`recordAppearance` 消费 `minutes/goals/assists/yellow/red`；统计线新增 `yellow/red`。
+- **兼容红线**：Step 18 fitness/form 口径不变；Step 20 `resolveMatchSquad`/lineup/bench 不变；
+  Step 17 `resolveMatchInjuries` **仍对全队**判定（不迁移）；比分/种子/6 时段逻辑不变。
+- **存档**：`GAME_STATE_SCHEMA_VERSION` 7→8（**加法式**）——唯一原因：统计线新增持久化 `yellow/red`（旧档补齐为 0）；
+  `MatchResult.involvements` 为运行期产物，**不入档**。
+- **明确未做**：换人/替补上场、临场战术、球员评分、射门/控球/传球、AI、转会、合同、财政、杯赛、多联赛、G1b。
+- 落地：[match.js](file:///workspace/src/core/match.js)、`simulation.js`、`player-runtime.js`、`game-state.js`、
+  [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §26、`tests/involvement.test.js`（12 项）。
+
+---
+
 ## 仍属 TBD（未受影响）
 
 - GAME_DESIGN：T1、T2、T3、T4、T5、T7–T13、T15、T16、T17

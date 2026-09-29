@@ -150,6 +150,16 @@
 - **刻意未做（out-of-scope）**：转会、合同、自由球员、财政、工资、身价、AI 转会、升降级、多联赛、杯赛。
 - 已交付测试：`tests/membership.test.js` 19 项（含 v6→v7 迁移、唯一真相源、顺序契约、10/50/100/200 赛季）；累计 **178/178 通过** + 浏览器冒烟通过。
 
+### 2.8 已交付（2026-09-29，G1a：比赛球员参与结构）
+
+- 目标：把"谁在 squadIds 里 = 出场 90 分钟"的隐式模型升级为统一的 `MatchResult.involvements`（D-20）。
+  不新增玩法，不实现换人/评分/射门/控球/传球。
+- 已实现：`match.js` 事件统一为 `actorId/assistId` + `buildInvolvements`；`simulation.js#applyPostMatch` 只消费 involvements；
+  `player-runtime.js` 统计线新增 `yellow/red`，`recordAppearance` 消费 `minutes/goals/assists/yellow/red`；
+  `GAME_STATE_SCHEMA_VERSION` **7→8**（加法式，唯一原因：统计线新增持久化 `yellow/red`）。
+- **刻意未做（out-of-scope）**：换人/替补上场、临场战术、球员评分、射门/控球/传球、AI、转会、合同、财政、杯赛、多联赛、G1b。
+- 已交付测试：`tests/involvement.test.js` 12 项（含黄金路径、确定性、save/load continuation）；累计 **190/190 通过** + 浏览器冒烟通过。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

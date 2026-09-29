@@ -47,6 +47,11 @@
 > v6 旧档经 `deserializeState` 补齐空容器 + `initializeMembership` 从静态/新生代种子建立，退役者不复活；
 > 读档后执行 `assertMembershipValid`，致命问题**明确报错**不静默。既有字段（`managedClubId/lineup/tactics/generated/retired/nextGeneratedSeq`）
 > 行为不变。详见 `DECISIONS.md` D-19 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §25。
+>
+> **实现更新（G1a · 比赛球员参与结构）**：`players[].stats.{season,career}` 统计线新增 `yellow` / `red`
+> （黄/红牌聚合，当前恒为 0）；`GAME_STATE_SCHEMA_VERSION` **7→8**（加法式，向后兼容）。
+> 旧档经 `normalizeStatLine` 补齐为 0。`MatchResult.involvements` 为**运行期产物**，不进入存档。
+> 详见 `DECISIONS.md` D-20 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §26。
 
 ## 0. 文档定位与边界
 
