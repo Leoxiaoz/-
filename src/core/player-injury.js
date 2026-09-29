@@ -193,8 +193,14 @@ export function tickInjuries(state) {
         recordEvent(state, 'injury_recovered', { playerId: player.id, teamId: player.teamId });
       }
     } else {
-      // 健康：体能温和回升至满、士气向基线温和回归（最小实现，非训练模型）。
-      if (rt.fitness < 100) rt.fitness = Math.min(100, rt.fitness + C.FITNESS.RECOVER_PER_DAY);
+      // 健康：体能**按缺口比例**温和回升（分数式，避免比赛消耗后每周都回到满值），
+      // 士气向基线温和回归（最小实现，非训练模型）。
+      if (rt.fitness < 100) {
+        rt.fitness = Math.min(
+          100,
+          rt.fitness + (100 - rt.fitness) * C.FITNESS.RECOVER_FRACTION_PER_DAY,
+        );
+      }
       if (rt.morale < C.BASELINE_MORALE) rt.morale = Math.min(C.BASELINE_MORALE, rt.morale + C.MORALE_RECOVER_PER_DAY);
     }
   }

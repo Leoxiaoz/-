@@ -160,6 +160,20 @@
 
 ---
 
+## D-16 赛季级球员生态联调（对应 SIMULATION_SPEC §5/§20/§22、SAVE_SPEC §3）
+
+- **背景（第 18 步）**：第 16/17 步后审计发现闭环存在三处断点：①实力读静态属性；②出场统计从未接入；③比赛不影响 vitals。本步**只打通已有系统**，不新增玩法系统。
+- **已定规则**：
+  - **实力口径改为有效属性**：`computeTeamStrength` / 进球者判分使用「静态基础 + `ability.deltas`，并按 `potential` 与 1–99 夹取」的有效属性。成长/衰退因此影响球队实力 → 比赛结果。
+  - **出场集合**：无首发/替补/换人系统，出场球员 = **比赛模拟实际使用的球员**（`selectMatchSquad`：按阵型各线取有效评分最高者，GK×1）。该函数为**单一可替换点**，未来以正式首发/换人系统替换即可，统计层（`recordAppearance`）不必重写。
+  - **赛后最小反馈**（`MATCH_LOAD_CONFIG`）：实际出场者记 90 分钟出场、按 `events[].scorerId` 记进球；体能耗 `FITNESS_COST`；form 向基线（50）按 `FORM_RECOVER_RATE` 逼近（有界，不会无限增长或永久停在 0）。不改任何基础属性。
+  - **体能恢复改为分数式**（`INJURY_CONFIG.FITNESS.RECOVER_FRACTION_PER_DAY`）：健康球员按「缺口比例」回升，使比赛消耗后不每周回到满值；无比赛日自然回升、休赛期趋近满值。
+- **已知范围（非本轮修复）**：无退役/新生代/青训 → 长期（约 50–100 赛季）世界均值与球队实力随老龄化**单调回落**（100 赛季趋近下限），比赛趋于 0-0。属既有成长/衰退规则的确定性后果，保留为后续独立步骤（退役 + 新生代 + 人口生态平衡）。
+- **存档**：本轮为**接线**，运行时结构未新增字段 → `GAME_STATE_SCHEMA_VERSION` **保持 4**。
+- 落地：`src/core/team-strength.js`、`src/core/simulation.js`、`src/core/sim-config.js`、`src/core/player-injury.js`；`tests/ecosystem.test.js`（17 项）。
+
+---
+
 ## 仍属 TBD（未受影响）
 
 - GAME_DESIGN：T1、T2、T3、T4、T5、T7–T13、T15、T16、T17

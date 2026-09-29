@@ -116,7 +116,9 @@ test('伤病期间 fitness/form 下降，康复后 fitness 不立即满值', () 
   assert(rt.form <= formBefore, '状态不应增长（冻结/衰减）');
   sim.advanceDays(state, 60); // 康复
   assertEquals(rt.injury.status, INJURY_STATUS.FIT);
-  assert(rt.fitness <= INJURY_CONFIG.RECOVERY_FITNESS_CAP, '康复后体能不应立即满值');
+  // 第 18 步起体能改为**分数式**恢复（避免健康球员长期恒定满值），故此处校验"未立即满值"。
+  // 康复瞬间的上限（RECOVERY_FITNESS_CAP）由 ecosystem.test.js 直接单测。
+  assert(rt.fitness < 100, '康复后体能不应立即满值');
 });
 
 test('长期伤病适度降低 morale；康复后向基线温和恢复', () => {

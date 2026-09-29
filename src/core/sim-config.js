@@ -49,6 +49,22 @@ export const SCHEDULE_CONFIG = Object.freeze({
 });
 
 /**
+ * 赛后负荷反馈参数（第 18 步；DECISIONS D-16）。
+ * 说明：**最小闭环**——实际出场球员消耗体能、通过比赛建立状态；不做表现评分。
+ * 数值为暂定校准值，可统一调参。form 以"向基线逼近"实现有界恢复（不会无限增长或永久停在 0）。
+ */
+export const MATCH_LOAD_CONFIG = Object.freeze({
+  /** 每名实际出场球员的单场出场分钟（本步无首发/换人系统，视为打满）。 */
+  MINUTES_PER_MATCH: 90,
+  /** 每名实际出场球员的单场体能消耗（点）。 */
+  FITNESS_COST: 12,
+  /** 出场后 form 向基线（FORM_BASELINE）逼近的比例（0–1，有界）。 */
+  FORM_RECOVER_RATE: 0.25,
+  /** form 的赛后恢复基线。 */
+  FORM_BASELINE: 50,
+});
+
+/**
  * 球员运行时状态参数（第 15 步）。
  * 说明：此处仅为**数据结构默认值与合法量程**（非模型系数）；成长 / 伤病 / 恢复等算法
  * 仍属 `[TBD]`（SIMULATION_SPEC §7–§9、§13–§15），待制定者决策后再接入。
@@ -158,8 +174,12 @@ export const INJURY_CONFIG = Object.freeze({
   AGE: Object.freeze({ CHANCE_START: 30, CHANCE_PER_YEAR: 0.02, RECOVERY_START: 30, RECOVERY_PER_YEAR: 0.01 }),
   /** 体能对概率的修正（fitness 每低 10 点 → 概率乘数）。 */
   FITNESS_CHANCE_STEP: 1.25,
-  /** 恢复期每日 fitness 回升（绝对点数）；伤病期间 fitness 日降。 */
-  FITNESS: Object.freeze({ RECOVER_PER_DAY: 0.8, INJURED_DROP_PER_DAY: 0.6 }),
+  /**
+   * 恢复期每日 fitness 变化。
+   * 第 18 步：健康球员改为**分数式逼近满值**（按缺口比例回升），避免"比赛有消耗但每周仍回到满值"的失真；
+   * 伤病期间 fitness 仍按**绝对点数**日降。
+   */
+  FITNESS: Object.freeze({ RECOVER_FRACTION_PER_DAY: 0.1, INJURED_DROP_PER_DAY: 0.6 }),
   /** 伤病期间 form 冻结目标（不随比赛建立），每日向 0 衰减。 */
   FORM_INJURED_TARGET: 0,
   /** 伤病期间 morale 日降（长期病尤甚，按剩余天数加权）。 */

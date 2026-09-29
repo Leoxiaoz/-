@@ -11,14 +11,20 @@
 
 import { SimulationError } from '../shared/errors.js';
 import { addDays } from './date-utils.js';
-import { computeTeamStrength } from './team-strength.js';
+import { computeTeamStrength, selectMatchSquad } from './team-strength.js';
 import { simulateMatch } from './match.js';
 import { applyResult } from './standings.js';
 import { createLeagueRuntime, getClubRuntime, recordEvent } from './game-state.js';
-import { resetSeasonStats } from './player-runtime.js';
+import {
+  resetSeasonStats,
+  recordAppearance,
+  getPlayerRuntime,
+  getEffectiveAttributes,
+  setVitals,
+} from './player-runtime.js';
 import { developPlayers } from './player-growth.js';
-import { tickInjuries, resolveMatchInjuries, isAvailable } from './player-injury.js';
-import { SCHEDULE_CONFIG } from './sim-config.js';
+import { tickInjuries, resolveMatchInjuries } from './player-injury.js';
+import { SCHEDULE_CONFIG, MATCH_LOAD_CONFIG } from './sim-config.js';
 
 export class SimulationCore {
   /** @param {{logger?: object, trainingFactor?: Function}} [deps] */
@@ -100,6 +106,9 @@ export class SimulationCore {
       score: `${result.homeGoals}-${result.awayGoals}`,
     });
 
+    // 赛后生态反馈（第 18 步）：出场/进球统计 + fitness/form 最小闭环；随后做伤病判定。
+    this.#applyPostMatch(state, [home, away], result);
+
     // 赛后最小伤病判定（第 17 步；不重构比赛模拟，不用首发/换人）。
     resolveMatchInjuries(state, {
       fixtureId: fixture.id,
@@ -110,15 +119,52 @@ export class SimulationCore {
     });
   }
 
+  /**
+   * 赛后生态反馈（第 18 步，最小闭环）：把比赛**实际使用**的球员记为出场（含分钟/进球），
+   * 并施加体能消耗与状态建立。统计接口沿用 `recordAppearance`，未来以正式首发/换人系统替换
+   * `selectMatchSquad` 即可，无需重写本层。
+   */
+  #applyPostMatch(state, sides, result) {
+    const goalsByScorer = new Map();
+    for (const ev of result.events) {
+      if (ev.type !== 'goal' || !ev.scorerId) continue;
+      goalsByScorer.set(ev.scorerId, (goalsByScorer.get(ev.scorerId) ?? 0) + 1);
+    }
+    for (const side of sides) {
+      for (const playerId of side.squadIds) {
+        recordAppearance(state, playerId, {
+          minutes: MATCH_LOAD_CONFIG.MINUTES_PER_MATCH,
+          goals: goalsByScorer.get(playerId) ?? 0,
+        });
+        const rt = getPlayerRuntime(state, playerId);
+        if (!rt) continue;
+        setVitals(state, playerId, {
+          fitness: rt.fitness - MATCH_LOAD_CONFIG.FITNESS_COST,
+          form: rt.form
+            + (MATCH_LOAD_CONFIG.FORM_BASELINE - rt.form) * MATCH_LOAD_CONFIG.FORM_RECOVER_RATE,
+        });
+      }
+    }
+  }
+
   #buildSide(state, teamId) {
     const club = getClubRuntime(state, teamId);
     const tactics = club?.tactics ?? {};
+    // 出场集合 = 比赛模拟实际使用的球员（第 18 步；受伤球员已被剔除）。
+    const squad = selectMatchSquad(state, teamId, tactics);
     return {
       teamId,
       tactics,
       strength: computeTeamStrength(state, teamId, tactics),
-      // 出场/进球者仅从可用（非伤停）球员中产生（第 17 步）。
-      players: state.static.players.filter((p) => p.teamId === teamId && isAvailable(state, p.id)),
+      // 传给比赛引擎的球员带**有效属性**（基础 + deltas，已夹取潜力上限），
+      // 使 `selectScorer` 按球员当前能力（而非静态基础）判分。
+      players: squad.map((p) => ({
+        id: p.id,
+        position: p.position,
+        ...getEffectiveAttributes(state, p.id),
+      })),
+      // 出场统计用的稳定 ID 列表。
+      squadIds: squad.map((p) => p.id),
     };
   }
 

@@ -230,7 +230,8 @@ test('赛季滚动时本赛季统计归零、职业生涯统计保留（多赛�
   assert(state.season >= 2, '应已滚动赛季');
   assertEquals(rt.stats.seasonNumber, state.season);
   assertEquals(rt.stats.season.appearances, 0, '本赛季统计应已重置');
-  assertEquals(rt.stats.career.appearances, 1, '职业生涯统计应保留');
+  // 第 18 步起比赛自动记出场，故职业生涯统计为「种子值 + 本赛季真实出场」，只校验其被保留。
+  assert(rt.stats.career.appearances >= 1, '职业生涯统计应保留');
 });
 
 test('deserializeState 兜底后不会误伤球员容器（向后兼容）', () => {

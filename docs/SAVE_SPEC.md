@@ -27,6 +27,10 @@
 > （`status/type/category/severity/daysRemaining/totalDays/since`）与 `players[].injuryHistory`
 > （`recurrenceCount/lastInjuryDate/lastInjuryType`，定长）；`GAME_STATE_SCHEMA_VERSION` 3→4（加法式，向后兼容）。
 > 旧档经 `initializePlayerRuntime` 补齐新字段（保留已有值、按 `daysRemaining` 派生严重度）。详见 `DECISIONS.md` D-15。
+>
+> **实现更新（2026-09-29，第 18 步 · 生态联调）**：出场/进球统计自本步起**真实产生并持久化**（`stats.season` / `stats.career`）；
+> 赛季滚动重置 `season`、累计 `career`。本轮为**接线**，运行时结构未新增字段 → `GAME_STATE_SCHEMA_VERSION` **保持 4**。
+> 存档往返一致性（含统计/伤病/vitals/成长）由 `tests/ecosystem.test.js` 验证。详见 `DECISIONS.md` D-16。
 
 ## 0. 文档定位与边界
 
