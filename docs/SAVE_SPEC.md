@@ -58,6 +58,12 @@
 > `state.season` 字段名与持久化**保持**，单联赛下 `state.season ≡ competition.season`。
 > `GAME_STATE_SCHEMA_VERSION` **保持 8**，**无需迁移**。详见 `DECISIONS.md` D-21 与
 > [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §27。
+>
+> **实现更新（Step 21-A · 球员比赛表现）**：`players[].stats.{season,career}` 统计线新增
+> `shots` / `shotsOnTarget` / `ratingSum`（`ratingSum = Σ round(rating×10)`）。`GAME_STATE_SCHEMA_VERSION`
+> **8→9**（**加法式**，向后兼容）：旧档经 `normalizeStatLine` 将缺失字段补齐为 0，加载后可继续模拟。
+> `MatchResult.involvements` 与单场 `rating` 数值为**运行期产物**，**不单独入档**（经统计线持久化）。
+> 详见 `DECISIONS.md` D-22 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §28。
 
 ## 0. 文档定位与边界
 

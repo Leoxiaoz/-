@@ -565,3 +565,31 @@
   Competition Rules 数据化、多竞赛统一赛季边界、competition type dispatch、新 schedule 类型。
 - **测试**：`tests/season.test.js`——SeasonCalendar 投影、边界（< / = / > / 空联赛）、单联赛行为等价（改造前基线指纹）、
   副作用一次性与顺序、确定性、save/load（季中/边界前/边界日/新赛季后）、10/50/100 赛季长期回归。
+
+---
+
+## §28 球员比赛表现（Step 21-A）
+
+- **模块**：[match.js](file:///workspace/src/core/match.js) `applyMatchPerformance`（独立表现流）、
+  [sim-config.js](file:///workspace/src/core/sim-config.js) `MATCH_PERFORMANCE_CONFIG`、
+  [player-runtime.js](file:///workspace/src/core/player-runtime.js)（统计线扩展）、[simulation.js](file:///workspace/src/core/simulation.js) `#applyPostMatch`（透传）。
+- **字段**：`involvements[playerId]` 新增 `shots` / `shotsOnTarget` / `rating`（`assists`/`yellow`/`red` 由恒 0 变为实际生成）。
+  `events` **契约不变**（仍只记录 `goal`，`assistId` 保持 `null`）。
+- **RNG 隔离（核心）**：比分由 `simulateSegments` 的单一比分 RNG 决定（消费顺序**不变**）；
+  表现由**独立派生 RNG**在**比分与 goal events 确定后**生成：
+  - 逐球员：`hashSeed(`${matchSeed}|perf|${side}|${playerId}`)`（增减球员不改变他人流）；
+  - 逐进球：`hashSeed(`${matchSeed}|assist|${side}|${minute}|${scorerId}`)`（每球至多 1 次助攻）。
+  `rng.js` / `deriveMatchSeed` / 比分算法**均不修改**；不新增全局随机源。
+- **守恒（内建）**：`shots >= shotsOnTarget >= goals`（进球计入射正）；`Σassists <= Σgoals`；
+  助攻者同队、非进球者本人、必为出场球员；`yellow`/`red` 为非负整数且单场每人 ≤1。
+- **rating**：确定性、可解释、固定上下界 `[4.0, 10.0]`（`MATCH_PERFORMANCE_CONFIG.RATING`）：
+  `BASE + goals×GOAL + assists×ASSIST + shotsOnTarget×SOT − yellow×YC − red×RC + 胜负调整 + 位置加成`，再夹取。
+  **不依赖 form/morale，不反向写入 vitals/growth**。
+- **数据流（不变）**：`simulateMatch → MatchResult.involvements → #applyPostMatch → recordAppearance`（G1a 架构，仅透传新字段）。
+- **存档**：`GAME_STATE_SCHEMA_VERSION` **8→9**（加法式）——统计线新增 `shots`/`shotsOnTarget`/`ratingSum`
+  （`ratingSum = Σ round(rating×10)`，均值 = `ratingSum/appearances/10`）；旧档经 `normalizeStatLine` 补 0。
+- **明确未实现（out-of-scope）**：keyPasses、xG、possession、pass%、比赛报告、Man of the Match、UI 展示、
+  表现影响 form/morale/growth/retirement、换人/替补、新能力属性或能力体系。
+- **测试**：`tests/performance.test.js`（11 项）——单场确定性、比分守恒、射门守恒、助攻合法性、cards 有界、
+  rating 边界与 ratingSum 累计、season/career 累计与 reset、save/load（含 schema 8→9 与旧档补 0）、
+  RNG 隔离（比分/events 黄金指纹）、10/50/100 赛季长期稳定。

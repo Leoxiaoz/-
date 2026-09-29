@@ -88,6 +88,51 @@ export const MATCH_LOAD_CONFIG = Object.freeze({
 });
 
 /**
+ * 球员比赛表现参数（Step 21-A；DECISIONS D-22）。
+ * 说明：由**独立派生 RNG**在比分确定**之后**生成，配置驱动、有界；**不改比分算法、不进比分 RNG 流**。
+ * 所有球员表现仅写入 `involvements` 与长期统计，**不写回 form/morale/fitness/growth**（红线）。
+ */
+export const MATCH_PERFORMANCE_CONFIG = Object.freeze({
+  /** 位置射门画像：期望（非进球）射门次数、射正比例、能力参考属性。 */
+  POSITION_SHOTS: Object.freeze({
+    GK: Object.freeze({ attempts: 0.02, onTarget: 0.30, attr: 'goalkeeping' }),
+    DF: Object.freeze({ attempts: 0.45, onTarget: 0.35, attr: 'technique' }),
+    MF: Object.freeze({ attempts: 1.15, onTarget: 0.42, attr: 'technique' }),
+    FW: Object.freeze({ attempts: 2.20, onTarget: 0.52, attr: 'finishing' }),
+  }),
+  /** 位置画像缺省（未知位置）回退。 */
+  DEFAULT_POSITION: 'MF',
+  /** 射门期望的随机波动（±比例，有界）。 */
+  ATTEMPT_NOISE: 0.35,
+  /** 单名球员单场射门数上限（防止失控）。 */
+  MAX_ATTEMPTS: 6,
+  /** 能力对射门期望/射正比例的加权（属性归一化后线性系数）。 */
+  ABILITY: Object.freeze({ ATTEMPTS: 0.8, ON_TARGET: 0.4 }),
+  /** 每次进球转化为助攻的概率（<=1，保证 Σassists <= Σgoals）。 */
+  ASSIST_CHANCE: 0.62,
+  /** 助攻者权重参考属性（组织/技术）。 */
+  ASSIST_WEIGHT_ATTR: 'passing',
+  /** 黄/红牌基础概率与位置倍率（单场每球员 <=1 张黄、<=1 张红，有界）。 */
+  YELLOW_CHANCE: 0.06,
+  RED_CHANCE: 0.004,
+  CARD_POSITION_MULTIPLIER: Object.freeze({ GK: 0.4, DF: 1.3, MF: 1.1, FW: 0.9 }),
+  /** 评分模型（确定性、可解释、固定上下界；不依赖 vitals）。 */
+  RATING: Object.freeze({
+    BASE: 6.0,
+    GOAL: 1.0,
+    ASSIST: 0.5,
+    SHOTS_ON_TARGET: 0.1,
+    YELLOW: -0.3,
+    RED: -1.5,
+    WIN: 0.3,
+    LOSS: -0.3,
+    POSITION_BONUS: Object.freeze({ GK: 0.2, DF: 0.1, MF: 0.0, FW: 0.0 }),
+    MIN: 4.0,
+    MAX: 10.0,
+  }),
+});
+
+/**
  * 球员运行时状态参数（第 15 步）。
  * 说明：此处仅为**数据结构默认值与合法量程**（非模型系数）；成长 / 伤病 / 恢复等算法
  * 仍属 `[TBD]`（SIMULATION_SPEC §7–§9、§13–§15），待制定者决策后再接入。

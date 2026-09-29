@@ -46,7 +46,7 @@ test('createGameState 为全部静态球员建立运行时状态，且 schema �
   const rt = getPlayerRuntime(state, PLAYER);
   assert(rt, '应存在球员运行时状态');
   assertEquals(rt.playerId, PLAYER);
-  assertEquals(rt.stats.season, { appearances: 0, minutes: 0, goals: 0, assists: 0, yellow: 0, red: 0 });
+  assertEquals(rt.stats.season, { appearances: 0, minutes: 0, goals: 0, assists: 0, yellow: 0, red: 0, shots: 0, shotsOnTarget: 0, ratingSum: 0 });
   assertEquals(rt.injury.status, INJURY_STATUS.FIT);
 });
 
@@ -98,8 +98,8 @@ test('recordAppearance 同时累加本赛季与职业生涯统计', () => {
   recordAppearance(state, PLAYER, { minutes: 90, goals: 2, assists: 1 });
   recordAppearance(state, PLAYER, { minutes: 45, goals: 0, assists: 1 });
   const rt = getPlayerRuntime(state, PLAYER);
-  assertEquals(rt.stats.season, { appearances: 2, minutes: 135, goals: 2, assists: 2, yellow: 0, red: 0 });
-  assertEquals(rt.stats.career, { appearances: 2, minutes: 135, goals: 2, assists: 2, yellow: 0, red: 0 });
+  assertEquals(rt.stats.season, { appearances: 2, minutes: 135, goals: 2, assists: 2, yellow: 0, red: 0, shots: 0, shotsOnTarget: 0, ratingSum: 0 });
+  assertEquals(rt.stats.career, { appearances: 2, minutes: 135, goals: 2, assists: 2, yellow: 0, red: 0, shots: 0, shotsOnTarget: 0, ratingSum: 0 });
 });
 
 test('recordAppearance 拒绝非法数值与超限分钟', () => {
@@ -138,7 +138,7 @@ test('resetSeasonStats 只清本赛季、保留职业生涯', () => {
   recordAppearance(state, PLAYER, { minutes: 90, goals: 1 });
   resetSeasonStats(state, 2);
   const rt = getPlayerRuntime(state, PLAYER);
-  assertEquals(rt.stats.season, { appearances: 0, minutes: 0, goals: 0, assists: 0, yellow: 0, red: 0 });
+  assertEquals(rt.stats.season, { appearances: 0, minutes: 0, goals: 0, assists: 0, yellow: 0, red: 0, shots: 0, shotsOnTarget: 0, ratingSum: 0 });
   assertEquals(rt.stats.seasonNumber, 2);
   assertEquals(rt.stats.career.appearances, 1, '职业生涯统计应保留');
 });
@@ -204,7 +204,7 @@ test('存档往返：球员运行时状态完整保留（保存→加载）', as
 
   const rt = getPlayerRuntime(loaded, PLAYER);
   assertEquals(rt.ability.deltas, { passing: 7 });
-  assertEquals(rt.stats.career, { appearances: 1, minutes: 90, goals: 2, assists: 1, yellow: 0, red: 0 });
+  assertEquals(rt.stats.career, { appearances: 1, minutes: 90, goals: 2, assists: 1, yellow: 0, red: 0, shots: 0, shotsOnTarget: 0, ratingSum: 0 });
   assertEquals([rt.fitness, rt.form, rt.morale], [70, 65, 55]);
   assertEquals(rt.injury.status, INJURY_STATUS.INJURED);
   assertEquals(rt.injury.daysRemaining, 7);

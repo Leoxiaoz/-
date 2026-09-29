@@ -174,6 +174,20 @@
 - 已交付测试：`tests/season.test.js` 11 项（SeasonCalendar 投影、边界 < / = / > / 空联赛、改造前基线指纹行为等价、
   副作用一次性与顺序、确定性、save/load 季中/边界前/边界日/新赛季后、10/50/100 赛季长期）；累计 **201/201 通过** + 浏览器冒烟通过。
 
+### 2.10 已交付（2026-09-29，Step 21-A：球员比赛表现 MVP）
+
+- 目标：在 G1a 统一 `involvements` 之上补齐**球员级比赛表现**（射门/射正/助攻/牌/评分），支撑赛后表现反馈与统计（D-22）。
+- 已实现：`match.js#applyMatchPerformance`（**独立派生 RNG**，比分确定后生成，逐球员/逐进球独立流）；
+  `sim-config.js` `MATCH_PERFORMANCE_CONFIG`（位置射门画像、助攻概率、牌概率、评分模型）；
+  `player-runtime.js` 统计线新增 `shots/shotsOnTarget/ratingSum` 并支持 `recordAppearance` 消费；
+  `simulation.js#applyPostMatch` 仅透传（不新增并行写入链）；`game-state.js` `GAME_STATE_SCHEMA_VERSION` **8→9**（加法式）。
+- **红线（已证明）**：`rng.js`/`deriveMatchSeed`/比分算法**未改**；相同 seed 下 `homeGoals/awayGoals/goal events` 与实施前**逐值一致**；
+  表现**不写回** form/morale/fitness/growth/retirement；守恒内建 `shots>=shotsOnTarget>=goals`、`Σassists<=Σgoals`。
+- **刻意未做（out-of-scope）**：keyPasses、xG、possession、pass%、比赛报告、Man of the Match、UI 展示、
+  表现影响 form/morale/growth/retirement、换人/替补、新能力属性/能力体系；转会/合同/工资/财务/AI 教练/多联赛/杯赛/升降级。
+- 已交付测试：`tests/performance.test.js` 11 项（单场确定性、比分/射门守恒、助攻合法性、cards 有界、rating 边界与累计、
+  season/career 累计与 reset、save/load 含 schema 8→9 与旧档补 0、RNG 隔离黄金指纹、10/50/100 赛季长期）；累计 **212/212 通过** + 浏览器冒烟通过。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

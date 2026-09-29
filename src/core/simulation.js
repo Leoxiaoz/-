@@ -136,6 +136,10 @@ export class SimulationCore {
         assists: inv.assists,
         yellow: inv.yellow,
         red: inv.red,
+        // Step 21-A：表现字段（射门/射正/评分），仅经 involvements 传递，不新增并行写入链。
+        shots: inv.shots,
+        shotsOnTarget: inv.shotsOnTarget,
+        rating: inv.rating,
       });
       const rt = getPlayerRuntime(state, playerId);
       if (!rt) continue;

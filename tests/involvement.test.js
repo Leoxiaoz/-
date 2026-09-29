@@ -1,7 +1,7 @@
 /**
  * G1a 比赛球员参与结构测试（Match Involvement Model）。
  * 覆盖：involvements 生成、role/minutes、非出场不写入、goal→actorId 映射、多球累计、
- * assists/yellow/red 恒 0、position 一致、simulation 仅消费 involvements、
+ * assists/yellow/red 由表现系统生成（合法有界）、position 一致、simulation 仅消费 involvements、
  * season/career 聚合与 fitness/form 行为一致、确定性、save/load continuation。
  */
 
@@ -89,20 +89,25 @@ test('goal 事件映射到 actorId，且 involvements 进球总数等于比分�
     }
     const invGoals = Object.values(r.involvements).reduce((s, v) => s + v.goals, 0);
     assertEquals(invGoals, r.homeGoals + r.awayGoals, '参与记录进球总数应等于比分');
-    for (const v of Object.values(r.involvements)) assertEquals(v.assists, 0);
+    for (const v of Object.values(r.involvements)) assert(Number.isInteger(v.assists) && v.assists >= 0, 'assists 应为非负整数');
   }
 });
 
-// ---------- 6 + 7. assists / yellow / red 恒 0 ----------
-test('assists / yellow / red 当前恒为 0（不制造随机表现）', () => {
+// ---------- 6 + 7. assists / yellow / red（Step 21-A 起由表现系统生成，合法有界）；events 仍仅 goal ----------
+test('assists / yellow / red 由表现系统生成：合法有界；events 仍仅记录 goal', () => {
   const state = leagueState(8);
   const r = playOnce(state);
+  let goals = 0;
+  let assists = 0;
   for (const v of Object.values(r.involvements)) {
-    assertEquals(v.assists, 0);
-    assertEquals(v.yellow, 0);
-    assertEquals(v.red, 0);
+    assert(Number.isInteger(v.assists) && v.assists >= 0, 'assists 应为非负整数');
+    assert(Number.isInteger(v.yellow) && v.yellow >= 0 && v.yellow <= 1, 'yellow 有界 [0,1]');
+    assert(Number.isInteger(v.red) && v.red >= 0 && v.red <= 1, 'red 有界 [0,1]');
+    goals += v.goals;
+    assists += v.assists;
   }
-  // 事件层也不含 yellow/red/assist 类型
+  assert(assists <= goals, '每球至多一次助攻：Σassists <= Σgoals');
+  // 事件层契约未扩展：仍不含 yellow/red/assist 类型
   for (const ev of r.events) assert(['goal'].includes(ev.type), `当前不应有其他事件类型：${ev.type}`);
 });
 

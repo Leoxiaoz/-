@@ -301,6 +301,34 @@
 
 ---
 
+## D-22 球员比赛表现系统（Step 21-A）（对应 SIMULATION_SPEC §28、SAVE_SPEC §3）
+
+- **背景（Step 21-A）**：G1a 的统一 `involvements` 已能表达"谁出场"，但除进球外无球员级表现
+  （无射门/射正/助攻/牌/评分），`assists/yellow/red` 恒为 0，无法支撑赛后表现反馈与统计。
+- **已定规则（制定者确认）**：
+  - **RNG 隔离**：比分由 `simulateSegments` 的**单一比分 RNG** 决定（消费顺序**禁止改动**）；
+    球员表现由**独立派生 RNG**在**比分与 goal events 确定之后**生成——逐球员流
+    `hashSeed(`${matchSeed}|perf|${side}|${playerId}`)`、逐进球流 `hashSeed(`${matchSeed}|assist|${side}|${minute}|${scorerId}`)`。
+    因此增减球员不改变他人流、不污染比分 RNG、不新增全局随机源；`rng.js`、`deriveMatchSeed`、比分算法**均不改**。
+  - **events 契约不扩展**：`events` 仍只记录 `goal`（`assistId` 保持 `null`）；射门/助攻/牌**不进事件流**，
+    仅经 `involvements` 传递。
+  - **MVP 字段**：`shots` / `shotsOnTarget` / `assists` / `yellow` / `red` / `rating`。
+    `keyPasses`、xG、possession、pass%、比赛报告、Man of the Match、UI 展示**暂缓**。
+  - **守恒（内建）**：`shots >= shotsOnTarget >= goals`；`Σassists <= Σgoals`；助攻者同队、非进球者本人、必为出场球员；
+    牌为非负整数、单场有界（每人 ≤1 黄、≤1 红）。
+  - **rating**：单场确定性、可解释、固定上下界 `[4.0, 10.0]`，**不依赖 form/morale**；
+    长期以整数 `ratingSum = Σ round(rating×10)` 保存，均值 = `ratingSum / appearances / 10`。
+  - **不做反向写入**：表现**不写回** form / morale / fitness / growth / retirement（避免经 `vitalsFactor` 反馈破坏长期平衡）。
+- **数据流（不变）**：`simulateMatch → MatchResult.involvements → #applyPostMatch → recordAppearance`（G1a 架构，仅透传新字段）。
+- **存档**：`GAME_STATE_SCHEMA_VERSION` **8→9**（**加法式**）——统计线新增 `shots`/`shotsOnTarget`/`ratingSum`；
+  旧档经 `normalizeStatLine` 补齐为 0，`MatchResult.involvements` 与表现字段**不单独入档**（经统计线持久化）。
+- **明确未做**：转会、合同、工资、财务、AI 教练、多联赛、杯赛、升降级、替补、换人、keyPasses、xG、
+  possession、pass%、新能力属性/能力体系、表现影响 growth/retirement、比赛报告 UI。
+- 落地：[match.js](file:///workspace/src/core/match.js) `applyMatchPerformance`、`sim-config.js` `MATCH_PERFORMANCE_CONFIG`、
+  `player-runtime.js`、`simulation.js`、`game-state.js`、[SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §28、`tests/performance.test.js`。
+
+---
+
 ## 仍属 TBD（未受影响）
 
 - GAME_DESIGN：T1、T2、T3、T4、T5、T7–T13、T15、T16、T17

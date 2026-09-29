@@ -10,14 +10,17 @@
  *   2) 时段结算（事件生成）
  *   3) 进球者选择
  *   4) 统计汇总
+ *   5) 球员比赛表现（Step 21-A：射门/射正/助攻/牌/评分；**独立派生 RNG**，在比分确定后运行）
  * 编排入口为 `simulateMatch`。
  *
  * 红线：随机只扰动由实力决定的目标期望，不得让结果脱离实力对比（SIMULATION_SPEC §11）；
  * 同一（比赛条件 + 种子）必须可复现（项目规则第 10 条）。
  */
 
-import { MATCH_CONFIG, MENTALITY, MATCH_LOAD_CONFIG } from './sim-config.js';
-import { createRng, deriveMatchSeed } from './rng.js';
+import { MATCH_CONFIG, MENTALITY, MATCH_LOAD_CONFIG, MATCH_PERFORMANCE_CONFIG } from './sim-config.js';
+import { createRng, deriveMatchSeed, hashSeed } from './rng.js';
+
+const P = MATCH_PERFORMANCE_CONFIG;
 
 /** 攻守倾向倍率（未知倾向回退 balanced）。 */
 function mentalityFactor(mentality) {
@@ -125,6 +128,10 @@ export function buildInvolvements(players, side, events) {
       assists: 0,
       yellow: 0,
       red: 0,
+      // Step 21-A：表现字段（默认值；由 applyMatchPerformance 以独立 RNG 填充）。
+      shots: 0,
+      shotsOnTarget: 0,
+      rating: P.RATING.BASE,
     };
   }
   for (const ev of events) {
@@ -136,6 +143,99 @@ export function buildInvolvements(players, side, events) {
     else if (ev.type === 'red') rec.red += 1;
   }
   return involvements;
+}
+
+/** 属性归一化到 0..1（非法回退 0.5）。 */
+function attrNorm(value) {
+  const v = Number(value);
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v / 99)) : 0.5;
+}
+
+/** 由期望值确定性地取一个**有界整数**（整数部分 + 小数部分的伯努利取整）。 */
+function decideCount(expected, rng, max) {
+  const whole = Math.floor(expected);
+  const frac = expected - whole;
+  return Math.min(max, Math.max(0, whole + (rng.next() < frac ? 1 : 0)));
+}
+
+/** 从候选球员按权重（属性平方）确定性抽一人。 */
+function pickWeighted(candidates, weightFn, rng) {
+  const buckets = candidates.map((p) => ({ id: p.id, weight: weightFn(p) ** 2 }));
+  const total = buckets.reduce((s, b) => s + b.weight, 0);
+  if (total <= 0) return null;
+  let r = rng.next() * total;
+  for (const b of buckets) {
+    r -= b.weight;
+    if (r <= 0) return b.id;
+  }
+  return buckets[buckets.length - 1].id;
+}
+
+/**
+ * Step 21-A：为一方生成球员级比赛表现（射门/射正/助攻/牌/评分）。
+ * **独立 RNG**：每个球员 / 每个进球使用由 `matchSeed + side + playerId`（或 `+minute+scorer`）**派生**的独立流，
+ * **绝不进入比分 RNG 流**，因此不影响 homeGoals / awayGoals / goal events。
+ * 守恒：`shots >= shotsOnTarget >= goals`（进球计入射正），`Σassists <= Σgoals`（每球至多 1 次助攻）。
+ * @param {{matchSeed: string, side: 'home'|'away', players: object[], goalsFor: number, goalsAgainst: number, goalEvents: object[]}} args
+ * @returns {Record<string, {shots:number, shotsOnTarget:number, assists:number, yellow:number, red:number, rating:number}>}
+ */
+export function applyMatchPerformance({ matchSeed, side, players, goalsFor, goalsAgainst, goalEvents }) {
+  const out = {};
+
+  // 1) 射门 / 射正 / 牌（逐球员独立流）
+  for (const p of players) {
+    const rng = createRng(hashSeed(`${matchSeed}|perf|${side}|${p.id}`));
+    const profile = P.POSITION_SHOTS[p.position] ?? P.POSITION_SHOTS[P.DEFAULT_POSITION];
+    const ability = attrNorm(p[profile.attr]);
+    const expected = Math.max(0,
+      profile.attempts
+      * (1 + P.ATTEMPT_NOISE * (rng.next() * 2 - 1))
+      * (1 - P.ABILITY.ATTEMPTS + P.ABILITY.ATTEMPTS * (0.5 + ability)));
+    const attempts = decideCount(expected, rng, P.MAX_ATTEMPTS);
+    const onTargetRatio = Math.min(0.95,
+      profile.onTarget * (1 - P.ABILITY.ON_TARGET + P.ABILITY.ON_TARGET * (0.5 + ability)));
+    let saved = 0; // 射正但未进球（被扑救/被挡）
+    for (let i = 0; i < attempts; i += 1) if (rng.next() < onTargetRatio) saved += 1;
+
+    const goals = goalEvents.filter((e) => e.actorId === p.id).length;
+    const shotsOnTarget = goals + saved; // 守恒：进球必计入射正
+    const shots = shotsOnTarget + (attempts - saved); // 守恒：射门 >= 射正
+
+    const mult = P.CARD_POSITION_MULTIPLIER[p.position] ?? 1;
+    const yellow = rng.next() < P.YELLOW_CHANCE * mult ? 1 : 0;
+    const red = rng.next() < P.RED_CHANCE * mult ? 1 : 0;
+
+    out[p.id] = { goals, shots, shotsOnTarget, assists: 0, yellow, red, rating: P.RATING.BASE };
+  }
+
+  // 2) 助攻（逐进球独立流；同队、非进球者本人、必为在场球员）
+  const assistAttr = P.ASSIST_WEIGHT_ATTR;
+  for (const ev of goalEvents) {
+    const scorerId = ev.actorId;
+    const candidates = players.filter((p) => p.id !== scorerId);
+    if (!scorerId || candidates.length === 0) continue;
+    const arng = createRng(hashSeed(`${matchSeed}|assist|${side}|${ev.minute}|${scorerId}`));
+    if (arng.next() >= P.ASSIST_CHANCE) continue;
+    const provider = pickWeighted(candidates, (p) => attrNorm(p[assistAttr]), arng);
+    if (provider && out[provider]) out[provider].assists += 1; // 每球至多 1 次 ⇒ Σassists <= Σgoals
+  }
+
+  // 3) 评分（确定性、无 RNG；不依赖 vitals）
+  const resultAdj = goalsFor > goalsAgainst ? P.RATING.WIN : goalsFor < goalsAgainst ? P.RATING.LOSS : 0;
+  for (const p of players) {
+    const s = out[p.id];
+    const raw = P.RATING.BASE
+      + s.goals * P.RATING.GOAL
+      + s.assists * P.RATING.ASSIST
+      + s.shotsOnTarget * P.RATING.SHOTS_ON_TARGET
+      + s.yellow * P.RATING.YELLOW
+      + s.red * P.RATING.RED
+      + resultAdj
+      + (P.RATING.POSITION_BONUS[p.position] ?? 0);
+    s.rating = Math.min(P.RATING.MAX, Math.max(P.RATING.MIN, raw));
+  }
+
+  return out;
 }
 
 /**
@@ -187,6 +287,17 @@ export function simulateMatch({ home, away, context, seed }) {
     ...buildInvolvements(away.players, 'away', awaySeg.events),
   };
 
+  // Step 21-A：比分与 goal events **已确定**后，用**独立派生 RNG** 生成球员表现并合并进 involvements。
+  // 独立流不以任何方式触碰上文的比分 `rng`，因此 homeGoals/awayGoals/events 保持完全不变。
+  mergePerformance(involvements, applyMatchPerformance({
+    matchSeed, side: 'home', players: home.players,
+    goalsFor: homeSeg.goals, goalsAgainst: awaySeg.goals, goalEvents: homeSeg.events,
+  }));
+  mergePerformance(involvements, applyMatchPerformance({
+    matchSeed, side: 'away', players: away.players,
+    goalsFor: awaySeg.goals, goalsAgainst: homeSeg.goals, goalEvents: awaySeg.events,
+  }));
+
   return {
     matchSeed,
     homeGoals: homeSeg.goals,
@@ -194,4 +305,18 @@ export function simulateMatch({ home, away, context, seed }) {
     events,
     involvements,
   };
+}
+
+/** 把表现字段合并进 involvements（仅覆盖 Step 21-A 字段，不动 side/role/position/minutes）。 */
+function mergePerformance(involvements, performance) {
+  for (const [playerId, perf] of Object.entries(performance)) {
+    const rec = involvements[playerId];
+    if (!rec) continue;
+    rec.shots = perf.shots;
+    rec.shotsOnTarget = perf.shotsOnTarget;
+    rec.assists = perf.assists;
+    rec.yellow = perf.yellow;
+    rec.red = perf.red;
+    rec.rating = perf.rating;
+  }
 }

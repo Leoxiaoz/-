@@ -21,9 +21,29 @@ function fnv(str) {
   for (let i = 0; i < str.length; i += 1) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
   return (h >>> 0).toString(16);
 }
-/** 完整运行时指纹（用于行为等价对比；改造前基线已在实现前记录）。 */
+/**
+ * 完整运行时指纹（用于 G1b① 行为等价对比）。
+ * 投影为**跨 Step 21-A 稳定**的字段子集：显式选取 Step 21-A **未新增/未改变**的字段
+ * （vitals/injury/ability/growth + 统计线中 Step 21-A 之前的 appearances/minutes/goals），
+ * 排除 Step 21-A 新增的 shots/shotsOnTarget/assists/yellow/red/ratingSum，从而让本测试
+ * 始终度量「赛季边界改造」的影响，而不受后续表现系统结构变化干扰。
+ */
 function fingerprint(state) {
   const comp = state.runtime.competitions.lg_a;
+  const players = {};
+  for (const id of Object.keys(state.runtime.players).sort()) {
+    const rt = state.runtime.players[id];
+    players[id] = {
+      fitness: rt.fitness,
+      form: rt.form,
+      morale: rt.morale,
+      injury: rt.injury,
+      ability: rt.ability,
+      growth: rt.growth,
+      season: { appearances: rt.stats.season.appearances, minutes: rt.stats.season.minutes, goals: rt.stats.season.goals },
+      career: { appearances: rt.stats.career.appearances, minutes: rt.stats.career.minutes, goals: rt.stats.career.goals },
+    };
+  }
   const proj = {
     season: state.season,
     comp: {
@@ -36,7 +56,7 @@ function fingerprint(state) {
       table: comp.table,
       historySeasons: comp.history.map((h) => h.season),
     },
-    players: state.runtime.players,
+    players,
     retired: Object.keys(state.runtime.retired).sort(),
     generated: state.runtime.generated,
     membership: state.runtime.membership,
@@ -47,10 +67,11 @@ function fingerprint(state) {
 /**
  * 改造前（G1b① 实现前）基线指纹——行为等价红线。
  * 由「撤销 simulation.js 的边界守卫、运行同一指纹函数」实测得到（非人工填写）。
+ * 指纹已投影为 Step 21-A 稳定字段，故不受表现系统结构变化影响。
  */
 const BASELINE = {
-  1: 'a087a47e', 91: 'a9b3ceb6', 92: 'e8adefd6', 121: 'e109bac3',
-  200: '15e7eb5b', 400: '18eb41a0', 800: 'd2fe7351',
+  1: '67641d9e', 91: 'b20e4710', 92: 'd9ac2a5c', 121: '97133d57',
+  200: 'b8730a7', 400: 'c1ec49c5', 800: '14f00413',
 };
 
 // ---------- A. SeasonCalendar ----------

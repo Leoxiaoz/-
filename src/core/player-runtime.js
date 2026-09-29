@@ -23,7 +23,7 @@
 
 import { SimulationError } from '../shared/errors.js';
 import { PLAYER_ATTRIBUTES, ATTRIBUTE_DEFAULT, ATTRIBUTE_RANGE } from '../shared/football-schema.js';
-import { PLAYER_RUNTIME_CONFIG, INJURY_CONFIG } from './sim-config.js';
+import { PLAYER_RUNTIME_CONFIG, INJURY_CONFIG, MATCH_PERFORMANCE_CONFIG } from './sim-config.js';
 import {
   initializeMembership,
   getPlayerClub,
@@ -51,9 +51,20 @@ function clamp(value, min, max, fallback) {
   return Math.min(max, Math.max(min, v));
 }
 
-/** 建立一条空统计线（出场 / 分钟 / 进球 / 助攻 / 黄牌 / 红牌）。 */
+/** 建立一条空统计线（出场 / 分钟 / 进球 / 助攻 / 黄牌 / 红牌 / 射门 / 射正 / 评分累计）。 */
 export function createStatLine() {
-  return { appearances: 0, minutes: 0, goals: 0, assists: 0, yellow: 0, red: 0 };
+  return {
+    appearances: 0,
+    minutes: 0,
+    goals: 0,
+    assists: 0,
+    yellow: 0,
+    red: 0,
+    // Step 21-A：射门 / 射正 / 评分累计（ratingSum = Σ round(rating×10)；均值 = ratingSum/appearances/10）。
+    shots: 0,
+    shotsOnTarget: 0,
+    ratingSum: 0,
+  };
 }
 
 /** 规范化统计线：缺字段补 0，非法值夹取为非负整数。 */
@@ -70,6 +81,9 @@ function normalizeStatLine(line) {
     assists: safe(src.assists),
     yellow: safe(src.yellow),
     red: safe(src.red),
+    shots: safe(src.shots),
+    shotsOnTarget: safe(src.shotsOnTarget),
+    ratingSum: safe(src.ratingSum),
   };
 }
 
@@ -390,9 +404,12 @@ export function getEffectiveAttributes(state, playerId) {
 
 /**
  * 记录一次出场（累加到本赛季与职业生涯；由赛后处理消费 `MatchResult.involvements` 调用，G1a）。
+ * Step 21-A：额外消费 `shots/shotsOnTarget`（非负整数）与 `rating`（单场评分，浮点 0–10），
+ * 后者内部整数化为 `ratingSum += round(rating×10)`（**不反向写入 vitals**）。
  * @param {object} state
  * @param {string} playerId
- * @param {{minutes?: number, goals?: number, assists?: number, yellow?: number, red?: number}} [line]
+ * @param {{minutes?: number, goals?: number, assists?: number, yellow?: number, red?: number,
+ *          shots?: number, shotsOnTarget?: number, rating?: number}} [line]
  */
 export function recordAppearance(state, playerId, line = {}) {
   const rt = requirePlayerRuntime(state, playerId);
@@ -401,8 +418,11 @@ export function recordAppearance(state, playerId, line = {}) {
   const assists = line.assists ?? 0;
   const yellow = line.yellow ?? 0;
   const red = line.red ?? 0;
+  const shots = line.shots ?? 0;
+  const shotsOnTarget = line.shotsOnTarget ?? 0;
   for (const [name, v] of [
     ['minutes', minutes], ['goals', goals], ['assists', assists], ['yellow', yellow], ['red', red],
+    ['shots', shots], ['shotsOnTarget', shotsOnTarget],
   ]) {
     if (!Number.isInteger(v) || v < 0) {
       throw new SimulationError(`recordAppearance 的 ${name} 需为非负整数`, {
@@ -415,6 +435,18 @@ export function recordAppearance(state, playerId, line = {}) {
       context: { playerId, value: minutes, max: MAX_MINUTES_PER_MATCH },
     });
   }
+  // 评分（可选）：合法浮点，夹取到 [MIN, MAX]；整数化为 ratingSum。
+  let ratingSum = 0;
+  if (line.rating !== undefined && line.rating !== null) {
+    const r = Number(line.rating);
+    if (!Number.isFinite(r)) {
+      throw new SimulationError('recordAppearance 的 rating 需为有限数值', {
+        context: { playerId, value: line.rating },
+      });
+    }
+    const bounded = Math.min(MATCH_PERFORMANCE_CONFIG.RATING.MAX, Math.max(MATCH_PERFORMANCE_CONFIG.RATING.MIN, r));
+    ratingSum = Math.round(bounded * 10);
+  }
   for (const statLine of [rt.stats.season, rt.stats.career]) {
     statLine.appearances += 1;
     statLine.minutes += minutes;
@@ -422,6 +454,9 @@ export function recordAppearance(state, playerId, line = {}) {
     statLine.assists += assists;
     statLine.yellow += yellow;
     statLine.red += red;
+    statLine.shots += shots;
+    statLine.shotsOnTarget += shotsOnTarget;
+    statLine.ratingSum += ratingSum;
   }
   return rt;
 }
