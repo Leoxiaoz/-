@@ -262,7 +262,9 @@ function squadList(players, mc, zone) {
   const ul = el('ul', { class: 'list lineup' });
   for (const p of players) {
     const li = el('li', { class: 'lineup__item' });
-    li.appendChild(el('span', { class: 'lineup__name' }, `${p.name}（${p.position}${p.injured ? ' · 伤' : ''}）`));
+
+    const row = el('div', { class: 'lineup__row' });
+    row.appendChild(el('span', { class: 'lineup__name' }, `${p.name}（${p.position}${p.injured ? ' · 伤' : ''}）`));
     const acts = el('span', { class: 'lineup__actions' });
     if (zone !== 'starters') {
       acts.appendChild(el('button', { class: 'btn btn--mini', 'data-action': 'assign-player', 'data-club': mc.id, 'data-player': p.playerId, 'data-zone': 'starters' }, '首发'));
@@ -273,10 +275,36 @@ function squadList(players, mc, zone) {
     if (zone !== 'none') {
       acts.appendChild(el('button', { class: 'btn btn--mini', 'data-action': 'assign-player', 'data-club': mc.id, 'data-player': p.playerId, 'data-zone': 'none' }, '移除'));
     }
-    li.appendChild(acts);
+    row.appendChild(acts);
+    li.appendChild(row);
+
+    // 紧凑统计行（Step 21-B）：赛季汇总；可换行、无横向溢出。
+    li.appendChild(statsLine(p.stats));
     ul.appendChild(li);
   }
   return ul;
+}
+
+/**
+ * 球员赛季统计行（纯呈现）。数据来自 snapshot（controller 已派生 averageRating，UI 不自行计算）。
+ * 无出场（averageRating == null）时评分显示 "—"。
+ */
+function statsLine(stats) {
+  const wrap = el('div', { class: 'lineup__stats' });
+  const s = stats?.season;
+  if (!s) return wrap;
+  const rating = s.averageRating == null ? '—' : s.averageRating.toFixed(2);
+  const items = [
+    `出场 ${s.appearances}`,
+    `进球 ${s.goals}`,
+    `助攻 ${s.assists}`,
+    `射门 ${s.shots}`,
+    `射正 ${s.shotsOnTarget}`,
+    `评分 ${rating}`,
+  ];
+  for (const text of items) wrap.appendChild(el('span', { class: 'lineup__stat' }, text));
+  wrap.appendChild(el('span', { class: 'lineup__stat lineup__stat--sub' }, `黄 ${s.yellow} · 红 ${s.red}`));
+  return wrap;
 }
 
 function appendKV(dl, key, value) {

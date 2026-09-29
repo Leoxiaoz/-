@@ -593,3 +593,24 @@
 - **测试**：`tests/performance.test.js`（11 项）——单场确定性、比分守恒、射门守恒、助攻合法性、cards 有界、
   rating 边界与 ratingSum 累计、season/career 累计与 reset、save/load（含 schema 8→9 与旧档补 0）、
   RNG 隔离（比分/events 黄金指纹）、10/50/100 赛季长期稳定。
+
+---
+
+## §29 球员表现数据消费层（Step 21-B）
+
+- **目标**：把 21-A 已持久化的球员 `season/career` 表现正式接入 **controller 快照 → UI**，**仅消费层，无新 schema**。
+- **模块**：
+  - [player-runtime.js](file:///workspace/src/core/player-runtime.js) `getPlayerStatsView(state, playerId)` / `deriveAverageRating(ratingSum, appearances)`
+    （只读派生视图，字段安全规范化，返回新对象、与 runtime 无引用共享）；
+  - [game-controller.js](file:///workspace/src/controller/game-controller.js) `#managedClubView`（球员条目新增 `stats`）；
+  - [app-view.js](file:///workspace/src/ui/app-view.js) `statsLine`（紧凑、可换行的赛季统计行）。
+- **快照字段**：`managedClub.{starters,bench,squad}[].stats = { season, career }`，各项含
+  `appearances / minutes / goals / assists / yellow / red / shots / shotsOnTarget / averageRating`。
+- **averageRating**：`ratingSum / appearances / 10`（两位小数）；`appearances === 0` ⇒ `null`，UI 显示 `—`（无 NaN/Infinity）。
+  **`ratingSum` 不外泄**，UI 不自行计算。
+- **分层约束**：`runtime → core helper → controller snapshot → view`；UI **不直读** `state`/runtime。
+- **存档**：schema **保持 9**，**不新增迁移**；旧档靠既有 `normalizeStatLine` + 视图层安全默认值兼容。
+- **明确未实现**：match history、逐场持久化、逐场 events、比赛报告、进球者历史、全联盟排行榜、球员详情页、
+  UI 直读 state、schema 升级；21-A 的 RNG/评分公式/比分模型**未改动**。
+- **测试**：`tests/consumption.test.js`（10 项）——season/career 读取、averageRating 派生与 `appearances=0`、ratingSum 不外泄、
+  `shots>=shotsOnTarget`、旧字段安全 normalize、快照与 runtime 无引用共享、非管理球队不被展示、lineup/injury/人口不受影响。

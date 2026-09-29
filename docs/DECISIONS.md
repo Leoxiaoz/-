@@ -329,6 +329,29 @@
 
 ---
 
+## D-23 球员表现数据消费层（Step 21-B）（对应 SIMULATION_SPEC §29）
+
+- **背景（Step 21-B）**：Step 21-A 已生成并持久化球员 `season/career` 表现（含 `shots/shotsOnTarget/ratingSum`），
+  但**零消费**——controller 快照与 UI 均未暴露任何球员统计。
+- **已定规则（制定者确认，仅消费层，无新 schema）**：
+  - **只读派生视图**：`player-runtime.getPlayerStatsView(state, playerId)` 返回 `{ season, career }` 汇总
+    （`appearances/minutes/goals/assists/yellow/red/shots/shotsOnTarget/averageRating`），
+    经安全规范化（缺字段→0），**返回新对象、与 runtime 无引用共享**。
+  - **averageRating 派生**：`ratingSum / appearances / 10`（两位小数）；`appearances <= 0` ⇒ **`null`**（UI 显示 `—`，绝不出现 NaN/Infinity）。
+    `ratingSum` **不暴露给 UI**，UI **不得**自行计算。
+  - **分层**：`runtime → core helper → controller snapshot → view`。UI **不得**直读 `state`/runtime。
+  - **展示范围**：仅**玩家当前管理球队**的阵容（`#managedClubView`），紧凑两行布局（姓名/位置/伤病/阵容操作 + 赛季统计行），
+    统计行 `flex-wrap`，移动端无横向溢出。
+  - **旧存档兼容**：schema **保持 9**，**不新增迁移**；依赖既有 `normalizeStatLine` 与视图层安全默认值。
+- **明确未做**：match history、逐场 `involvements` 持久化、逐场 events、比赛报告、进球者历史、
+  全联盟排行榜、球员详情页、UI 直读 state、schema 升级、21-A 模型/RNG/评分公式/比分模型的任何改动。
+- 落地：[player-runtime.js](file:///workspace/src/core/player-runtime.js) `getPlayerStatsView`/`deriveAverageRating`、
+  [game-controller.js](file:///workspace/src/controller/game-controller.js) `#managedClubView`、
+  [app-view.js](file:///workspace/src/ui/app-view.js) `statsLine`、`styles/main.css`、
+  [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §29、`tests/consumption.test.js`。
+
+---
+
 ## 仍属 TBD（未受影响）
 
 - GAME_DESIGN：T1、T2、T3、T4、T5、T7–T13、T15、T16、T17

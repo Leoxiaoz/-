@@ -188,6 +188,18 @@
 - 已交付测试：`tests/performance.test.js` 11 项（单场确定性、比分/射门守恒、助攻合法性、cards 有界、rating 边界与累计、
   season/career 累计与 reset、save/load 含 schema 8→9 与旧档补 0、RNG 隔离黄金指纹、10/50/100 赛季长期）；累计 **212/212 通过** + 浏览器冒烟通过。
 
+### 2.11 已交付（2026-09-29，Step 21-B：球员表现数据消费层）
+
+- 目标：把 21-A 已持久化的球员 `season/career` 表现接入 **controller 快照 → UI**（**仅消费层，方案 A**，D-23）。
+- 已实现：`player-runtime.getPlayerStatsView`/`deriveAverageRating`（只读派生视图，安全规范化，返回新对象）；
+  `game-controller#managedClubView` 球员条目新增 `stats`；`app-view` 新增紧凑可换行的**赛季统计行**；`styles/main.css` 适配。
+- **展示**：管理球队阵容每名球员展示 `出场/进球/助攻/射门/射正/评分`（黄/红为次级）；`评分 = ratingSum/appearances/10`，
+  无出场显示 `—`（无 NaN）；`ratingSum` **不外泄**，UI 不自行计算。
+- **红线**：schema **保持 9**（无迁移）；无 match history / 逐场持久化 / 排行榜 / 球员详情页；UI 不直读 state；
+  21-A 模型 / RNG / 评分公式 / 比分 / standings / 统计产生逻辑**均未改动**。
+- 已交付测试：`tests/consumption.test.js` 10 项（season/career 读取、averageRating 与 `appearances=0`、ratingSum 不外泄、
+  `shots>=shotsOnTarget`、旧字段 normalize、快照与 runtime 无引用共享、非管理球队不展示、lineup/injury 不受影响）；累计 **222/222 通过** + 浏览器冒烟通过。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

@@ -51,6 +51,54 @@ function clamp(value, min, max, fallback) {
   return Math.min(max, Math.max(min, v));
 }
 
+/**
+ * 由 `ratingSum / appearances / 10` 派生平均评分（保留两位小数）。
+ * `appearances <= 0` 时返回 `null`（避免 NaN / Infinity）。**只读，不修改任何状态**（Step 21-B 消费层）。
+ * @param {number} ratingSum
+ * @param {number} appearances
+ * @returns {number|null}
+ */
+export function deriveAverageRating(ratingSum, appearances) {
+  const sum = Number(ratingSum);
+  const app = Number(appearances);
+  if (!Number.isFinite(sum) || !Number.isFinite(app) || app <= 0) return null;
+  return Math.round((sum / app / 10) * 100) / 100;
+}
+
+/**
+ * 只读球员统计视图（Step 21-B 消费层，供 Controller 快照使用）。
+ * - 返回 `{ season, career }`，字段全部经安全规范化（缺字段→0），旧档不产生 NaN。
+ * - **不暴露 `ratingSum`**；展示层只用派生的 `averageRating`（UI 不得自行从 ratingSum 计算）。
+ * - 返回**全新的普通对象**，与 runtime 无引用共享（UI 不能借此改写运行时）。
+ * @param {object} state
+ * @param {string} playerId
+ * @returns {{season: object, career: object}|null} 球员不存在时返回 null
+ */
+export function getPlayerStatsView(state, playerId) {
+  const rt = getPlayerRuntime(state, playerId);
+  if (!rt) return null;
+  const toView = (src) => {
+    const s = src && typeof src === 'object' ? src : {};
+    const num = (v) => {
+      const n = Math.floor(Number(v));
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    };
+    const appearances = num(s.appearances);
+    return {
+      appearances,
+      minutes: num(s.minutes),
+      goals: num(s.goals),
+      assists: num(s.assists),
+      yellow: num(s.yellow),
+      red: num(s.red),
+      shots: num(s.shots),
+      shotsOnTarget: num(s.shotsOnTarget),
+      averageRating: deriveAverageRating(num(s.ratingSum), appearances),
+    };
+  };
+  return { season: toView(rt.stats?.season), career: toView(rt.stats?.career) };
+}
+
 /** 建立一条空统计线（出场 / 分钟 / 进球 / 助攻 / 黄牌 / 红牌 / 射门 / 射正 / 评分累计）。 */
 export function createStatLine() {
   return {

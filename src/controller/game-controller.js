@@ -15,7 +15,7 @@
 
 import { createGameState, initializeClubRuntime } from '../core/game-state.js';
 import { sortTable } from '../core/standings.js';
-import { initializePlayerRuntime, getTeamPlayers, getPlayerProfile, getPlayerRuntime, INJURY_STATUS } from '../core/player-runtime.js';
+import { initializePlayerRuntime, getTeamPlayers, getPlayerProfile, getPlayerRuntime, getPlayerStatsView, INJURY_STATUS } from '../core/player-runtime.js';
 import { initializeMembership, assertMembershipValid, getClubLeague, getLeagueClubs } from '../core/membership.js';
 import { buildAutoLineup } from '../core/team-strength.js';
 import { cleanLineup, validateLineup, LINEUP_LIMITS } from '../core/player-lineup.js';
@@ -142,6 +142,8 @@ export class GameController {
         name: profile?.name ?? playerId,
         position: profile?.position ?? '?',
         injured: rt?.injury?.status === INJURY_STATUS.INJURED,
+        // Step 21-B 消费层：只读 season/career 汇总 + 派生 averageRating（经 core 规范化，UI 不自行计算）。
+        stats: getPlayerStatsView(this.state, playerId),
       };
     };
     const lineup = cleanLineup(this.state, clubId, club.lineup ?? { starters: [], bench: [] });
