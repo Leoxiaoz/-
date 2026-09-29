@@ -277,6 +277,30 @@
 
 ---
 
+## D-21 赛季日历与赛季边界（G1b①）（对应 SIMULATION_SPEC §27、SAVE_SPEC §3）
+
+- **背景（G1b①）**：赛季推进此前是**隐式**约定——"某 competition `finished` → 推进 `state.season` → 执行全局副作用"，
+  赛季"边界"没有显式概念，无法自然扩展为多竞赛/多赛季。
+- **已定规则（制定者确认）**：
+  - **派生型 SeasonCalendar**：新增叶子模块 `src/core/season.js`，`getSeasonCalendar(state)` 从**当前唯一联赛** competition
+    确定性投影出 `{ season, startDate, endDate, status }`；**只读、不改状态、不入档**。
+  - **投影规则**（单联赛）：`season = comp.season`；`startDate = comp.seasonStart`；`endDate = max(fixtures[].date)`（无有效赛程为 `null`）；
+    `status`：有赛程时 = `comp.status`（`scheduled`/`in_progress`/`finished`）；无赛程时 = `finished`（若 comp 已 finished）否则 `empty`。
+  - **边界判据**：`isSeasonBoundaryReached(state)` = `endDate !== null && currentDate >= endDate && status === 'finished'`。
+    **不用 `>`**，避免边界晚一天：最后一场比赛日当天即完成 rollover。
+  - **空联赛**：无有效 fixture ⇒ `endDate=null`、`status='empty'` ⇒ **永不 rollover**，`state.season` 不变。
+  - **rollover 编排**：`simulation.js#rollFinishedSeasons` 改为**由边界驱动**——边界到达时归档当前赛季 → 创建下一赛季 →
+    更新 `state.season` → **执行一次**全局副作用（顺序固定不变：`developPlayers → runPlayerLifecycle → repairManagedLineups → resetSeasonStats`）。
+- **兼容红线（行为等价）**：`state.season` **保留**字段名与持久化；单联赛下 `state.season ≡ competition.season ≡ calendar.season`；
+  `advanceDay` 外部顺序不变（+1 天 → `tickInjuries` → `playDueFixtures` → rollover）；`SEASON_GAP_DAYS=30`、赛程轮转、
+  fixture 日期、`deriveMatchSeed` 的 season 输入、growth/lifecycle RNG **全部不变**。
+- **存档**：`GAME_STATE_SCHEMA_VERSION` **保持 8**——SeasonCalendar 为派生视图，**不新增持久化字段**，无需迁移。
+- **明确未做（属 G1b②）**：多联赛、多 competition 并行、杯赛、淘汰赛、升降级、Competition Rules 数据化、
+  多竞赛统一赛季边界、competition type dispatch、新 schedule 类型。当前 SeasonCalendar **只处理唯一联赛**。
+- 落地：[season.js](file:///workspace/src/core/season.js)、`simulation.js`、[SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §27、`tests/season.test.js`。
+
+---
+
 ## 仍属 TBD（未受影响）
 
 - GAME_DESIGN：T1、T2、T3、T4、T5、T7–T13、T15、T16、T17

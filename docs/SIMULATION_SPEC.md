@@ -533,3 +533,35 @@
 - **测试**：`tests/involvement.test.js`（12 项）——11 starter involvement、minutes=90、非出场不写入、
   goal→actorId 与多球累计、assists/yellow/red 恒 0、position 一致、只消费 involvements、
   season/career 聚合一致、fitness/form 一致、确定性、managed lineup 不受影响、save/load continuation。
+
+---
+
+## §27 赛季日历与赛季边界（G1b①）
+
+- **模块**：[season.js](file:///workspace/src/core/season.js)（叶子模块：只读 state、无副作用、无随机、不入档）、
+  [simulation.js](file:///workspace/src/core/simulation.js) `#rollFinishedSeasons`（由边界驱动）。
+- **SeasonCalendar（派生视图）**：`getSeasonCalendar(state)` 返回
+  `{ season, startDate, endDate, status }`，**当前仅从唯一联赛 competition 投影**：
+  - `season = competition.season`；
+  - `startDate = competition.seasonStart`；
+  - `endDate = max(competition.fixtures[].date)`；无有效赛程时为 `null`；
+  - `status`：有赛程时 = `competition.status`（`scheduled`/`in_progress`/`finished`）；
+    无赛程时为 `finished`（若 comp 已 finished）否则 `empty`。
+- **边界判定**：`isSeasonBoundaryReached(state)` =
+  `endDate !== null && state.currentDate >= endDate && status === 'finished'`。
+  用 `>=`（**非 `>`**）：确保最后一场比赛日**当天**完成 rollover，与改造前同一日触发。
+- **rollover 编排**：`advanceDay` 外部顺序**不变**（`+1 天 → tickInjuries → playDueFixtures → rollover`）。
+  边界到达时：归档当前赛季（`comp.history`）→ 创建下一赛季（`startDate = currentDate + SEASON_GAP_DAYS(30)`）→
+  更新 `state.season`（= `comp.season`）→ **执行一次**全局副作用，顺序固定：
+  `developPlayers(prevSeason)` → `runPlayerLifecycle({from: prevSeason, to: nextSeason})` →
+  `repairManagedLineups(state)` → `resetSeasonStats(nextSeason)`。
+- **空联赛**：无有效赛程 ⇒ `endDate=null`、`status='empty'` ⇒ **永不 rollover**，`state.season` 不变。
+- **兼容（红线条目）**：`state.season` 字段名/持久化**保留**；单联赛下
+  `state.season ≡ competition.season ≡ getSeasonCalendar(state).season`（初始化/迁移瞬间除外）；
+  赛程轮转、`ROUND_INTERVAL_DAYS`、fixture 顺序与日期计算、`deriveMatchSeed` 的 season 输入、
+  growth/lifecycle RNG、`SEASON_GAP_DAYS` **全部不变**。
+- **存档**：`GAME_STATE_SCHEMA_VERSION` **保持 8**——SeasonCalendar 为派生视图，**不新增持久化对象**，无需迁移。
+- **明确未实现（out-of-scope，属 G1b②）**：多联赛 / 多 competition 并行、杯赛、淘汰赛、升降级、
+  Competition Rules 数据化、多竞赛统一赛季边界、competition type dispatch、新 schedule 类型。
+- **测试**：`tests/season.test.js`——SeasonCalendar 投影、边界（< / = / > / 空联赛）、单联赛行为等价（改造前基线指纹）、
+  副作用一次性与顺序、确定性、save/load（季中/边界前/边界日/新赛季后）、10/50/100 赛季长期回归。

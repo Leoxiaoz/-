@@ -10,6 +10,7 @@ import './world.test.js';
 import './core.test.js';
 import './match.test.js';
 import './involvement.test.js';
+import './season.test.js';
 import './player-runtime.test.js';
 import './growth.test.js';
 import './injury.test.js';

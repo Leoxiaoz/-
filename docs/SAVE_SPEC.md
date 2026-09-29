@@ -52,6 +52,12 @@
 > （黄/红牌聚合，当前恒为 0）；`GAME_STATE_SCHEMA_VERSION` **7→8**（加法式，向后兼容）。
 > 旧档经 `normalizeStatLine` 补齐为 0。`MatchResult.involvements` 为**运行期产物**，不进入存档。
 > 详见 `DECISIONS.md` D-20 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §26。
+>
+> **实现更新（G1b① · 赛季日历与赛季边界）**：**无存档结构变更**——SeasonCalendar 为**派生视图**
+> （由唯一联赛 competition 确定性投影，含 `{season,startDate,endDate,status}`），**不新增任何持久化字段/对象**。
+> `state.season` 字段名与持久化**保持**，单联赛下 `state.season ≡ competition.season`。
+> `GAME_STATE_SCHEMA_VERSION` **保持 8**，**无需迁移**。详见 `DECISIONS.md` D-21 与
+> [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §27。
 
 ## 0. 文档定位与边界
 

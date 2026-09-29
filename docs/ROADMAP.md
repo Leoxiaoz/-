@@ -160,6 +160,20 @@
 - **刻意未做（out-of-scope）**：换人/替补上场、临场战术、球员评分、射门/控球/传球、AI、转会、合同、财政、杯赛、多联赛、G1b。
 - 已交付测试：`tests/involvement.test.js` 12 项（含黄金路径、确定性、save/load continuation）；累计 **190/190 通过** + 浏览器冒烟通过。
 
+### 2.9 已交付（2026-09-29，G1b①：赛季日历 + 赛季边界驱动）
+
+- 目标：把"某 competition `finished` → 推进 `state.season` → 执行全局副作用"的**隐式**约定，升级为显式的
+  「SeasonCalendar + 赛季边界」模型；**单联赛下行为与改造前完全等价**（D-21）。仅改变"赛季边界的判断方式"与 rollover 编排。
+- 已实现：新增叶子模块 `src/core/season.js`（`getSeasonCalendar` / `isSeasonBoundaryReached`，派生视图、不入档、无随机）；
+  `simulation.js#rollFinishedSeasons` 改为**由边界驱动**（边界到达才归档/建新季/执行一次副作用；`advanceDay` 外部顺序不变）。
+- **兼容红线**：`state.season` 字段名与持久化保留（单联赛 `state.season ≡ comp.season ≡ calendar.season`）；
+  `SEASON_GAP_DAYS=30`、赛程轮转、fixture 日期、`deriveMatchSeed` 的 season 输入、growth/lifecycle RNG 全部不变。
+- **存档**：`GAME_STATE_SCHEMA_VERSION` **保持 8**（派生视图，不新增持久化字段，无需迁移）。
+- **刻意未做（out-of-scope，属 G1b②）**：多联赛、多 competition 并行、杯赛、淘汰赛、升降级、Competition Rules 数据化、
+  多竞赛统一赛季边界、competition type dispatch、新 schedule 类型。
+- 已交付测试：`tests/season.test.js` 11 项（SeasonCalendar 投影、边界 < / = / > / 空联赛、改造前基线指纹行为等价、
+  副作用一次性与顺序、确定性、save/load 季中/边界前/边界日/新赛季后、10/50/100 赛季长期）；累计 **201/201 通过** + 浏览器冒烟通过。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

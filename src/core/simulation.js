@@ -16,6 +16,7 @@ import { repairManagedLineups } from './player-lineup.js';
 import { simulateMatch } from './match.js';
 import { applyResult } from './standings.js';
 import { createLeagueRuntime, getClubRuntime, recordEvent } from './game-state.js';
+import { isSeasonBoundaryReached } from './season.js';
 import {
   resetSeasonStats,
   recordAppearance,
@@ -176,8 +177,14 @@ export class SimulationCore {
     }
   }
 
-  /** 赛季滚动：某联赛全部赛完则归档本季积分榜并生成下一赛季赛程（运行时，确定性）。 */
+  /**
+   * 赛季滚动（G1b①）：由**显式赛季边界**驱动（`season.js` 的派生日历）。
+   * 单联赛下：日历到达边界（最后一轮比赛日 + 全部赛完）⇒ 归档当前赛季 → 创建下一赛季 →
+   * 更新 `state.season` → 执行**一次**全局赛季副作用（顺序不变）。
+   * 行为与改造前等价（同一日触发；prevSeason/nextSeason 数值不变）。
+   */
   #rollFinishedSeasons(state) {
+    if (!isSeasonBoundaryReached(state)) return;
     const prevSeason = state.season;
     let maxSeason = state.season;
     for (const comp of Object.values(state.runtime.competitions)) {
@@ -198,7 +205,7 @@ export class SimulationCore {
       if (nextSeason > maxSeason) maxSeason = nextSeason;
     }
     state.season = maxSeason;
-    // 赛季推进顺序（第 15/16/19 步）：
+    // 赛季推进顺序（第 15/16/19 步；顺序不可交换）：
     //   1) 结算上一赛季成长 → 2) 退役+归档 → 3) 计算缺口并生成属于下一赛季的新生代
     //   → 4) 修复玩家阵容 → 5) 重置本赛季统计 → 进入下一赛季。
     if (maxSeason > prevSeason) {
