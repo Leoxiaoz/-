@@ -78,6 +78,17 @@
 - 验收：单赛季内核心系统闭环；存档跨版本仍可读写。
 - `[TBD]` R2：四个核心（比赛/成长/转会/世界）在本阶段的完成度目标。
 
+### 2.1 已交付（2026-09-29，第 15 步：球员运行时状态）
+
+- 目标：在静态球员库之上建立**独立的 Player Runtime State**，为后续成长/伤病/合同/转会/战术**预留接口**。
+- 已实现：`src/core/player-runtime.js`——创建/读取/修改接口；`getEffectiveAttributes`（完整属性向量，非单一总评）；
+  `recordAppearance`（本赛季+职业生涯统计）、`setVitals`、`applyInjury/recoverInjury`、`applyAbilityDelta`、
+  `resetSeasonStats`；`createGameState` 为全部球员建状态；赛季滚动重置本赛季统计；读档自动补齐（保留已有值）。
+- **刻意未做**：成长算法、伤病生成/恢复算法、体能/状态/士气更新模型（均属 `[TBD]`，S2–S11/S13）。
+- 已交付测试：`tests/player-runtime.test.js` 19 项（创建/读取/修改/存读往返/静态库冻结不变/向后兼容）。
+  累计 **65/65 通过**。
+- `[TBD]` 字段级口径（D-13 暂定）待制定者确认；`GAME_STATE_SCHEMA_VERSION` 1→2（加法式，向后兼容）。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

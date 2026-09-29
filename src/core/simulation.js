@@ -15,6 +15,7 @@ import { computeTeamStrength } from './team-strength.js';
 import { simulateMatch } from './match.js';
 import { applyResult } from './standings.js';
 import { createLeagueRuntime, getClubRuntime, recordEvent } from './game-state.js';
+import { resetSeasonStats } from './player-runtime.js';
 import { SCHEDULE_CONFIG } from './sim-config.js';
 
 export class SimulationCore {
@@ -116,6 +117,7 @@ export class SimulationCore {
 
   /** 赛季滚动：某联赛全部赛完则归档本季积分榜并生成下一赛季赛程（运行时，确定性）。 */
   #rollFinishedSeasons(state) {
+    const prevSeason = state.season;
     let maxSeason = state.season;
     for (const comp of Object.values(state.runtime.competitions)) {
       if (comp.status !== 'finished') continue;
@@ -135,5 +137,7 @@ export class SimulationCore {
       if (nextSeason > maxSeason) maxSeason = nextSeason;
     }
     state.season = maxSeason;
+    // 赛季推进时重置「本赛季统计」（职业生涯统计已增量累加，不受影响；第 15 步）。
+    if (maxSeason > prevSeason) resetSeasonStats(state, maxSeason);
   }
 }

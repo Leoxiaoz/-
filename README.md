@@ -11,11 +11,12 @@
 - 四维球队实力 + 时段制单场模拟（6 时段、可控种子、可复现）
 - 积分榜、单赛季推进、赛季滚动（归档上赛季最终排名）
 - 比分分布校准护栏（大样本确定性：场均总进球 ≈2.79，处于现实区间）
+- 球员运行时状态（能力增减/体能/状态/士气/伤病/出场与生涯统计；静态库只读、以 playerId 关联）
 - 存档（IndexedDB 主介质）与读取（引用 + 增量、版本向后兼容）
 - 极简移动端 UI：积分榜 / 上赛季排名 / 最近赛果 / 推进 / 存读
 
 ```bash
-npm test      # 46 项测试（Node，零依赖）
+npm test      # 65 项测试（Node，零依赖）
 npm run serve # 启动本地服务，浏览器打开 index.html
 ```
 
@@ -23,7 +24,7 @@ npm run serve # 启动本地服务，浏览器打开 index.html
 
 ```
 src/
-  core/        # Simulation Core：rng / date-utils / schedule / team-strength / match / standings / game-state / simulation
+  core/        # Simulation Core：rng / date-utils / schedule / team-strength / match / standings / player-runtime / game-state / simulation
   data/        # Data Layer：.fdb 加载与校验
   save/        # Save Layer：serialize/deserialize + IndexedDB / localStorage / 内存实现
   controller/  # Game Controller：UI 与核心的唯一协调者

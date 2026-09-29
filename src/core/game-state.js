@@ -11,10 +11,15 @@
 import { SimulationError } from '../shared/errors.js';
 import { generateDoubleRoundRobin } from './schedule.js';
 import { createTable } from './standings.js';
+import { createPlayerRuntime } from './player-runtime.js';
 import { DEFAULT_FORMATION, SCHEDULE_CONFIG } from './sim-config.js';
 
-/** 运行时状态结构的版本号（与存档格式、数据库格式相互独立）。 */
-export const GAME_STATE_SCHEMA_VERSION = 1;
+/**
+ * 运行时状态结构的版本号（与存档格式、数据库格式相互独立）。
+ * v2（第 15 步）：`runtime.players` 由占位改为**已定义的球员运行时状态**结构
+ * （player-runtime.js）。属**加法式**变更，旧档经 `initializePlayerRuntime` 自动补齐，非破坏性。
+ */
+export const GAME_STATE_SCHEMA_VERSION = 2;
 
 /**
  * 基于已加载的静态世界，创建一个最小运行时状态。
@@ -40,7 +45,7 @@ export function createGameState(world, options = {}) {
     runtime: {
       // 仅保存相对数据库的增量
       clubs: {},        // clubId -> 运行时俱乐部状态（战术等；财政/成长属未来阶段）
-      players: {},      // playerId -> 运行时球员状态（能力/状态/伤病等，未来阶段）
+      players: {},      // playerId -> 球员运行时状态（第 15 步，见 player-runtime.js）
       competitions: {}, // competitionId -> { 赛程/结果/积分 }（决策 A1：结果与赛程归存档）
       events: [],       // 世界事件/日志（最小占位，非新闻系统）
     },
@@ -54,6 +59,11 @@ export function createGameState(world, options = {}) {
         mentality: team.mentality ?? 'balanced',
       },
     };
+  }
+
+  // 初始化球员运行时状态（只建增量结构，不复制静态属性；第 15 步）。
+  for (const player of world.players) {
+    state.runtime.players[player.id] = createPlayerRuntime(player.id, { seasonNumber: season });
   }
 
   // 初始化各联赛赛程与积分（决策 A1：赛程由规则生成、结果归运行时）。

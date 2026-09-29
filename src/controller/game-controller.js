@@ -15,6 +15,7 @@
 
 import { createGameState } from '../core/game-state.js';
 import { sortTable } from '../core/standings.js';
+import { initializePlayerRuntime } from '../core/player-runtime.js';
 import { AppError } from '../shared/errors.js';
 
 export class GameController {
@@ -170,6 +171,8 @@ export class GameController {
       season: payload.season,
     });
     this.state.runtime = payload.runtime ?? this.state.runtime;
+    // 补齐/兼容球员运行时状态：保留旧档已有值，仅补缺失字段（第 15 步；不覆盖静态库）。
+    initializePlayerRuntime(this.state);
     this.logger?.info?.(`已读取存档槽 ${slot}`);
     this.#emit();
     return this.state;

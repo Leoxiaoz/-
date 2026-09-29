@@ -48,6 +48,24 @@ export const SCHEDULE_CONFIG = Object.freeze({
   SEASON_GAP_DAYS: 30,
 });
 
+/**
+ * 球员运行时状态参数（第 15 步）。
+ * 说明：此处仅为**数据结构默认值与合法量程**（非模型系数）；成长 / 伤病 / 恢复等算法
+ * 仍属 `[TBD]`（SIMULATION_SPEC §7–§9、§13–§15），待制定者决策后再接入。
+ */
+export const PLAYER_RUNTIME_CONFIG = Object.freeze({
+  /** 体能 / 状态 / 士气量程（0–100，与属性 1–99 为不同量表）。 */
+  VITALS: Object.freeze({
+    MIN: 0,
+    MAX: 100,
+    INITIAL_FITNESS: 100,
+    INITIAL_FORM: 50,
+    INITIAL_MORALE: 50,
+  }),
+  /** 单场比赛分钟上限（用于出场统计校验）。 */
+  MAX_MINUTES_PER_MATCH: 120,
+});
+
 /** 积分规则。 */
 export const TABLE_CONFIG = Object.freeze({
   WIN: 3,
