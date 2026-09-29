@@ -30,3 +30,23 @@ export function compareDates(a, b) {
   if (a === b) return 0;
   return a < b ? -1 : 1;
 }
+
+/**
+ * 计算某人在给定日期时的**周岁**年龄（UTC，确定性）。
+ * 年龄不入存档，始终由静态 birthDate 与运行时 currentDate 派生，避免漂移（第 16 步）。
+ * @param {string} birthDate YYYY-MM-DD
+ * @param {string} onDate YYYY-MM-DD
+ * @returns {number} 周岁（未满生日则减 1）
+ */
+export function ageOn(birthDate, onDate) {
+  const [by, bm, bd] = String(birthDate).split('-').map(Number);
+  const [oy, om, od] = String(onDate).split('-').map(Number);
+  if (!by || !bm || !bd || !oy || !om || !od) {
+    throw new SimulationError('年龄计算需要合法日期（YYYY-MM-DD）', {
+      context: { birthDate, onDate },
+    });
+  }
+  let age = oy - by;
+  if (om < bm || (om === bm && od < bd)) age -= 1;
+  return age;
+}

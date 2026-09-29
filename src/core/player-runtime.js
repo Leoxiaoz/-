@@ -99,6 +99,8 @@ export function createPlayerRuntime(playerId, options = {}) {
       season: createStatLine(),
       career: createStatLine(),
     },
+    // 成长结算元数据（第 16 步）：上次结算赛季 + 长期伤病导致的成长放缓剩余赛季数。
+    growth: { lastEvaluatedSeason: 0, injuryPenaltySeasons: 0 },
   };
 }
 
@@ -122,6 +124,10 @@ function normalizePlayerRuntime(existing, playerId, seasonNumber) {
         : base.stats.seasonNumber,
       season: normalizeStatLine(existing.stats?.season),
       career: normalizeStatLine(existing.stats?.career),
+    },
+    growth: {
+      lastEvaluatedSeason: Math.max(0, Math.floor(Number(existing.growth?.lastEvaluatedSeason) || 0)),
+      injuryPenaltySeasons: Math.max(0, Math.floor(Number(existing.growth?.injuryPenaltySeasons) || 0)),
     },
   };
 }
@@ -173,7 +179,8 @@ function requirePlayerRuntime(state, playerId) {
 }
 
 /**
- * 读取球员的**有效属性**（只读派生值）= 静态基础属性 + 运行时增减，夹取到合法范围。
+ * 读取球员的**有效属性**（只读派生值）= 静态基础属性 + 运行时增减，
+ * 夹取到 `[1, min(99, 该属性潜力上限)]`（第 16 步：潜力为每属性上限，A2）。
  * 刻意返回**完整属性向量**而非"总体评分"（项目规则第 14 条）。
  * 不修改任何输入。
  * @returns {Record<string, number>|null} 静态球员不存在时返回 null
@@ -183,13 +190,18 @@ export function getEffectiveAttributes(state, playerId) {
   if (!player) return null;
   const rt = getPlayerRuntime(state, playerId);
   const deltas = rt?.ability?.deltas ?? {};
+  const potential = player.potential ?? {};
   const out = {};
   for (const attr of PLAYER_ATTRIBUTES) {
     const baseValue = Number(player[attr]);
     const base = Number.isFinite(baseValue) ? baseValue : ATTRIBUTE_DEFAULT;
     const delta = Number(deltas[attr]);
     const value = base + (Number.isFinite(delta) ? delta : 0);
-    out[attr] = clamp(value, ATTRIBUTE_RANGE.MIN, ATTRIBUTE_RANGE.MAX, base);
+    const pot = Number(potential[attr]);
+    const cap = Number.isFinite(pot)
+      ? Math.min(ATTRIBUTE_RANGE.MAX, pot)
+      : ATTRIBUTE_RANGE.MAX;
+    out[attr] = clamp(value, ATTRIBUTE_RANGE.MIN, cap, base);
   }
   return out;
 }

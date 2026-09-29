@@ -16,10 +16,11 @@ import { DEFAULT_FORMATION, SCHEDULE_CONFIG } from './sim-config.js';
 
 /**
  * 运行时状态结构的版本号（与存档格式、数据库格式相互独立）。
- * v2（第 15 步）：`runtime.players` 由占位改为**已定义的球员运行时状态**结构
- * （player-runtime.js）。属**加法式**变更，旧档经 `initializePlayerRuntime` 自动补齐，非破坏性。
+ * v2（第 15 步）：`runtime.players` 由占位改为**已定义的球员运行时状态**结构（player-runtime.js）。
+ * v3（第 16 步）：球员运行时新增 `growth`（成长结算元数据）。均为**加法式**变更，
+ * 旧档经 `initializePlayerRuntime` 自动补齐，非破坏性。
  */
-export const GAME_STATE_SCHEMA_VERSION = 2;
+export const GAME_STATE_SCHEMA_VERSION = 3;
 
 /**
  * 基于已加载的静态世界，创建一个最小运行时状态。

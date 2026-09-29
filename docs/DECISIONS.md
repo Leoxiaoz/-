@@ -117,6 +117,26 @@
 
 ---
 
+## D-14 球员成长 / 衰退系统（对应 DATABASE_SPEC §2/§4、SIMULATION_SPEC §2/§12/§20、SAVE_SPEC §3）
+
+- **制定者已确认规则**（第 16 步）：
+  - **A1** 静态库新增 `birthDate` / `potential` / `personality`；**A2** 潜力为**每属性上限**（非单一总评）；**A3** 正式库不得用默认年龄替代，测试库已补齐。
+  - **B1** 本期不实现训练本体，仅**预留训练修正接口**（默认 1.0）；**B2** 出场影响成长（年轻更明显、有上限）；**B3** form/morale 温和影响；**B4** 人格字段 `professionalism/determination/ambition/consistency/injuryProneness`（静态）；**B5** 属性分组年龄曲线（身体早熟早衰、技术持久、门将晚熟）；**B6** 约 28/29 岁起衰退、身体优先；**B7** 严重长期伤病主要**降低后续成长速度**，不直接大幅降潜力。
+  - **C1** 按**赛季**结算；**C2** 确定性种子 + **有界**随机；**C3** 允许少量超预期成长但**不突破潜力上限**。
+  - **D1** 长期不得全世界属性均值持续膨胀；**D2** 至少覆盖 10/50/100 赛季。
+- **落地的暂定默认参数**（`src/core/sim-config.js` `PLAYER_GROWTH_CONFIG`，可后续统一调参）：
+  分组巅峰 `pace 27 / technical 30 / goalkeeping 32`；成长速率按年龄 0.25/0.15/0.06（吸收潜力余量）；
+  衰退速率 `0.7/0.4/0.3`；出场加成上限 0.2（1800 分钟、21→27 岁窗口）；士气/状态 ±0.1；
+  人格修正 0.1/0.05/0.05；随机幅度 0.15；超预期 5% × +2；长期伤病阈值 90 天、成长 ×0.85 一季。
+- **模型**：成长以「距每属性潜力上限的余量 × 年龄速率 × 修正 × 有界随机」驱动（自然收益递减、绝不越上限）；
+  过巅峰后按年龄线性衰退。**只写 `runtime.players[].ability.deltas`**，静态库只读（A3/规则第 6 条）。
+- **运行时新增字段**：`players[].growth = { lastEvaluatedSeason, injuryPenaltySeasons }`；`GAME_STATE_SCHEMA_VERSION` 2→3（加法式，向后兼容）。
+- **确定性**：种子 = `hash(worldId, playerId, season)`；同一赛季**幂等**。
+- **接线**：`simulation.js` 赛季滚动时先 `developPlayers`（用该季统计与年龄）再 `resetSeasonStats`。
+- 落地：[player-growth.js](file:///workspace/src/core/player-growth.js)、`tests/growth.test.js`、[SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §20。
+
+---
+
 ## 仍属 TBD（未受影响）
 
 - GAME_DESIGN：T1、T2、T3、T4、T5、T7–T13、T15、T16、T17

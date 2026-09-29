@@ -28,3 +28,22 @@ export const ATTRIBUTE_DEFAULT = 50;
 
 /** 攻守倾向枚举。 */
 export const MENTALITIES = Object.freeze(['defensive', 'balanced', 'attacking']);
+
+/**
+ * 球员人格维度（静态，初始值；DECISIONS D-14 / 第 16 步 B4）。
+ * 作用：professionalism/determination/ambition 影响成长与衰退；consistency 影响波动；
+ * injuryProneness 供未来伤病系统使用（本期仅存储）。
+ */
+export const PLAYER_PERSONALITY_KEYS = Object.freeze([
+  'professionalism',
+  'determination',
+  'ambition',
+  'consistency',
+  'injuryProneness',
+]);
+
+/** 人格取值量程（与属性同量程 1–99）。 */
+export const PERSONALITY_RANGE = Object.freeze({ MIN: 1, MAX: 99 });
+
+/** 出生日期合法年份区间（用于加载校验；仅为合理性护栏，不含真实数据）。 */
+export const BIRTH_YEAR_RANGE = Object.freeze({ MIN: 1900, MAX: 2100 });

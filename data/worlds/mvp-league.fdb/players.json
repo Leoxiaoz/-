@@ -9,7 +9,23 @@
     "passing": 68,
     "defending": 74,
     "finishing": 15,
-    "goalkeeping": 76
+    "goalkeeping": 76,
+    "birthDate": "1999-06-12",
+    "potential": {
+      "pace": 36,
+      "technique": 73,
+      "passing": 71,
+      "defending": 76,
+      "finishing": 20,
+      "goalkeeping": 81
+    },
+    "personality": {
+      "professionalism": 63,
+      "determination": 55,
+      "ambition": 40,
+      "consistency": 74,
+      "injuryProneness": 70
+    }
   },
   {
     "id": "ply_p002",
@@ -21,7 +37,23 @@
     "passing": 73,
     "defending": 70,
     "finishing": 66,
-    "goalkeeping": 11
+    "goalkeeping": 11,
+    "birthDate": "2009-06-15",
+    "potential": {
+      "pace": 84,
+      "technique": 97,
+      "passing": 83,
+      "defending": 80,
+      "finishing": 83,
+      "goalkeeping": 21
+    },
+    "personality": {
+      "professionalism": 72,
+      "determination": 41,
+      "ambition": 55,
+      "consistency": 95,
+      "injuryProneness": 83
+    }
   },
   {
     "id": "ply_p003",
@@ -33,7 +65,23 @@
     "passing": 84,
     "defending": 75,
     "finishing": 59,
-    "goalkeeping": 16
+    "goalkeeping": 16,
+    "birthDate": "1997-05-16",
+    "potential": {
+      "pace": 88,
+      "technique": 88,
+      "passing": 85,
+      "defending": 76,
+      "finishing": 60,
+      "goalkeeping": 17
+    },
+    "personality": {
+      "professionalism": 48,
+      "determination": 70,
+      "ambition": 40,
+      "consistency": 80,
+      "injuryProneness": 41
+    }
   },
   {
     "id": "ply_p004",
@@ -45,7 +93,23 @@
     "passing": 76,
     "defending": 74,
     "finishing": 50,
-    "goalkeeping": 9
+    "goalkeeping": 9,
+    "birthDate": "2000-02-09",
+    "potential": {
+      "pace": 79,
+      "technique": 68,
+      "passing": 79,
+      "defending": 77,
+      "finishing": 56,
+      "goalkeeping": 15
+    },
+    "personality": {
+      "professionalism": 90,
+      "determination": 92,
+      "ambition": 60,
+      "consistency": 60,
+      "injuryProneness": 47
+    }
   },
   {
     "id": "ply_p005",
@@ -57,7 +121,23 @@
     "passing": 70,
     "defending": 66,
     "finishing": 68,
-    "goalkeeping": 19
+    "goalkeeping": 19,
+    "birthDate": "1993-06-23",
+    "potential": {
+      "pace": 74,
+      "technique": 68,
+      "passing": 71,
+      "defending": 68,
+      "finishing": 69,
+      "goalkeeping": 20
+    },
+    "personality": {
+      "professionalism": 54,
+      "determination": 42,
+      "ambition": 74,
+      "consistency": 56,
+      "injuryProneness": 72
+    }
   },
   {
     "id": "ply_p006",
@@ -69,7 +149,23 @@
     "passing": 71,
     "defending": 80,
     "finishing": 70,
-    "goalkeeping": 6
+    "goalkeeping": 6,
+    "birthDate": "2004-02-23",
+    "potential": {
+      "pace": 87,
+      "technique": 78,
+      "passing": 82,
+      "defending": 86,
+      "finishing": 74,
+      "goalkeeping": 17
+    },
+    "personality": {
+      "professionalism": 73,
+      "determination": 88,
+      "ambition": 68,
+      "consistency": 75,
+      "injuryProneness": 71
+    }
   },
   {
     "id": "ply_p007",
@@ -81,7 +177,23 @@
     "passing": 77,
     "defending": 78,
     "finishing": 65,
-    "goalkeeping": 25
+    "goalkeeping": 25,
+    "birthDate": "2005-01-26",
+    "potential": {
+      "pace": 79,
+      "technique": 77,
+      "passing": 81,
+      "defending": 86,
+      "finishing": 74,
+      "goalkeeping": 34
+    },
+    "personality": {
+      "professionalism": 40,
+      "determination": 45,
+      "ambition": 64,
+      "consistency": 71,
+      "injuryProneness": 80
+    }
   },
   {
     "id": "ply_p008",
@@ -93,7 +205,23 @@
     "passing": 63,
     "defending": 69,
     "finishing": 72,
-    "goalkeeping": 16
+    "goalkeeping": 16,
+    "birthDate": "2004-06-11",
+    "potential": {
+      "pace": 76,
+      "technique": 72,
+      "passing": 71,
+      "defending": 80,
+      "finishing": 80,
+      "goalkeeping": 25
+    },
+    "personality": {
+      "professionalism": 84,
+      "determination": 43,
+      "ambition": 87,
+      "consistency": 76,
+      "injuryProneness": 89
+    }
   },
   {
     "id": "ply_p009",
@@ -105,7 +233,23 @@
     "passing": 63,
     "defending": 71,
     "finishing": 76,
-    "goalkeeping": 15
+    "goalkeeping": 15,
+    "birthDate": "2008-05-27",
+    "potential": {
+      "pace": 87,
+      "technique": 81,
+      "passing": 73,
+      "defending": 77,
+      "finishing": 94,
+      "goalkeeping": 29
+    },
+    "personality": {
+      "professionalism": 85,
+      "determination": 43,
+      "ambition": 89,
+      "consistency": 89,
+      "injuryProneness": 79
+    }
   },
   {
     "id": "ply_p010",
@@ -117,7 +261,23 @@
     "passing": 77,
     "defending": 80,
     "finishing": 72,
-    "goalkeeping": 11
+    "goalkeeping": 11,
+    "birthDate": "1992-06-23",
+    "potential": {
+      "pace": 69,
+      "technique": 81,
+      "passing": 79,
+      "defending": 81,
+      "finishing": 73,
+      "goalkeeping": 12
+    },
+    "personality": {
+      "professionalism": 89,
+      "determination": 60,
+      "ambition": 87,
+      "consistency": 82,
+      "injuryProneness": 69
+    }
   },
   {
     "id": "ply_p011",
@@ -129,7 +289,23 @@
     "passing": 66,
     "defending": 77,
     "finishing": 78,
-    "goalkeeping": 9
+    "goalkeeping": 9,
+    "birthDate": "1997-01-23",
+    "potential": {
+      "pace": 73,
+      "technique": 75,
+      "passing": 68,
+      "defending": 78,
+      "finishing": 79,
+      "goalkeeping": 10
+    },
+    "personality": {
+      "professionalism": 65,
+      "determination": 94,
+      "ambition": 90,
+      "consistency": 91,
+      "injuryProneness": 89
+    }
   },
   {
     "id": "ply_p012",
@@ -141,7 +317,23 @@
     "passing": 80,
     "defending": 55,
     "finishing": 79,
-    "goalkeeping": 14
+    "goalkeeping": 14,
+    "birthDate": "1999-01-10",
+    "potential": {
+      "pace": 74,
+      "technique": 82,
+      "passing": 83,
+      "defending": 58,
+      "finishing": 83,
+      "goalkeeping": 20
+    },
+    "personality": {
+      "professionalism": 89,
+      "determination": 95,
+      "ambition": 82,
+      "consistency": 85,
+      "injuryProneness": 54
+    }
   },
   {
     "id": "ply_p013",
@@ -153,7 +345,23 @@
     "passing": 77,
     "defending": 59,
     "finishing": 75,
-    "goalkeeping": 6
+    "goalkeeping": 6,
+    "birthDate": "2008-01-18",
+    "potential": {
+      "pace": 86,
+      "technique": 85,
+      "passing": 91,
+      "defending": 69,
+      "finishing": 88,
+      "goalkeeping": 18
+    },
+    "personality": {
+      "professionalism": 42,
+      "determination": 57,
+      "ambition": 53,
+      "consistency": 87,
+      "injuryProneness": 82
+    }
   },
   {
     "id": "ply_p014",
@@ -165,7 +373,23 @@
     "passing": 81,
     "defending": 61,
     "finishing": 84,
-    "goalkeeping": 8
+    "goalkeeping": 8,
+    "birthDate": "1993-03-08",
+    "potential": {
+      "pace": 72,
+      "technique": 83,
+      "passing": 83,
+      "defending": 63,
+      "finishing": 85,
+      "goalkeeping": 9
+    },
+    "personality": {
+      "professionalism": 51,
+      "determination": 43,
+      "ambition": 71,
+      "consistency": 52,
+      "injuryProneness": 68
+    }
   },
   {
     "id": "ply_p015",
@@ -177,7 +401,23 @@
     "passing": 68,
     "defending": 74,
     "finishing": 9,
-    "goalkeeping": 67
+    "goalkeeping": 67,
+    "birthDate": "2004-03-03",
+    "potential": {
+      "pace": 55,
+      "technique": 77,
+      "passing": 77,
+      "defending": 78,
+      "finishing": 19,
+      "goalkeeping": 75
+    },
+    "personality": {
+      "professionalism": 48,
+      "determination": 53,
+      "ambition": 48,
+      "consistency": 87,
+      "injuryProneness": 68
+    }
   },
   {
     "id": "ply_p016",
@@ -189,7 +429,23 @@
     "passing": 81,
     "defending": 76,
     "finishing": 57,
-    "goalkeeping": 15
+    "goalkeeping": 15,
+    "birthDate": "2006-04-06",
+    "potential": {
+      "pace": 93,
+      "technique": 99,
+      "passing": 91,
+      "defending": 89,
+      "finishing": 75,
+      "goalkeeping": 21
+    },
+    "personality": {
+      "professionalism": 61,
+      "determination": 45,
+      "ambition": 72,
+      "consistency": 46,
+      "injuryProneness": 75
+    }
   },
   {
     "id": "ply_p017",
@@ -201,7 +457,23 @@
     "passing": 70,
     "defending": 85,
     "finishing": 73,
-    "goalkeeping": 19
+    "goalkeeping": 19,
+    "birthDate": "1998-04-12",
+    "potential": {
+      "pace": 78,
+      "technique": 75,
+      "passing": 76,
+      "defending": 88,
+      "finishing": 75,
+      "goalkeeping": 22
+    },
+    "personality": {
+      "professionalism": 57,
+      "determination": 87,
+      "ambition": 49,
+      "consistency": 52,
+      "injuryProneness": 83
+    }
   },
   {
     "id": "ply_p018",
@@ -213,7 +485,23 @@
     "passing": 73,
     "defending": 65,
     "finishing": 59,
-    "goalkeeping": 11
+    "goalkeeping": 11,
+    "birthDate": "2008-02-05",
+    "potential": {
+      "pace": 96,
+      "technique": 89,
+      "passing": 82,
+      "defending": 76,
+      "finishing": 75,
+      "goalkeeping": 27
+    },
+    "personality": {
+      "professionalism": 51,
+      "determination": 79,
+      "ambition": 58,
+      "consistency": 88,
+      "injuryProneness": 92
+    }
   },
   {
     "id": "ply_p019",
@@ -225,7 +513,23 @@
     "passing": 61,
     "defending": 64,
     "finishing": 53,
-    "goalkeeping": 7
+    "goalkeeping": 7,
+    "birthDate": "2008-03-02",
+    "potential": {
+      "pace": 73,
+      "technique": 72,
+      "passing": 78,
+      "defending": 80,
+      "finishing": 70,
+      "goalkeeping": 25
+    },
+    "personality": {
+      "professionalism": 86,
+      "determination": 91,
+      "ambition": 58,
+      "consistency": 53,
+      "injuryProneness": 55
+    }
   },
   {
     "id": "ply_p020",
@@ -237,7 +541,23 @@
     "passing": 67,
     "defending": 82,
     "finishing": 55,
-    "goalkeeping": 7
+    "goalkeeping": 7,
+    "birthDate": "2009-05-16",
+    "potential": {
+      "pace": 90,
+      "technique": 88,
+      "passing": 79,
+      "defending": 91,
+      "finishing": 64,
+      "goalkeeping": 21
+    },
+    "personality": {
+      "professionalism": 64,
+      "determination": 58,
+      "ambition": 40,
+      "consistency": 45,
+      "injuryProneness": 72
+    }
   },
   {
     "id": "ply_p021",
@@ -249,7 +569,23 @@
     "passing": 76,
     "defending": 75,
     "finishing": 76,
-    "goalkeeping": 12
+    "goalkeeping": 12,
+    "birthDate": "1998-05-25",
+    "potential": {
+      "pace": 82,
+      "technique": 80,
+      "passing": 80,
+      "defending": 78,
+      "finishing": 82,
+      "goalkeeping": 16
+    },
+    "personality": {
+      "professionalism": 45,
+      "determination": 57,
+      "ambition": 85,
+      "consistency": 78,
+      "injuryProneness": 60
+    }
   },
   {
     "id": "ply_p022",
@@ -261,7 +597,23 @@
     "passing": 68,
     "defending": 64,
     "finishing": 76,
-    "goalkeeping": 11
+    "goalkeeping": 11,
+    "birthDate": "2003-01-19",
+    "potential": {
+      "pace": 82,
+      "technique": 84,
+      "passing": 78,
+      "defending": 74,
+      "finishing": 82,
+      "goalkeeping": 18
+    },
+    "personality": {
+      "professionalism": 77,
+      "determination": 51,
+      "ambition": 44,
+      "consistency": 53,
+      "injuryProneness": 77
+    }
   },
   {
     "id": "ply_p023",
@@ -273,7 +625,23 @@
     "passing": 76,
     "defending": 80,
     "finishing": 87,
-    "goalkeeping": 19
+    "goalkeeping": 19,
+    "birthDate": "1992-03-02",
+    "potential": {
+      "pace": 73,
+      "technique": 71,
+      "passing": 77,
+      "defending": 81,
+      "finishing": 89,
+      "goalkeeping": 20
+    },
+    "personality": {
+      "professionalism": 72,
+      "determination": 81,
+      "ambition": 64,
+      "consistency": 91,
+      "injuryProneness": 88
+    }
   },
   {
     "id": "ply_p024",
@@ -285,7 +653,23 @@
     "passing": 67,
     "defending": 61,
     "finishing": 73,
-    "goalkeeping": 19
+    "goalkeeping": 19,
+    "birthDate": "2006-01-25",
+    "potential": {
+      "pace": 67,
+      "technique": 82,
+      "passing": 80,
+      "defending": 70,
+      "finishing": 84,
+      "goalkeeping": 26
+    },
+    "personality": {
+      "professionalism": 45,
+      "determination": 82,
+      "ambition": 94,
+      "consistency": 79,
+      "injuryProneness": 85
+    }
   },
   {
     "id": "ply_p025",
@@ -297,7 +681,23 @@
     "passing": 76,
     "defending": 69,
     "finishing": 80,
-    "goalkeeping": 18
+    "goalkeeping": 18,
+    "birthDate": "2003-05-01",
+    "potential": {
+      "pace": 88,
+      "technique": 85,
+      "passing": 83,
+      "defending": 80,
+      "finishing": 86,
+      "goalkeeping": 28
+    },
+    "personality": {
+      "professionalism": 62,
+      "determination": 71,
+      "ambition": 46,
+      "consistency": 51,
+      "injuryProneness": 84
+    }
   },
   {
     "id": "ply_p026",
@@ -309,7 +709,23 @@
     "passing": 69,
     "defending": 61,
     "finishing": 72,
-    "goalkeeping": 8
+    "goalkeeping": 8,
+    "birthDate": "2002-06-24",
+    "potential": {
+      "pace": 71,
+      "technique": 73,
+      "passing": 79,
+      "defending": 71,
+      "finishing": 76,
+      "goalkeeping": 12
+    },
+    "personality": {
+      "professionalism": 49,
+      "determination": 60,
+      "ambition": 43,
+      "consistency": 60,
+      "injuryProneness": 63
+    }
   },
   {
     "id": "ply_p027",
@@ -321,7 +737,23 @@
     "passing": 60,
     "defending": 50,
     "finishing": 72,
-    "goalkeeping": 8
+    "goalkeeping": 8,
+    "birthDate": "2000-02-06",
+    "potential": {
+      "pace": 62,
+      "technique": 70,
+      "passing": 66,
+      "defending": 52,
+      "finishing": 77,
+      "goalkeeping": 11
+    },
+    "personality": {
+      "professionalism": 69,
+      "determination": 80,
+      "ambition": 65,
+      "consistency": 62,
+      "injuryProneness": 77
+    }
   },
   {
     "id": "ply_p028",
@@ -333,7 +765,23 @@
     "passing": 76,
     "defending": 63,
     "finishing": 69,
-    "goalkeeping": 16
+    "goalkeeping": 16,
+    "birthDate": "1998-04-27",
+    "potential": {
+      "pace": 80,
+      "technique": 74,
+      "passing": 79,
+      "defending": 68,
+      "finishing": 72,
+      "goalkeeping": 21
+    },
+    "personality": {
+      "professionalism": 40,
+      "determination": 93,
+      "ambition": 42,
+      "consistency": 93,
+      "injuryProneness": 41
+    }
   },
   {
     "id": "ply_p029",
@@ -345,7 +793,23 @@
     "passing": 59,
     "defending": 61,
     "finishing": 17,
-    "goalkeeping": 67
+    "goalkeeping": 67,
+    "birthDate": "1991-05-17",
+    "potential": {
+      "pace": 55,
+      "technique": 67,
+      "passing": 61,
+      "defending": 62,
+      "finishing": 18,
+      "goalkeeping": 68
+    },
+    "personality": {
+      "professionalism": 43,
+      "determination": 67,
+      "ambition": 80,
+      "consistency": 95,
+      "injuryProneness": 47
+    }
   },
   {
     "id": "ply_p030",
@@ -357,7 +821,23 @@
     "passing": 61,
     "defending": 57,
     "finishing": 53,
-    "goalkeeping": 15
+    "goalkeeping": 15,
+    "birthDate": "1992-05-26",
+    "potential": {
+      "pace": 53,
+      "technique": 54,
+      "passing": 62,
+      "defending": 58,
+      "finishing": 54,
+      "goalkeeping": 16
+    },
+    "personality": {
+      "professionalism": 66,
+      "determination": 82,
+      "ambition": 92,
+      "consistency": 83,
+      "injuryProneness": 78
+    }
   },
   {
     "id": "ply_p031",
@@ -369,7 +849,23 @@
     "passing": 68,
     "defending": 55,
     "finishing": 59,
-    "goalkeeping": 19
+    "goalkeeping": 19,
+    "birthDate": "2003-06-26",
+    "potential": {
+      "pace": 73,
+      "technique": 69,
+      "passing": 76,
+      "defending": 64,
+      "finishing": 66,
+      "goalkeeping": 23
+    },
+    "personality": {
+      "professionalism": 57,
+      "determination": 79,
+      "ambition": 66,
+      "consistency": 85,
+      "injuryProneness": 50
+    }
   },
   {
     "id": "ply_p032",
@@ -381,7 +877,23 @@
     "passing": 56,
     "defending": 58,
     "finishing": 49,
-    "goalkeeping": 7
+    "goalkeeping": 7,
+    "birthDate": "2003-01-22",
+    "potential": {
+      "pace": 66,
+      "technique": 70,
+      "passing": 63,
+      "defending": 66,
+      "finishing": 54,
+      "goalkeeping": 15
+    },
+    "personality": {
+      "professionalism": 78,
+      "determination": 65,
+      "ambition": 95,
+      "consistency": 85,
+      "injuryProneness": 44
+    }
   },
   {
     "id": "ply_p033",
@@ -393,7 +905,23 @@
     "passing": 75,
     "defending": 73,
     "finishing": 68,
-    "goalkeeping": 10
+    "goalkeeping": 10,
+    "birthDate": "2000-03-25",
+    "potential": {
+      "pace": 77,
+      "technique": 74,
+      "passing": 79,
+      "defending": 77,
+      "finishing": 71,
+      "goalkeeping": 15
+    },
+    "personality": {
+      "professionalism": 92,
+      "determination": 74,
+      "ambition": 85,
+      "consistency": 93,
+      "injuryProneness": 42
+    }
   },
   {
     "id": "ply_p034",
@@ -405,7 +933,23 @@
     "passing": 62,
     "defending": 62,
     "finishing": 52,
-    "goalkeeping": 19
+    "goalkeeping": 19,
+    "birthDate": "1995-03-01",
+    "potential": {
+      "pace": 69,
+      "technique": 59,
+      "passing": 64,
+      "defending": 63,
+      "finishing": 53,
+      "goalkeeping": 20
+    },
+    "personality": {
+      "professionalism": 60,
+      "determination": 77,
+      "ambition": 76,
+      "consistency": 66,
+      "injuryProneness": 66
+    }
   },
   {
     "id": "ply_p035",
@@ -417,7 +961,23 @@
     "passing": 69,
     "defending": 77,
     "finishing": 80,
-    "goalkeeping": 22
+    "goalkeeping": 22,
+    "birthDate": "1995-01-12",
+    "potential": {
+      "pace": 79,
+      "technique": 72,
+      "passing": 70,
+      "defending": 78,
+      "finishing": 81,
+      "goalkeeping": 23
+    },
+    "personality": {
+      "professionalism": 85,
+      "determination": 84,
+      "ambition": 64,
+      "consistency": 76,
+      "injuryProneness": 60
+    }
   },
   {
     "id": "ply_p036",
@@ -429,7 +989,23 @@
     "passing": 55,
     "defending": 64,
     "finishing": 56,
-    "goalkeeping": 24
+    "goalkeeping": 24,
+    "birthDate": "2002-01-06",
+    "potential": {
+      "pace": 67,
+      "technique": 71,
+      "passing": 62,
+      "defending": 69,
+      "finishing": 63,
+      "goalkeeping": 30
+    },
+    "personality": {
+      "professionalism": 53,
+      "determination": 90,
+      "ambition": 75,
+      "consistency": 63,
+      "injuryProneness": 61
+    }
   },
   {
     "id": "ply_p037",
@@ -441,7 +1017,23 @@
     "passing": 73,
     "defending": 71,
     "finishing": 66,
-    "goalkeeping": 10
+    "goalkeeping": 10,
+    "birthDate": "1991-01-27",
+    "potential": {
+      "pace": 80,
+      "technique": 72,
+      "passing": 74,
+      "defending": 72,
+      "finishing": 67,
+      "goalkeeping": 11
+    },
+    "personality": {
+      "professionalism": 91,
+      "determination": 79,
+      "ambition": 95,
+      "consistency": 49,
+      "injuryProneness": 90
+    }
   },
   {
     "id": "ply_p038",
@@ -453,7 +1045,23 @@
     "passing": 64,
     "defending": 65,
     "finishing": 59,
-    "goalkeeping": 17
+    "goalkeeping": 17,
+    "birthDate": "2000-02-01",
+    "potential": {
+      "pace": 62,
+      "technique": 65,
+      "passing": 69,
+      "defending": 68,
+      "finishing": 64,
+      "goalkeeping": 19
+    },
+    "personality": {
+      "professionalism": 70,
+      "determination": 59,
+      "ambition": 87,
+      "consistency": 74,
+      "injuryProneness": 52
+    }
   },
   {
     "id": "ply_p039",
@@ -465,7 +1073,23 @@
     "passing": 76,
     "defending": 77,
     "finishing": 68,
-    "goalkeeping": 21
+    "goalkeeping": 21,
+    "birthDate": "2004-01-08",
+    "potential": {
+      "pace": 83,
+      "technique": 81,
+      "passing": 82,
+      "defending": 82,
+      "finishing": 77,
+      "goalkeeping": 27
+    },
+    "personality": {
+      "professionalism": 55,
+      "determination": 89,
+      "ambition": 76,
+      "consistency": 43,
+      "injuryProneness": 82
+    }
   },
   {
     "id": "ply_p040",
@@ -477,7 +1101,23 @@
     "passing": 66,
     "defending": 45,
     "finishing": 58,
-    "goalkeeping": 20
+    "goalkeeping": 20,
+    "birthDate": "2004-02-21",
+    "potential": {
+      "pace": 77,
+      "technique": 63,
+      "passing": 77,
+      "defending": 50,
+      "finishing": 64,
+      "goalkeeping": 26
+    },
+    "personality": {
+      "professionalism": 90,
+      "determination": 83,
+      "ambition": 86,
+      "consistency": 72,
+      "injuryProneness": 81
+    }
   },
   {
     "id": "ply_p041",
@@ -489,7 +1129,23 @@
     "passing": 74,
     "defending": 54,
     "finishing": 75,
-    "goalkeeping": 7
+    "goalkeeping": 7,
+    "birthDate": "2000-06-07",
+    "potential": {
+      "pace": 67,
+      "technique": 77,
+      "passing": 80,
+      "defending": 56,
+      "finishing": 77,
+      "goalkeeping": 10
+    },
+    "personality": {
+      "professionalism": 45,
+      "determination": 71,
+      "ambition": 64,
+      "consistency": 83,
+      "injuryProneness": 67
+    }
   },
   {
     "id": "ply_p042",
@@ -501,7 +1157,23 @@
     "passing": 76,
     "defending": 55,
     "finishing": 74,
-    "goalkeeping": 11
+    "goalkeeping": 11,
+    "birthDate": "2004-01-08",
+    "potential": {
+      "pace": 85,
+      "technique": 77,
+      "passing": 84,
+      "defending": 63,
+      "finishing": 79,
+      "goalkeeping": 23
+    },
+    "personality": {
+      "professionalism": 43,
+      "determination": 44,
+      "ambition": 66,
+      "consistency": 93,
+      "injuryProneness": 45
+    }
   },
   {
     "id": "ply_p043",
@@ -513,7 +1185,23 @@
     "passing": 60,
     "defending": 59,
     "finishing": 12,
-    "goalkeeping": 67
+    "goalkeeping": 67,
+    "birthDate": "1995-01-17",
+    "potential": {
+      "pace": 52,
+      "technique": 61,
+      "passing": 61,
+      "defending": 60,
+      "finishing": 13,
+      "goalkeeping": 69
+    },
+    "personality": {
+      "professionalism": 91,
+      "determination": 54,
+      "ambition": 72,
+      "consistency": 60,
+      "injuryProneness": 80
+    }
   },
   {
     "id": "ply_p044",
@@ -525,7 +1213,23 @@
     "passing": 52,
     "defending": 54,
     "finishing": 51,
-    "goalkeeping": 7
+    "goalkeeping": 7,
+    "birthDate": "2002-04-12",
+    "potential": {
+      "pace": 65,
+      "technique": 64,
+      "passing": 62,
+      "defending": 59,
+      "finishing": 61,
+      "goalkeeping": 12
+    },
+    "personality": {
+      "professionalism": 52,
+      "determination": 57,
+      "ambition": 76,
+      "consistency": 52,
+      "injuryProneness": 72
+    }
   },
   {
     "id": "ply_p045",
@@ -537,7 +1241,23 @@
     "passing": 74,
     "defending": 75,
     "finishing": 52,
-    "goalkeeping": 11
+    "goalkeeping": 11,
+    "birthDate": "2000-02-17",
+    "potential": {
+      "pace": 74,
+      "technique": 80,
+      "passing": 76,
+      "defending": 80,
+      "finishing": 55,
+      "goalkeeping": 15
+    },
+    "personality": {
+      "professionalism": 70,
+      "determination": 55,
+      "ambition": 88,
+      "consistency": 49,
+      "injuryProneness": 93
+    }
   },
   {
     "id": "ply_p046",
@@ -549,7 +1269,23 @@
     "passing": 72,
     "defending": 71,
     "finishing": 66,
-    "goalkeeping": 18
+    "goalkeeping": 18,
+    "birthDate": "2003-03-01",
+    "potential": {
+      "pace": 77,
+      "technique": 80,
+      "passing": 83,
+      "defending": 81,
+      "finishing": 75,
+      "goalkeeping": 22
+    },
+    "personality": {
+      "professionalism": 74,
+      "determination": 40,
+      "ambition": 80,
+      "consistency": 67,
+      "injuryProneness": 74
+    }
   },
   {
     "id": "ply_p047",
@@ -561,7 +1297,23 @@
     "passing": 51,
     "defending": 50,
     "finishing": 45,
-    "goalkeeping": 12
+    "goalkeeping": 12,
+    "birthDate": "2009-02-09",
+    "potential": {
+      "pace": 66,
+      "technique": 74,
+      "passing": 59,
+      "defending": 68,
+      "finishing": 61,
+      "goalkeeping": 30
+    },
+    "personality": {
+      "professionalism": 67,
+      "determination": 42,
+      "ambition": 61,
+      "consistency": 82,
+      "injuryProneness": 94
+    }
   },
   {
     "id": "ply_p048",
@@ -573,7 +1325,23 @@
     "passing": 67,
     "defending": 55,
     "finishing": 59,
-    "goalkeeping": 23
+    "goalkeeping": 23,
+    "birthDate": "2002-03-27",
+    "potential": {
+      "pace": 78,
+      "technique": 65,
+      "passing": 74,
+      "defending": 64,
+      "finishing": 64,
+      "goalkeeping": 30
+    },
+    "personality": {
+      "professionalism": 52,
+      "determination": 72,
+      "ambition": 83,
+      "consistency": 79,
+      "injuryProneness": 64
+    }
   },
   {
     "id": "ply_p049",
@@ -585,7 +1353,23 @@
     "passing": 63,
     "defending": 67,
     "finishing": 67,
-    "goalkeeping": 25
+    "goalkeeping": 25,
+    "birthDate": "2007-01-01",
+    "potential": {
+      "pace": 79,
+      "technique": 64,
+      "passing": 79,
+      "defending": 76,
+      "finishing": 74,
+      "goalkeeping": 32
+    },
+    "personality": {
+      "professionalism": 80,
+      "determination": 85,
+      "ambition": 81,
+      "consistency": 84,
+      "injuryProneness": 92
+    }
   },
   {
     "id": "ply_p050",
@@ -597,7 +1381,23 @@
     "passing": 62,
     "defending": 54,
     "finishing": 65,
-    "goalkeeping": 5
+    "goalkeeping": 5,
+    "birthDate": "2001-04-04",
+    "potential": {
+      "pace": 75,
+      "technique": 76,
+      "passing": 67,
+      "defending": 59,
+      "finishing": 71,
+      "goalkeeping": 10
+    },
+    "personality": {
+      "professionalism": 52,
+      "determination": 77,
+      "ambition": 45,
+      "consistency": 63,
+      "injuryProneness": 85
+    }
   },
   {
     "id": "ply_p051",
@@ -609,7 +1409,23 @@
     "passing": 54,
     "defending": 51,
     "finishing": 58,
-    "goalkeeping": 8
+    "goalkeeping": 8,
+    "birthDate": "2006-03-09",
+    "potential": {
+      "pace": 60,
+      "technique": 69,
+      "passing": 69,
+      "defending": 65,
+      "finishing": 73,
+      "goalkeeping": 17
+    },
+    "personality": {
+      "professionalism": 62,
+      "determination": 41,
+      "ambition": 89,
+      "consistency": 82,
+      "injuryProneness": 75
+    }
   },
   {
     "id": "ply_p052",
@@ -621,7 +1437,23 @@
     "passing": 61,
     "defending": 67,
     "finishing": 62,
-    "goalkeeping": 23
+    "goalkeeping": 23,
+    "birthDate": "2002-06-20",
+    "potential": {
+      "pace": 82,
+      "technique": 64,
+      "passing": 66,
+      "defending": 77,
+      "finishing": 71,
+      "goalkeeping": 28
+    },
+    "personality": {
+      "professionalism": 83,
+      "determination": 75,
+      "ambition": 74,
+      "consistency": 52,
+      "injuryProneness": 91
+    }
   },
   {
     "id": "ply_p053",
@@ -633,7 +1465,23 @@
     "passing": 67,
     "defending": 65,
     "finishing": 69,
-    "goalkeeping": 19
+    "goalkeeping": 19,
+    "birthDate": "1999-04-22",
+    "potential": {
+      "pace": 66,
+      "technique": 74,
+      "passing": 72,
+      "defending": 71,
+      "finishing": 75,
+      "goalkeeping": 25
+    },
+    "personality": {
+      "professionalism": 69,
+      "determination": 95,
+      "ambition": 46,
+      "consistency": 67,
+      "injuryProneness": 76
+    }
   },
   {
     "id": "ply_p054",
@@ -645,7 +1493,23 @@
     "passing": 73,
     "defending": 49,
     "finishing": 62,
-    "goalkeeping": 9
+    "goalkeeping": 9,
+    "birthDate": "1995-05-09",
+    "potential": {
+      "pace": 65,
+      "technique": 61,
+      "passing": 74,
+      "defending": 51,
+      "finishing": 64,
+      "goalkeeping": 10
+    },
+    "personality": {
+      "professionalism": 42,
+      "determination": 73,
+      "ambition": 54,
+      "consistency": 65,
+      "injuryProneness": 78
+    }
   },
   {
     "id": "ply_p055",
@@ -657,7 +1521,23 @@
     "passing": 58,
     "defending": 54,
     "finishing": 53,
-    "goalkeeping": 12
+    "goalkeeping": 12,
+    "birthDate": "2005-04-15",
+    "potential": {
+      "pace": 73,
+      "technique": 64,
+      "passing": 69,
+      "defending": 60,
+      "finishing": 57,
+      "goalkeeping": 18
+    },
+    "personality": {
+      "professionalism": 77,
+      "determination": 87,
+      "ambition": 74,
+      "consistency": 46,
+      "injuryProneness": 41
+    }
   },
   {
     "id": "ply_p056",
@@ -669,7 +1549,23 @@
     "passing": 55,
     "defending": 31,
     "finishing": 57,
-    "goalkeeping": 12
+    "goalkeeping": 12,
+    "birthDate": "2005-02-02",
+    "potential": {
+      "pace": 73,
+      "technique": 67,
+      "passing": 64,
+      "defending": 38,
+      "finishing": 65,
+      "goalkeeping": 17
+    },
+    "personality": {
+      "professionalism": 50,
+      "determination": 87,
+      "ambition": 76,
+      "consistency": 54,
+      "injuryProneness": 92
+    }
   },
   {
     "id": "ply_p057",
@@ -681,7 +1577,23 @@
     "passing": 60,
     "defending": 55,
     "finishing": 17,
-    "goalkeeping": 59
+    "goalkeeping": 59,
+    "birthDate": "2000-06-14",
+    "potential": {
+      "pace": 59,
+      "technique": 60,
+      "passing": 65,
+      "defending": 60,
+      "finishing": 20,
+      "goalkeeping": 65
+    },
+    "personality": {
+      "professionalism": 94,
+      "determination": 74,
+      "ambition": 89,
+      "consistency": 74,
+      "injuryProneness": 66
+    }
   },
   {
     "id": "ply_p058",
@@ -693,7 +1605,23 @@
     "passing": 55,
     "defending": 63,
     "finishing": 42,
-    "goalkeeping": 9
+    "goalkeeping": 9,
+    "birthDate": "2002-04-18",
+    "potential": {
+      "pace": 66,
+      "technique": 77,
+      "passing": 64,
+      "defending": 71,
+      "finishing": 52,
+      "goalkeeping": 18
+    },
+    "personality": {
+      "professionalism": 63,
+      "determination": 83,
+      "ambition": 79,
+      "consistency": 85,
+      "injuryProneness": 73
+    }
   },
   {
     "id": "ply_p059",
@@ -705,7 +1633,23 @@
     "passing": 57,
     "defending": 59,
     "finishing": 46,
-    "goalkeeping": 10
+    "goalkeeping": 10,
+    "birthDate": "2006-02-13",
+    "potential": {
+      "pace": 82,
+      "technique": 82,
+      "passing": 63,
+      "defending": 65,
+      "finishing": 52,
+      "goalkeeping": 18
+    },
+    "personality": {
+      "professionalism": 60,
+      "determination": 51,
+      "ambition": 93,
+      "consistency": 47,
+      "injuryProneness": 71
+    }
   },
   {
     "id": "ply_p060",
@@ -717,7 +1661,23 @@
     "passing": 67,
     "defending": 64,
     "finishing": 46,
-    "goalkeeping": 12
+    "goalkeeping": 12,
+    "birthDate": "1992-05-02",
+    "potential": {
+      "pace": 58,
+      "technique": 61,
+      "passing": 69,
+      "defending": 65,
+      "finishing": 47,
+      "goalkeeping": 13
+    },
+    "personality": {
+      "professionalism": 65,
+      "determination": 61,
+      "ambition": 60,
+      "consistency": 59,
+      "injuryProneness": 82
+    }
   },
   {
     "id": "ply_p061",
@@ -729,7 +1689,23 @@
     "passing": 48,
     "defending": 56,
     "finishing": 35,
-    "goalkeeping": 20
+    "goalkeeping": 20,
+    "birthDate": "2008-02-27",
+    "potential": {
+      "pace": 67,
+      "technique": 77,
+      "passing": 55,
+      "defending": 69,
+      "finishing": 43,
+      "goalkeeping": 30
+    },
+    "personality": {
+      "professionalism": 51,
+      "determination": 51,
+      "ambition": 81,
+      "consistency": 67,
+      "injuryProneness": 54
+    }
   },
   {
     "id": "ply_p062",
@@ -741,7 +1717,23 @@
     "passing": 53,
     "defending": 56,
     "finishing": 38,
-    "goalkeeping": 20
+    "goalkeeping": 20,
+    "birthDate": "2009-03-02",
+    "potential": {
+      "pace": 72,
+      "technique": 62,
+      "passing": 65,
+      "defending": 65,
+      "finishing": 44,
+      "goalkeeping": 26
+    },
+    "personality": {
+      "professionalism": 66,
+      "determination": 89,
+      "ambition": 83,
+      "consistency": 40,
+      "injuryProneness": 46
+    }
   },
   {
     "id": "ply_p063",
@@ -753,7 +1745,23 @@
     "passing": 55,
     "defending": 60,
     "finishing": 51,
-    "goalkeeping": 23
+    "goalkeeping": 23,
+    "birthDate": "1996-05-06",
+    "potential": {
+      "pace": 56,
+      "technique": 48,
+      "passing": 57,
+      "defending": 61,
+      "finishing": 53,
+      "goalkeeping": 24
+    },
+    "personality": {
+      "professionalism": 75,
+      "determination": 47,
+      "ambition": 48,
+      "consistency": 71,
+      "injuryProneness": 87
+    }
   },
   {
     "id": "ply_p064",
@@ -765,7 +1773,23 @@
     "passing": 65,
     "defending": 71,
     "finishing": 63,
-    "goalkeeping": 17
+    "goalkeeping": 17,
+    "birthDate": "2008-04-08",
+    "potential": {
+      "pace": 85,
+      "technique": 78,
+      "passing": 74,
+      "defending": 85,
+      "finishing": 71,
+      "goalkeeping": 30
+    },
+    "personality": {
+      "professionalism": 76,
+      "determination": 90,
+      "ambition": 79,
+      "consistency": 71,
+      "injuryProneness": 84
+    }
   },
   {
     "id": "ply_p065",
@@ -777,7 +1801,23 @@
     "passing": 53,
     "defending": 60,
     "finishing": 48,
-    "goalkeeping": 20
+    "goalkeeping": 20,
+    "birthDate": "2004-05-24",
+    "potential": {
+      "pace": 70,
+      "technique": 56,
+      "passing": 60,
+      "defending": 67,
+      "finishing": 56,
+      "goalkeeping": 24
+    },
+    "personality": {
+      "professionalism": 84,
+      "determination": 79,
+      "ambition": 45,
+      "consistency": 91,
+      "injuryProneness": 83
+    }
   },
   {
     "id": "ply_p066",
@@ -789,7 +1829,23 @@
     "passing": 71,
     "defending": 68,
     "finishing": 66,
-    "goalkeeping": 14
+    "goalkeeping": 14,
+    "birthDate": "1996-03-18",
+    "potential": {
+      "pace": 76,
+      "technique": 69,
+      "passing": 72,
+      "defending": 69,
+      "finishing": 68,
+      "goalkeeping": 16
+    },
+    "personality": {
+      "professionalism": 75,
+      "determination": 80,
+      "ambition": 65,
+      "consistency": 78,
+      "injuryProneness": 40
+    }
   },
   {
     "id": "ply_p067",
@@ -801,7 +1857,23 @@
     "passing": 61,
     "defending": 62,
     "finishing": 53,
-    "goalkeeping": 9
+    "goalkeeping": 9,
+    "birthDate": "1993-03-07",
+    "potential": {
+      "pace": 70,
+      "technique": 66,
+      "passing": 63,
+      "defending": 63,
+      "finishing": 54,
+      "goalkeeping": 10
+    },
+    "personality": {
+      "professionalism": 45,
+      "determination": 78,
+      "ambition": 58,
+      "consistency": 45,
+      "injuryProneness": 59
+    }
   },
   {
     "id": "ply_p068",
@@ -813,7 +1885,23 @@
     "passing": 57,
     "defending": 53,
     "finishing": 63,
-    "goalkeeping": 17
+    "goalkeeping": 17,
+    "birthDate": "2004-01-24",
+    "potential": {
+      "pace": 81,
+      "technique": 67,
+      "passing": 61,
+      "defending": 63,
+      "finishing": 71,
+      "goalkeeping": 23
+    },
+    "personality": {
+      "professionalism": 49,
+      "determination": 78,
+      "ambition": 48,
+      "consistency": 75,
+      "injuryProneness": 49
+    }
   },
   {
     "id": "ply_p069",
@@ -825,7 +1913,23 @@
     "passing": 66,
     "defending": 50,
     "finishing": 65,
-    "goalkeeping": 19
+    "goalkeeping": 19,
+    "birthDate": "1993-04-21",
+    "potential": {
+      "pace": 60,
+      "technique": 55,
+      "passing": 67,
+      "defending": 52,
+      "finishing": 67,
+      "goalkeeping": 20
+    },
+    "personality": {
+      "professionalism": 73,
+      "determination": 44,
+      "ambition": 50,
+      "consistency": 79,
+      "injuryProneness": 53
+    }
   },
   {
     "id": "ply_p070",
@@ -837,7 +1941,23 @@
     "passing": 63,
     "defending": 45,
     "finishing": 61,
-    "goalkeeping": 10
+    "goalkeeping": 10,
+    "birthDate": "2007-02-05",
+    "potential": {
+      "pace": 89,
+      "technique": 87,
+      "passing": 75,
+      "defending": 54,
+      "finishing": 72,
+      "goalkeeping": 21
+    },
+    "personality": {
+      "professionalism": 75,
+      "determination": 68,
+      "ambition": 49,
+      "consistency": 80,
+      "injuryProneness": 67
+    }
   },
   {
     "id": "ply_p071",
@@ -849,7 +1969,23 @@
     "passing": 62,
     "defending": 58,
     "finishing": 6,
-    "goalkeeping": 60
+    "goalkeeping": 60,
+    "birthDate": "2001-06-27",
+    "potential": {
+      "pace": 46,
+      "technique": 52,
+      "passing": 67,
+      "defending": 61,
+      "finishing": 9,
+      "goalkeeping": 63
+    },
+    "personality": {
+      "professionalism": 75,
+      "determination": 68,
+      "ambition": 49,
+      "consistency": 47,
+      "injuryProneness": 76
+    }
   },
   {
     "id": "ply_p072",
@@ -861,7 +1997,23 @@
     "passing": 55,
     "defending": 58,
     "finishing": 43,
-    "goalkeeping": 24
+    "goalkeeping": 24,
+    "birthDate": "1994-01-21",
+    "potential": {
+      "pace": 56,
+      "technique": 49,
+      "passing": 56,
+      "defending": 59,
+      "finishing": 45,
+      "goalkeeping": 25
+    },
+    "personality": {
+      "professionalism": 43,
+      "determination": 84,
+      "ambition": 58,
+      "consistency": 89,
+      "injuryProneness": 58
+    }
   },
   {
     "id": "ply_p073",
@@ -873,7 +2025,23 @@
     "passing": 57,
     "defending": 51,
     "finishing": 49,
-    "goalkeeping": 5
+    "goalkeeping": 5,
+    "birthDate": "1996-04-20",
+    "potential": {
+      "pace": 57,
+      "technique": 59,
+      "passing": 58,
+      "defending": 52,
+      "finishing": 51,
+      "goalkeeping": 6
+    },
+    "personality": {
+      "professionalism": 49,
+      "determination": 51,
+      "ambition": 52,
+      "consistency": 45,
+      "injuryProneness": 41
+    }
   },
   {
     "id": "ply_p074",
@@ -885,7 +2053,23 @@
     "passing": 48,
     "defending": 57,
     "finishing": 39,
-    "goalkeeping": 8
+    "goalkeeping": 8,
+    "birthDate": "1992-04-17",
+    "potential": {
+      "pace": 55,
+      "technique": 56,
+      "passing": 49,
+      "defending": 58,
+      "finishing": 41,
+      "goalkeeping": 9
+    },
+    "personality": {
+      "professionalism": 45,
+      "determination": 50,
+      "ambition": 48,
+      "consistency": 89,
+      "injuryProneness": 58
+    }
   },
   {
     "id": "ply_p075",
@@ -897,7 +2081,23 @@
     "passing": 55,
     "defending": 44,
     "finishing": 30,
-    "goalkeeping": 13
+    "goalkeeping": 13,
+    "birthDate": "2009-03-24",
+    "potential": {
+      "pace": 77,
+      "technique": 54,
+      "passing": 69,
+      "defending": 57,
+      "finishing": 42,
+      "goalkeeping": 26
+    },
+    "personality": {
+      "professionalism": 92,
+      "determination": 44,
+      "ambition": 61,
+      "consistency": 76,
+      "injuryProneness": 44
+    }
   },
   {
     "id": "ply_p076",
@@ -909,7 +2109,23 @@
     "passing": 47,
     "defending": 50,
     "finishing": 48,
-    "goalkeeping": 9
+    "goalkeeping": 9,
+    "birthDate": "2006-04-26",
+    "potential": {
+      "pace": 71,
+      "technique": 64,
+      "passing": 59,
+      "defending": 59,
+      "finishing": 61,
+      "goalkeeping": 25
+    },
+    "personality": {
+      "professionalism": 44,
+      "determination": 79,
+      "ambition": 54,
+      "consistency": 55,
+      "injuryProneness": 69
+    }
   },
   {
     "id": "ply_p077",
@@ -921,7 +2137,23 @@
     "passing": 64,
     "defending": 58,
     "finishing": 50,
-    "goalkeeping": 10
+    "goalkeeping": 10,
+    "birthDate": "1993-03-25",
+    "potential": {
+      "pace": 60,
+      "technique": 65,
+      "passing": 66,
+      "defending": 59,
+      "finishing": 51,
+      "goalkeeping": 12
+    },
+    "personality": {
+      "professionalism": 67,
+      "determination": 94,
+      "ambition": 90,
+      "consistency": 47,
+      "injuryProneness": 64
+    }
   },
   {
     "id": "ply_p078",
@@ -933,7 +2165,23 @@
     "passing": 52,
     "defending": 54,
     "finishing": 57,
-    "goalkeeping": 18
+    "goalkeeping": 18,
+    "birthDate": "2000-02-09",
+    "potential": {
+      "pace": 56,
+      "technique": 62,
+      "passing": 57,
+      "defending": 59,
+      "finishing": 59,
+      "goalkeeping": 23
+    },
+    "personality": {
+      "professionalism": 60,
+      "determination": 43,
+      "ambition": 50,
+      "consistency": 80,
+      "injuryProneness": 69
+    }
   },
   {
     "id": "ply_p079",
@@ -945,7 +2193,23 @@
     "passing": 59,
     "defending": 56,
     "finishing": 53,
-    "goalkeeping": 18
+    "goalkeeping": 18,
+    "birthDate": "1998-02-24",
+    "potential": {
+      "pace": 47,
+      "technique": 58,
+      "passing": 64,
+      "defending": 60,
+      "finishing": 57,
+      "goalkeeping": 23
+    },
+    "personality": {
+      "professionalism": 45,
+      "determination": 73,
+      "ambition": 61,
+      "consistency": 66,
+      "injuryProneness": 42
+    }
   },
   {
     "id": "ply_p080",
@@ -957,7 +2221,23 @@
     "passing": 58,
     "defending": 61,
     "finishing": 62,
-    "goalkeeping": 8
+    "goalkeeping": 8,
+    "birthDate": "1996-02-01",
+    "potential": {
+      "pace": 61,
+      "technique": 50,
+      "passing": 59,
+      "defending": 63,
+      "finishing": 63,
+      "goalkeeping": 10
+    },
+    "personality": {
+      "professionalism": 45,
+      "determination": 69,
+      "ambition": 63,
+      "consistency": 79,
+      "injuryProneness": 79
+    }
   },
   {
     "id": "ply_p081",
@@ -969,7 +2249,23 @@
     "passing": 55,
     "defending": 54,
     "finishing": 48,
-    "goalkeeping": 23
+    "goalkeeping": 23,
+    "birthDate": "2000-06-23",
+    "potential": {
+      "pace": 51,
+      "technique": 59,
+      "passing": 58,
+      "defending": 56,
+      "finishing": 50,
+      "goalkeeping": 28
+    },
+    "personality": {
+      "professionalism": 54,
+      "determination": 93,
+      "ambition": 46,
+      "consistency": 44,
+      "injuryProneness": 45
+    }
   },
   {
     "id": "ply_p082",
@@ -981,7 +2277,23 @@
     "passing": 54,
     "defending": 25,
     "finishing": 55,
-    "goalkeeping": 16
+    "goalkeeping": 16,
+    "birthDate": "1993-04-04",
+    "potential": {
+      "pace": 54,
+      "technique": 55,
+      "passing": 55,
+      "defending": 26,
+      "finishing": 56,
+      "goalkeeping": 18
+    },
+    "personality": {
+      "professionalism": 75,
+      "determination": 49,
+      "ambition": 79,
+      "consistency": 81,
+      "injuryProneness": 69
+    }
   },
   {
     "id": "ply_p083",
@@ -993,7 +2305,23 @@
     "passing": 51,
     "defending": 37,
     "finishing": 63,
-    "goalkeeping": 21
+    "goalkeeping": 21,
+    "birthDate": "1996-04-13",
+    "potential": {
+      "pace": 56,
+      "technique": 65,
+      "passing": 52,
+      "defending": 38,
+      "finishing": 65,
+      "goalkeeping": 22
+    },
+    "personality": {
+      "professionalism": 49,
+      "determination": 91,
+      "ambition": 74,
+      "consistency": 45,
+      "injuryProneness": 57
+    }
   },
   {
     "id": "ply_p084",
@@ -1005,7 +2333,23 @@
     "passing": 55,
     "defending": 46,
     "finishing": 50,
-    "goalkeeping": 19
+    "goalkeeping": 19,
+    "birthDate": "1995-06-05",
+    "potential": {
+      "pace": 63,
+      "technique": 55,
+      "passing": 56,
+      "defending": 47,
+      "finishing": 51,
+      "goalkeeping": 20
+    },
+    "personality": {
+      "professionalism": 94,
+      "determination": 46,
+      "ambition": 88,
+      "consistency": 71,
+      "injuryProneness": 86
+    }
   },
   {
     "id": "ply_p085",
@@ -1017,7 +2361,23 @@
     "passing": 56,
     "defending": 43,
     "finishing": 14,
-    "goalkeeping": 54
+    "goalkeeping": 54,
+    "birthDate": "1996-01-25",
+    "potential": {
+      "pace": 51,
+      "technique": 49,
+      "passing": 58,
+      "defending": 44,
+      "finishing": 15,
+      "goalkeeping": 56
+    },
+    "personality": {
+      "professionalism": 40,
+      "determination": 45,
+      "ambition": 57,
+      "consistency": 86,
+      "injuryProneness": 81
+    }
   },
   {
     "id": "ply_p086",
@@ -1029,7 +2389,23 @@
     "passing": 52,
     "defending": 42,
     "finishing": 41,
-    "goalkeeping": 6
+    "goalkeeping": 6,
+    "birthDate": "1997-04-05",
+    "potential": {
+      "pace": 52,
+      "technique": 41,
+      "passing": 53,
+      "defending": 43,
+      "finishing": 42,
+      "goalkeeping": 7
+    },
+    "personality": {
+      "professionalism": 91,
+      "determination": 78,
+      "ambition": 51,
+      "consistency": 50,
+      "injuryProneness": 94
+    }
   },
   {
     "id": "ply_p087",
@@ -1041,7 +2417,23 @@
     "passing": 47,
     "defending": 59,
     "finishing": 32,
-    "goalkeeping": 5
+    "goalkeeping": 5,
+    "birthDate": "2001-04-12",
+    "potential": {
+      "pace": 59,
+      "technique": 61,
+      "passing": 50,
+      "defending": 62,
+      "finishing": 35,
+      "goalkeeping": 11
+    },
+    "personality": {
+      "professionalism": 86,
+      "determination": 90,
+      "ambition": 90,
+      "consistency": 87,
+      "injuryProneness": 86
+    }
   },
   {
     "id": "ply_p088",
@@ -1053,7 +2445,23 @@
     "passing": 48,
     "defending": 52,
     "finishing": 38,
-    "goalkeeping": 22
+    "goalkeeping": 22,
+    "birthDate": "1993-01-22",
+    "potential": {
+      "pace": 43,
+      "technique": 57,
+      "passing": 49,
+      "defending": 54,
+      "finishing": 40,
+      "goalkeeping": 23
+    },
+    "personality": {
+      "professionalism": 91,
+      "determination": 54,
+      "ambition": 73,
+      "consistency": 69,
+      "injuryProneness": 68
+    }
   },
   {
     "id": "ply_p089",
@@ -1065,7 +2473,23 @@
     "passing": 52,
     "defending": 49,
     "finishing": 22,
-    "goalkeeping": 7
+    "goalkeeping": 7,
+    "birthDate": "1991-03-06",
+    "potential": {
+      "pace": 47,
+      "technique": 35,
+      "passing": 53,
+      "defending": 50,
+      "finishing": 23,
+      "goalkeeping": 8
+    },
+    "personality": {
+      "professionalism": 72,
+      "determination": 65,
+      "ambition": 86,
+      "consistency": 92,
+      "injuryProneness": 78
+    }
   },
   {
     "id": "ply_p090",
@@ -1077,7 +2501,23 @@
     "passing": 37,
     "defending": 41,
     "finishing": 39,
-    "goalkeeping": 10
+    "goalkeeping": 10,
+    "birthDate": "2002-06-16",
+    "potential": {
+      "pace": 55,
+      "technique": 53,
+      "passing": 48,
+      "defending": 46,
+      "finishing": 49,
+      "goalkeeping": 15
+    },
+    "personality": {
+      "professionalism": 70,
+      "determination": 43,
+      "ambition": 44,
+      "consistency": 40,
+      "injuryProneness": 87
+    }
   },
   {
     "id": "ply_p091",
@@ -1089,7 +2529,23 @@
     "passing": 53,
     "defending": 47,
     "finishing": 48,
-    "goalkeeping": 16
+    "goalkeeping": 16,
+    "birthDate": "2003-02-04",
+    "potential": {
+      "pace": 66,
+      "technique": 47,
+      "passing": 64,
+      "defending": 51,
+      "finishing": 56,
+      "goalkeeping": 25
+    },
+    "personality": {
+      "professionalism": 91,
+      "determination": 74,
+      "ambition": 69,
+      "consistency": 59,
+      "injuryProneness": 78
+    }
   },
   {
     "id": "ply_p092",
@@ -1101,7 +2557,23 @@
     "passing": 51,
     "defending": 47,
     "finishing": 50,
-    "goalkeeping": 6
+    "goalkeeping": 6,
+    "birthDate": "1995-01-16",
+    "potential": {
+      "pace": 41,
+      "technique": 50,
+      "passing": 52,
+      "defending": 48,
+      "finishing": 51,
+      "goalkeeping": 7
+    },
+    "personality": {
+      "professionalism": 84,
+      "determination": 80,
+      "ambition": 49,
+      "consistency": 87,
+      "injuryProneness": 63
+    }
   },
   {
     "id": "ply_p093",
@@ -1113,7 +2585,23 @@
     "passing": 55,
     "defending": 51,
     "finishing": 55,
-    "goalkeeping": 21
+    "goalkeeping": 21,
+    "birthDate": "1991-01-06",
+    "potential": {
+      "pace": 49,
+      "technique": 46,
+      "passing": 56,
+      "defending": 52,
+      "finishing": 57,
+      "goalkeeping": 23
+    },
+    "personality": {
+      "professionalism": 72,
+      "determination": 64,
+      "ambition": 89,
+      "consistency": 84,
+      "injuryProneness": 41
+    }
   },
   {
     "id": "ply_p094",
@@ -1125,7 +2613,23 @@
     "passing": 55,
     "defending": 55,
     "finishing": 66,
-    "goalkeeping": 16
+    "goalkeeping": 16,
+    "birthDate": "2003-04-05",
+    "potential": {
+      "pace": 66,
+      "technique": 79,
+      "passing": 65,
+      "defending": 63,
+      "finishing": 72,
+      "goalkeeping": 23
+    },
+    "personality": {
+      "professionalism": 71,
+      "determination": 49,
+      "ambition": 64,
+      "consistency": 94,
+      "injuryProneness": 44
+    }
   },
   {
     "id": "ply_p095",
@@ -1137,7 +2641,23 @@
     "passing": 62,
     "defending": 63,
     "finishing": 58,
-    "goalkeeping": 8
+    "goalkeeping": 8,
+    "birthDate": "2000-02-15",
+    "potential": {
+      "pace": 60,
+      "technique": 62,
+      "passing": 65,
+      "defending": 66,
+      "finishing": 63,
+      "goalkeeping": 14
+    },
+    "personality": {
+      "professionalism": 67,
+      "determination": 80,
+      "ambition": 86,
+      "consistency": 48,
+      "injuryProneness": 46
+    }
   },
   {
     "id": "ply_p096",
@@ -1149,7 +2669,23 @@
     "passing": 54,
     "defending": 26,
     "finishing": 57,
-    "goalkeeping": 22
+    "goalkeeping": 22,
+    "birthDate": "1997-03-25",
+    "potential": {
+      "pace": 42,
+      "technique": 44,
+      "passing": 55,
+      "defending": 28,
+      "finishing": 58,
+      "goalkeeping": 23
+    },
+    "personality": {
+      "professionalism": 94,
+      "determination": 86,
+      "ambition": 75,
+      "consistency": 77,
+      "injuryProneness": 67
+    }
   },
   {
     "id": "ply_p097",
@@ -1161,7 +2697,23 @@
     "passing": 45,
     "defending": 31,
     "finishing": 42,
-    "goalkeeping": 12
+    "goalkeeping": 12,
+    "birthDate": "2008-06-02",
+    "potential": {
+      "pace": 62,
+      "technique": 50,
+      "passing": 62,
+      "defending": 38,
+      "finishing": 48,
+      "goalkeeping": 20
+    },
+    "personality": {
+      "professionalism": 53,
+      "determination": 89,
+      "ambition": 86,
+      "consistency": 46,
+      "injuryProneness": 74
+    }
   },
   {
     "id": "ply_p098",
@@ -1173,7 +2725,23 @@
     "passing": 46,
     "defending": 19,
     "finishing": 36,
-    "goalkeeping": 16
+    "goalkeeping": 16,
+    "birthDate": "1995-06-01",
+    "potential": {
+      "pace": 37,
+      "technique": 39,
+      "passing": 47,
+      "defending": 20,
+      "finishing": 37,
+      "goalkeeping": 17
+    },
+    "personality": {
+      "professionalism": 90,
+      "determination": 87,
+      "ambition": 70,
+      "consistency": 95,
+      "injuryProneness": 92
+    }
   },
   {
     "id": "ply_p099",
@@ -1185,7 +2753,23 @@
     "passing": 53,
     "defending": 41,
     "finishing": 6,
-    "goalkeeping": 51
+    "goalkeeping": 51,
+    "birthDate": "2007-03-05",
+    "potential": {
+      "pace": 69,
+      "technique": 63,
+      "passing": 63,
+      "defending": 56,
+      "finishing": 11,
+      "goalkeeping": 68
+    },
+    "personality": {
+      "professionalism": 45,
+      "determination": 83,
+      "ambition": 84,
+      "consistency": 61,
+      "injuryProneness": 91
+    }
   },
   {
     "id": "ply_p100",
@@ -1197,7 +2781,23 @@
     "passing": 41,
     "defending": 44,
     "finishing": 45,
-    "goalkeeping": 11
+    "goalkeeping": 11,
+    "birthDate": "1991-06-15",
+    "potential": {
+      "pace": 46,
+      "technique": 50,
+      "passing": 42,
+      "defending": 46,
+      "finishing": 47,
+      "goalkeeping": 13
+    },
+    "personality": {
+      "professionalism": 68,
+      "determination": 81,
+      "ambition": 75,
+      "consistency": 50,
+      "injuryProneness": 95
+    }
   },
   {
     "id": "ply_p101",
@@ -1209,7 +2809,23 @@
     "passing": 55,
     "defending": 50,
     "finishing": 34,
-    "goalkeeping": 10
+    "goalkeeping": 10,
+    "birthDate": "2002-05-21",
+    "potential": {
+      "pace": 56,
+      "technique": 58,
+      "passing": 67,
+      "defending": 62,
+      "finishing": 43,
+      "goalkeeping": 17
+    },
+    "personality": {
+      "professionalism": 94,
+      "determination": 88,
+      "ambition": 40,
+      "consistency": 71,
+      "injuryProneness": 50
+    }
   },
   {
     "id": "ply_p102",
@@ -1221,7 +2837,23 @@
     "passing": 49,
     "defending": 42,
     "finishing": 45,
-    "goalkeeping": 12
+    "goalkeeping": 12,
+    "birthDate": "1996-03-26",
+    "potential": {
+      "pace": 48,
+      "technique": 41,
+      "passing": 50,
+      "defending": 43,
+      "finishing": 46,
+      "goalkeeping": 13
+    },
+    "personality": {
+      "professionalism": 64,
+      "determination": 69,
+      "ambition": 78,
+      "consistency": 89,
+      "injuryProneness": 48
+    }
   },
   {
     "id": "ply_p103",
@@ -1233,7 +2865,23 @@
     "passing": 51,
     "defending": 54,
     "finishing": 35,
-    "goalkeeping": 8
+    "goalkeeping": 8,
+    "birthDate": "2006-05-16",
+    "potential": {
+      "pace": 70,
+      "technique": 60,
+      "passing": 69,
+      "defending": 60,
+      "finishing": 46,
+      "goalkeeping": 15
+    },
+    "personality": {
+      "professionalism": 47,
+      "determination": 53,
+      "ambition": 72,
+      "consistency": 50,
+      "injuryProneness": 94
+    }
   },
   {
     "id": "ply_p104",
@@ -1245,7 +2893,23 @@
     "passing": 42,
     "defending": 41,
     "finishing": 27,
-    "goalkeeping": 17
+    "goalkeeping": 17,
+    "birthDate": "1998-06-16",
+    "potential": {
+      "pace": 47,
+      "technique": 54,
+      "passing": 46,
+      "defending": 45,
+      "finishing": 29,
+      "goalkeeping": 21
+    },
+    "personality": {
+      "professionalism": 55,
+      "determination": 86,
+      "ambition": 89,
+      "consistency": 67,
+      "injuryProneness": 58
+    }
   },
   {
     "id": "ply_p105",
@@ -1257,7 +2921,23 @@
     "passing": 33,
     "defending": 45,
     "finishing": 30,
-    "goalkeeping": 12
+    "goalkeeping": 12,
+    "birthDate": "2004-03-25",
+    "potential": {
+      "pace": 45,
+      "technique": 54,
+      "passing": 38,
+      "defending": 51,
+      "finishing": 40,
+      "goalkeeping": 23
+    },
+    "personality": {
+      "professionalism": 59,
+      "determination": 72,
+      "ambition": 84,
+      "consistency": 45,
+      "injuryProneness": 83
+    }
   },
   {
     "id": "ply_p106",
@@ -1269,7 +2949,23 @@
     "passing": 53,
     "defending": 55,
     "finishing": 46,
-    "goalkeeping": 16
+    "goalkeeping": 16,
+    "birthDate": "1995-06-12",
+    "potential": {
+      "pace": 53,
+      "technique": 44,
+      "passing": 54,
+      "defending": 56,
+      "finishing": 47,
+      "goalkeeping": 17
+    },
+    "personality": {
+      "professionalism": 45,
+      "determination": 76,
+      "ambition": 47,
+      "consistency": 44,
+      "injuryProneness": 72
+    }
   },
   {
     "id": "ply_p107",
@@ -1281,7 +2977,23 @@
     "passing": 51,
     "defending": 54,
     "finishing": 52,
-    "goalkeeping": 12
+    "goalkeeping": 12,
+    "birthDate": "1996-05-25",
+    "potential": {
+      "pace": 63,
+      "technique": 48,
+      "passing": 53,
+      "defending": 55,
+      "finishing": 53,
+      "goalkeeping": 13
+    },
+    "personality": {
+      "professionalism": 82,
+      "determination": 56,
+      "ambition": 95,
+      "consistency": 57,
+      "injuryProneness": 67
+    }
   },
   {
     "id": "ply_p108",
@@ -1293,7 +3005,23 @@
     "passing": 48,
     "defending": 49,
     "finishing": 46,
-    "goalkeeping": 19
+    "goalkeeping": 19,
+    "birthDate": "2006-06-05",
+    "potential": {
+      "pace": 77,
+      "technique": 63,
+      "passing": 63,
+      "defending": 56,
+      "finishing": 62,
+      "goalkeeping": 32
+    },
+    "personality": {
+      "professionalism": 45,
+      "determination": 50,
+      "ambition": 53,
+      "consistency": 57,
+      "injuryProneness": 95
+    }
   },
   {
     "id": "ply_p109",
@@ -1305,7 +3033,23 @@
     "passing": 42,
     "defending": 41,
     "finishing": 50,
-    "goalkeeping": 14
+    "goalkeeping": 14,
+    "birthDate": "2005-06-23",
+    "potential": {
+      "pace": 59,
+      "technique": 63,
+      "passing": 48,
+      "defending": 47,
+      "finishing": 57,
+      "goalkeeping": 23
+    },
+    "personality": {
+      "professionalism": 45,
+      "determination": 71,
+      "ambition": 93,
+      "consistency": 41,
+      "injuryProneness": 67
+    }
   },
   {
     "id": "ply_p110",
@@ -1317,7 +3061,23 @@
     "passing": 37,
     "defending": 37,
     "finishing": 44,
-    "goalkeeping": 9
+    "goalkeeping": 9,
+    "birthDate": "2005-06-13",
+    "potential": {
+      "pace": 52,
+      "technique": 56,
+      "passing": 47,
+      "defending": 46,
+      "finishing": 50,
+      "goalkeeping": 21
+    },
+    "personality": {
+      "professionalism": 59,
+      "determination": 41,
+      "ambition": 78,
+      "consistency": 80,
+      "injuryProneness": 59
+    }
   },
   {
     "id": "ply_p111",
@@ -1329,7 +3089,23 @@
     "passing": 62,
     "defending": 41,
     "finishing": 49,
-    "goalkeeping": 23
+    "goalkeeping": 23,
+    "birthDate": "1991-06-07",
+    "potential": {
+      "pace": 62,
+      "technique": 49,
+      "passing": 64,
+      "defending": 42,
+      "finishing": 51,
+      "goalkeeping": 24
+    },
+    "personality": {
+      "professionalism": 42,
+      "determination": 88,
+      "ambition": 67,
+      "consistency": 51,
+      "injuryProneness": 94
+    }
   },
   {
     "id": "ply_p112",
@@ -1341,6 +3117,22 @@
     "passing": 45,
     "defending": 28,
     "finishing": 44,
-    "goalkeeping": 12
+    "goalkeeping": 12,
+    "birthDate": "2001-01-06",
+    "potential": {
+      "pace": 50,
+      "technique": 52,
+      "passing": 50,
+      "defending": 31,
+      "finishing": 46,
+      "goalkeeping": 17
+    },
+    "personality": {
+      "professionalism": 65,
+      "determination": 92,
+      "ambition": 45,
+      "consistency": 62,
+      "injuryProneness": 86
+    }
   }
 ]

@@ -16,12 +16,15 @@ import { simulateMatch } from './match.js';
 import { applyResult } from './standings.js';
 import { createLeagueRuntime, getClubRuntime, recordEvent } from './game-state.js';
 import { resetSeasonStats } from './player-runtime.js';
+import { developPlayers } from './player-growth.js';
 import { SCHEDULE_CONFIG } from './sim-config.js';
 
 export class SimulationCore {
-  /** @param {{logger?: object}} [deps] */
+  /** @param {{logger?: object, trainingFactor?: Function}} [deps] */
   constructor(deps = {}) {
     this.logger = deps.logger ?? null;
+    /** 训练修正预留接口（B1）；缺省由 player-growth 使用 1.0。 */
+    this.trainingFactor = deps.trainingFactor ?? null;
   }
 
   /**
@@ -137,7 +140,13 @@ export class SimulationCore {
       if (nextSeason > maxSeason) maxSeason = nextSeason;
     }
     state.season = maxSeason;
-    // 赛季推进时重置「本赛季统计」（职业生涯统计已增量累加，不受影响；第 15 步）。
-    if (maxSeason > prevSeason) resetSeasonStats(state, maxSeason);
+    // 赛季推进时：先按已结束赛季结算成长/衰退（需用该赛季统计与年龄），再重置本赛季统计（第 15/16 步）。
+    if (maxSeason > prevSeason) {
+      developPlayers(state, {
+        seasonNumber: prevSeason,
+        training: this.trainingFactor ?? undefined,
+      });
+      resetSeasonStats(state, maxSeason);
+    }
   }
 }

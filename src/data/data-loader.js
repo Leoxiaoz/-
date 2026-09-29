@@ -12,7 +12,16 @@
  */
 
 import { DataError } from '../shared/errors.js';
-import { POSITIONS, PLAYER_ATTRIBUTES, ATTRIBUTE_RANGE, MENTALITIES } from '../shared/football-schema.js';
+import {
+  POSITIONS,
+  PLAYER_ATTRIBUTES,
+  ATTRIBUTE_RANGE,
+  ATTRIBUTE_DEFAULT,
+  MENTALITIES,
+  PLAYER_PERSONALITY_KEYS,
+  PERSONALITY_RANGE,
+  BIRTH_YEAR_RANGE,
+} from '../shared/football-schema.js';
 
 /** 占位格式标识；正式值待 DATABASE_SPEC 决策后替换。 */
 export const WORLD_FORMAT = 'fdb-json-0';
@@ -100,8 +109,10 @@ export function validateWorld(world) {
 }
 
 /**
- * 校验单个球员：位置枚举、属性数值与取值范围（DATABASE_SPEC §6 红线：显式报错 + 定位）。
+ * 校验单个球员：位置枚举、属性数值与取值范围（DATABASE_SPEC §6 红线：显式报错 + 定位），
+ * 以及成长/衰退系统所需字段 birthDate / potential / personality（第 16 步，A1/A3）。
  * 属性为可选字段（缺失时模拟回退到 ATTRIBUTE_DEFAULT），但一旦提供必须合法。
+ * birthDate/potential/personality 为**必填**（A3：正式库不得以默认值替代真实字段）。
  */
 function validatePlayer(player) {
   if (player.position != null && !POSITIONS.includes(player.position)) {
@@ -115,6 +126,68 @@ function validatePlayer(player) {
     if (typeof v !== 'number' || !Number.isFinite(v) || v < ATTRIBUTE_RANGE.MIN || v > ATTRIBUTE_RANGE.MAX) {
       throw new DataError('球员属性超出允许范围', {
         context: { file: 'players.json', entity: 'player', id: player.id, field: attr, value: v, range: ATTRIBUTE_RANGE },
+      });
+    }
+  }
+  validateBirthDate(player);
+  validatePotential(player);
+  validatePersonality(player);
+}
+
+/** 出生日期：必填、YYYY-MM-DD、年份在合理区间。 */
+function validateBirthDate(player) {
+  const { birthDate } = player;
+  if (typeof birthDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
+    throw new DataError('球员缺少合法的 birthDate（YYYY-MM-DD）', {
+      context: { file: 'players.json', entity: 'player', id: player.id, field: 'birthDate', value: birthDate },
+    });
+  }
+  const year = Number(birthDate.slice(0, 4));
+  if (year < BIRTH_YEAR_RANGE.MIN || year > BIRTH_YEAR_RANGE.MAX) {
+    throw new DataError('球员 birthDate 年份超出合理区间', {
+      context: { file: 'players.json', entity: 'player', id: player.id, field: 'birthDate', value: birthDate, range: BIRTH_YEAR_RANGE },
+    });
+  }
+}
+
+/** 潜力：必填、含全部属性、1–99，且不得低于该属性基础值（避免出生即超上限）。 */
+function validatePotential(player) {
+  const potential = player.potential;
+  if (!potential || typeof potential !== 'object') {
+    throw new DataError('球员缺少 potential（每属性潜力上限）', {
+      context: { file: 'players.json', entity: 'player', id: player.id, field: 'potential' },
+    });
+  }
+  for (const attr of PLAYER_ATTRIBUTES) {
+    const p = potential[attr];
+    if (typeof p !== 'number' || !Number.isFinite(p) || p < ATTRIBUTE_RANGE.MIN || p > ATTRIBUTE_RANGE.MAX) {
+      throw new DataError('球员 potential 缺失或超出范围', {
+        context: { file: 'players.json', entity: 'player', id: player.id, field: `potential.${attr}`, value: p, range: ATTRIBUTE_RANGE },
+      });
+    }
+    const baseRaw = Number(player[attr]);
+    const base = Number.isFinite(baseRaw) ? baseRaw : ATTRIBUTE_DEFAULT;
+    if (p < base) {
+      throw new DataError('球员 potential 低于该属性基础值', {
+        context: { file: 'players.json', entity: 'player', id: player.id, field: `potential.${attr}`, value: p, base },
+      });
+    }
+  }
+}
+
+/** 人格：必填、含全部人格维度、1–99。 */
+function validatePersonality(player) {
+  const personality = player.personality;
+  if (!personality || typeof personality !== 'object') {
+    throw new DataError('球员缺少 personality（人格维度）', {
+      context: { file: 'players.json', entity: 'player', id: player.id, field: 'personality' },
+    });
+  }
+  for (const key of PLAYER_PERSONALITY_KEYS) {
+    const v = personality[key];
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < PERSONALITY_RANGE.MIN || v > PERSONALITY_RANGE.MAX) {
+      throw new DataError('球员 personality 缺失或超出范围', {
+        context: { file: 'players.json', entity: 'player', id: player.id, field: `personality.${key}`, value: v, range: PERSONALITY_RANGE },
       });
     }
   }

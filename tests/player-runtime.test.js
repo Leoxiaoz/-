@@ -71,15 +71,17 @@ test('getEffectiveAttributes 返回完整属性向量（非单一总评）', () 
   }
 });
 
-test('applyAbilityDelta 影响有效属性但不改静态基础属性，且越界被夹取', () => {
+test('applyAbilityDelta 影响有效属性但不改静态基础属性，且越界被潜力上限/下限夹取', () => {
   const state = newState();
-  const before = state.static.players.find((p) => p.id === PLAYER).pace;
+  const player = state.static.players.find((p) => p.id === PLAYER);
+  const before = player.pace;
+  const cap = player.potential.pace; // 每属性潜力上限（A2）
   applyAbilityDelta(state, PLAYER, 'pace', 5);
   assertEquals(getEffectiveAttributes(state, PLAYER).pace, before + 5);
   assertEquals(state.static.players.find((p) => p.id === PLAYER).pace, before, '静态基础属性不得被修改');
 
   applyAbilityDelta(state, PLAYER, 'pace', 999); // 强推越界
-  assertEquals(getEffectiveAttributes(state, PLAYER).pace, 99, '有效属性应夹取到上限 99');
+  assertEquals(getEffectiveAttributes(state, PLAYER).pace, cap, '有效属性应夹取到该属性潜力上限');
 
   applyAbilityDelta(state, PLAYER, 'pace', -9999); // 再强推越下界（增减量累积存储）
   assertEquals(getEffectiveAttributes(state, PLAYER).pace, 1, '有效属性应夹取到下限 1');

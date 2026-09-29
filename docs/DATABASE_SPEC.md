@@ -22,6 +22,12 @@
 > **实现更新（2026-09-29，第 15 步 · 球员运行时状态）**：§4 的"球员静态 / 运行时"边界**暂定落地**——
 > 静态（库）：属性、位置、出生日期、潜力等；运行时（档）：能力增减、体能/状态/士气、伤病、
 > 出场/本赛季/职业生涯统计，以 `playerId` 关联。**逐字段裁定仍待制定者确认**（见 `DECISIONS.md` D-13）。
+>
+> **实现更新（2026-09-29，第 16 步 · 成长/衰退）**：球员静态字段**新增并定为必填**——
+> `birthDate`（YYYY-MM-DD）、`potential`（**每属性潜力上限**对象，1–99 且 ≥ 对应基础属性）、
+> `personality`（`professionalism/determination/ambition/consistency/injuryProneness`，1–99）。
+> 加载校验会拒绝缺失/越界/潜力低于基础值（见 §6）。两个仓库内数据库已补齐（A3，不得用默认年龄替代）。
+> 详见 `DECISIONS.md` D-14 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §20。
 
 ## 0. 文档定位与边界
 
