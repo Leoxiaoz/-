@@ -23,12 +23,21 @@
 
 import { SimulationError } from '../shared/errors.js';
 import { PLAYER_ATTRIBUTES, ATTRIBUTE_DEFAULT, ATTRIBUTE_RANGE } from '../shared/football-schema.js';
-import { PLAYER_RUNTIME_CONFIG } from './sim-config.js';
+import { PLAYER_RUNTIME_CONFIG, INJURY_CONFIG } from './sim-config.js';
 
 /** 伤病状态枚举。 */
 export const INJURY_STATUS = Object.freeze({ FIT: 'fit', INJURED: 'injured' });
 
 const { VITALS, MAX_MINUTES_PER_MATCH } = PLAYER_RUNTIME_CONFIG;
+
+/** 按缺阵天数归类严重度（配置驱动；第 17 步）。 */
+export function severityForDays(days) {
+  const d = Number(days) || 0;
+  for (const band of INJURY_CONFIG.SEVERITY_BANDS) {
+    if (d <= band.maxDays) return band.name;
+  }
+  return INJURY_CONFIG.SEVERITY_BANDS[INJURY_CONFIG.SEVERITY_BANDS.length - 1].name;
+}
 
 /** 把数值夹取到 [min, max]；非有限值回退到 fallback。 */
 function clamp(value, min, max, fallback) {
@@ -59,18 +68,48 @@ function normalizeStatLine(line) {
 
 /** 建立默认伤病状态（健康）。 */
 function createInjury() {
-  return { status: INJURY_STATUS.FIT, type: null, daysRemaining: 0, since: null };
+  return {
+    status: INJURY_STATUS.FIT,
+    type: null,
+    category: null,
+    severity: null,
+    daysRemaining: 0,
+    totalDays: 0,
+    since: null,
+  };
 }
 
-/** 规范化伤病状态（向后兼容：旧档缺字段时兜底为健康）。 */
+/** 规范化伤病状态（向后兼容：旧档缺字段时兜底为健康；第 17 步新增字段可缺省）。 */
 function normalizeInjury(injury) {
   if (!injury || typeof injury !== 'object') return createInjury();
   const status = injury.status === INJURY_STATUS.INJURED ? INJURY_STATUS.INJURED : INJURY_STATUS.FIT;
+  const daysRemaining = Math.max(0, Math.floor(Number(injury.daysRemaining) || 0));
+  const totalDays = Math.max(0, Math.floor(Number(injury.totalDays) || daysRemaining));
   return {
     status,
     type: status === INJURY_STATUS.INJURED ? (injury.type ?? null) : null,
-    daysRemaining: Math.max(0, Math.floor(Number(injury.daysRemaining) || 0)),
+    category: status === INJURY_STATUS.INJURED ? (injury.category ?? null) : null,
+    severity: status === INJURY_STATUS.INJURED
+      ? (injury.severity ?? severityForDays(totalDays || daysRemaining))
+      : null,
+    daysRemaining,
+    totalDays: status === INJURY_STATUS.INJURED ? totalDays : 0,
     since: status === INJURY_STATUS.INJURED ? (injury.since ?? null) : null,
+  };
+}
+
+/** 建立默认伤病历史（定长、有界；第 17 步）。 */
+function createInjuryHistory() {
+  return { recurrenceCount: 0, lastInjuryDate: null, lastInjuryType: null };
+}
+
+/** 规范化伤病历史（旧档缺省兜底）。 */
+function normalizeInjuryHistory(history) {
+  if (!history || typeof history !== 'object') return createInjuryHistory();
+  return {
+    recurrenceCount: Math.max(0, Math.floor(Number(history.recurrenceCount) || 0)),
+    lastInjuryDate: history.lastInjuryDate ?? null,
+    lastInjuryType: history.lastInjuryType ?? null,
   };
 }
 
@@ -94,6 +133,7 @@ export function createPlayerRuntime(playerId, options = {}) {
     form: VITALS.INITIAL_FORM,
     morale: VITALS.INITIAL_MORALE,
     injury: createInjury(),
+    injuryHistory: createInjuryHistory(),
     stats: {
       seasonNumber: Number.isInteger(options.seasonNumber) ? options.seasonNumber : 1,
       season: createStatLine(),
@@ -118,6 +158,7 @@ function normalizePlayerRuntime(existing, playerId, seasonNumber) {
     form: clamp(existing.form, VITALS.MIN, VITALS.MAX, base.form),
     morale: clamp(existing.morale, VITALS.MIN, VITALS.MAX, base.morale),
     injury: normalizeInjury(existing.injury),
+    injuryHistory: normalizeInjuryHistory(existing.injuryHistory),
     stats: {
       seasonNumber: Number.isInteger(existing.stats?.seasonNumber)
         ? existing.stats.seasonNumber
@@ -251,26 +292,72 @@ export function setVitals(state, playerId, vitals = {}) {
 }
 
 /**
- * 施加伤病（数据结构级接口；生成/恢复算法属 `[TBD]`，SIMULATION_SPEC §12）。
- * @param {{type?: string, daysRemaining?: number, date?: string}} [info]
+ * 施加伤病（数据结构层；与伤病引擎共同构成生命周期）。
+ * 第 17 步：记录 `type/category/severity/totalDays/daysRemaining/since`，更新有限伤病历史，
+ * 并在 **severity=severe** 时向成长系统**明确写入** `growth.injuryPenaltySeasons`（成长系统只消费该字段）。
+ * @param {{type?: string, category?: string, severity?: string, daysRemaining?: number, totalDays?: number, date?: string}} [info]
  */
 export function applyInjury(state, playerId, info = {}) {
   const rt = requirePlayerRuntime(state, playerId);
-  const days = Math.floor(Number(info.daysRemaining ?? 0));
+  const totalDays = Math.floor(Number(info.totalDays ?? info.daysRemaining ?? 0));
+  if (!Number.isFinite(totalDays) || totalDays < 1) {
+    throw new SimulationError('applyInjury 需要正整数缺阵天数', {
+      context: { playerId, value: info.totalDays ?? info.daysRemaining },
+    });
+  }
+  const type = info.type ?? null;
+  const severity = info.severity ?? severityForDays(totalDays);
+  const category = info.category ?? INJURY_CONFIG.TYPES[type]?.category ?? null;
+  const since = info.date ?? state.currentDate ?? null;
+
   rt.injury = {
     status: INJURY_STATUS.INJURED,
-    type: info.type ?? null,
-    daysRemaining: Number.isFinite(days) && days > 0 ? days : 0,
-    since: info.date ?? state.currentDate ?? null,
+    type,
+    category,
+    severity,
+    daysRemaining: totalDays,
+    totalDays,
+    since,
   };
+  // 有限伤病历史（定长，不无限增长；第 17 步）。
+  rt.injuryHistory.recurrenceCount += 1;
+  rt.injuryHistory.lastInjuryDate = since;
+  rt.injuryHistory.lastInjuryType = type;
+
+  // 长期伤病 → 成长放缓：由伤病系统在**伤病发生时**写入，成长系统只消费（D-15）。
+  if (severity === 'severe') {
+    rt.growth.injuryPenaltySeasons = Math.max(
+      rt.growth.injuryPenaltySeasons,
+      INJURY_CONFIG.GROWTH_PENALTY_SEASONS,
+    );
+  }
   return rt;
 }
 
-/** 解除伤病（恢复健康）。 */
+/**
+ * 解除伤病（恢复健康）。第 17 步：康复后体能**不立即满值**（受 RECOVERY_FITNESS_CAP 约束）。
+ */
 export function recoverInjury(state, playerId) {
   const rt = requirePlayerRuntime(state, playerId);
   rt.injury = createInjury();
+  rt.fitness = Math.min(rt.fitness, INJURY_CONFIG.RECOVERY_FITNESS_CAP);
   return rt;
+}
+
+/**
+ * 每日递减伤病剩余天数；归零即自动恢复（确定性，不允许永久伤病）。
+ * 由伤病引擎在每日推进时调用（本函数为数据层实现，不含概率）。
+ * @returns {boolean} 是否在本日恢复
+ */
+export function decrementInjuryDays(state, playerId) {
+  const rt = requirePlayerRuntime(state, playerId);
+  if (rt.injury.status !== INJURY_STATUS.INJURED) return false;
+  rt.injury.daysRemaining -= 1;
+  if (rt.injury.daysRemaining <= 0) {
+    recoverInjury(state, playerId);
+    return true;
+  }
+  return false;
 }
 
 /**

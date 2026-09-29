@@ -11,6 +11,7 @@ import './core.test.js';
 import './match.test.js';
 import './player-runtime.test.js';
 import './growth.test.js';
+import './injury.test.js';
 import './save.test.js';
 import './indexeddb.test.js';
 

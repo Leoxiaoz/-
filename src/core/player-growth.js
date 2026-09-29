@@ -98,10 +98,8 @@ function developPlayer(state, playerId, seasonNumber, trainingFactor, date) {
   const personality = player.personality ?? {};
   const rng = createRng(hashSeed(`${state.worldId}|growth|${playerId}|${seasonNumber}`));
 
-  // 长期伤病：本期判定，放缓后续若干赛季的成长（B7）。
-  if ((rt.injury?.daysRemaining ?? 0) >= C.LONG_INJURY_DAYS) {
-    rt.growth.injuryPenaltySeasons = Math.max(rt.growth.injuryPenaltySeasons, C.INJURY_PENALTY.SEASONS);
-  }
+  // 长期伤病放缓成长：**只消费**由伤病系统（player-injury）在伤病发生时写入的字段，
+  // 不再自行读取/推断伤病状态（第 17 步 D-15：两个系统不互相推断）。
   const penaltyFactor = rt.growth.injuryPenaltySeasons > 0 ? C.INJURY_PENALTY.FACTOR : 1;
 
   const growthModifier =

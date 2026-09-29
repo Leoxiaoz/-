@@ -127,13 +127,36 @@
 - **落地的暂定默认参数**（`src/core/sim-config.js` `PLAYER_GROWTH_CONFIG`，可后续统一调参）：
   分组巅峰 `pace 27 / technical 30 / goalkeeping 32`；成长速率按年龄 0.25/0.15/0.06（吸收潜力余量）；
   衰退速率 `0.7/0.4/0.3`；出场加成上限 0.2（1800 分钟、21→27 岁窗口）；士气/状态 ±0.1；
-  人格修正 0.1/0.05/0.05；随机幅度 0.15；超预期 5% × +2；长期伤病阈值 90 天、成长 ×0.85 一季。
+  人格修正 0.1/0.05/0.05；随机幅度 0.15；超预期 5% × +2。
+  长期伤病放缓成长（×0.85）的**触发与时长改由伤病系统负责**（写 `growth.injuryPenaltySeasons`，见 D-15），
+  成长系统不再自行读取 `injury.daysRemaining` 推断。
 - **模型**：成长以「距每属性潜力上限的余量 × 年龄速率 × 修正 × 有界随机」驱动（自然收益递减、绝不越上限）；
   过巅峰后按年龄线性衰退。**只写 `runtime.players[].ability.deltas`**，静态库只读（A3/规则第 6 条）。
 - **运行时新增字段**：`players[].growth = { lastEvaluatedSeason, injuryPenaltySeasons }`；`GAME_STATE_SCHEMA_VERSION` 2→3（加法式，向后兼容）。
 - **确定性**：种子 = `hash(worldId, playerId, season)`；同一赛季**幂等**。
 - **接线**：`simulation.js` 赛季滚动时先 `developPlayers`（用该季统计与年龄）再 `resetSeasonStats`。
 - 落地：[player-growth.js](file:///workspace/src/core/player-growth.js)、`tests/growth.test.js`、[SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §20。
+
+---
+
+## D-15 伤病生命周期（对应 SIMULATION_SPEC §21、SAVE_SPEC §3）
+
+- **制定者已确认规则**（第 17 步）：
+  - **来源**：比赛产生伤病——赛后对双方全队球员做最小判定（每方每场至多 1 人新增）；不重构比赛模拟，不做首发/换人/比赛内事件链。
+  - **类型**：6–8 种，**配置驱动**（`INJURY_CONFIG.TYPES`：knock/muscle/hamstring/ankle/knee/concussion/ligament/illness），逻辑不硬编码类型。
+  - **严重度**：仅 `minor / moderate / severe`；缺阵天数由「类型 + 严重度 + injuryProneness + 年龄/体能 + 有界随机」计算（severe 上限 240 天）。
+  - **恢复**：`daysRemaining` 每日递减，归零自动恢复（`status → fit`）；伤病不允许永久存在，恢复过程确定性、不含随机。
+  - **vitals**：伤病发生时 fitness/form/morale 立即下降；伤病期间 fitness 日降、form 冻结衰减、长期伤病 morale 适度下降；康复后 fitness 不立即满值（上限 80）、form 重新由比赛建立、morale 向基线温和恢复。**不修改球员基础属性/静态库。**
+  - **成长惩罚解耦（修复第 16 步问题）**：伤病系统在发生伤病时按严重度**明确写入** `growth.injuryPenaltySeasons`（severe 写 1 季）；`player-growth.js` **只读取并消耗**该字段（每季 -1 至 0），**不再自行依据 `injury.daysRemaining >= 90` 推断**。惩罚有明确开始（伤病发生）与结束（消耗至 0）；同一伤病跨赛季**不重复施加**、**不永久触发**。
+  - **injuryProneness**（静态人格）影响：受伤概率（+0.6 权重）、恢复天数轻微修正（+0.1）、复发风险；概率**有上限**（单场 ≤ 0.05）不失控。
+  - **injuryHistory 有限**：仅定长对象 `{recurrenceCount, lastInjuryDate, lastInjuryType}`，不无限增长。
+  - **确定性**：随机一律用项目 deterministic RNG，种子含 `worldId + fixtureId/date + playerId + 'injury'`；相同输入结果一致。
+  - **AI 球队最小保证**：受伤球员不被当作可用（`isAvailable`）；实力计算无 NaN/负数（空阵容保护回退中性值）；伤病不导致崩溃。**不做**青训补位/紧急转会/医疗团队/医疗设施/复杂康复。
+- **运行时新增字段**：`injury = {status, type, category, severity, daysRemaining, totalDays, since}`；
+  `injuryHistory = {recurrenceCount, lastInjuryDate, lastInjuryType}`；`GAME_STATE_SCHEMA_VERSION` 3→4（加法式，向后兼容）。
+- **接线**：`simulation.js` 每日推进 `tickInjuries`（递减→自动恢复→vitals）；`#playFixture` 赛后 `resolveMatchInjuries`；`#buildSide`/`computeTeamStrength` 过滤伤病球员。
+- 落地：[player-injury.js](file:///workspace/src/core/player-injury.js)、`src/core/player-runtime.js`、`src/core/sim-config.js`（`INJURY_CONFIG`）、
+  [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §21、`tests/injury.test.js`（21 项）。
 
 ---
 

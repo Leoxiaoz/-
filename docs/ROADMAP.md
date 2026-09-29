@@ -98,6 +98,15 @@
 - 已交付测试：`tests/growth.test.js` 18 项；累计 **83/83 通过**。
 - 长期护栏：真实库 50 赛季属性均值 51.6 → 9.0 **单调不升**；10/50/100 赛季无越界/NaN（D1/D2）。
 
+### 2.3 已交付（2026-09-29，第 17 步：伤病生命周期）
+
+- 目标：完善**伤病生命周期**（发生 → 每日递减 → 自动恢复 → vitals），并修复第 16 步的成长惩罚耦合问题（D-15）。
+- 已实现：`src/core/player-injury.js`（赛后最小伤病判定、每日推进、vitals）；`sim-config.js` `INJURY_CONFIG`（8 类型、3 严重度，配置驱动）；
+  `player-runtime.js` 扩展 `injury` 结构与定长 `injuryHistory`；`player-growth.js` **只消费** `growth.injuryPenaltySeasons`（不再自行推断）；
+  `team-strength.js`/`simulation.js` 过滤伤病球员（空阵容保护）；`GAME_STATE_SCHEMA_VERSION` 3→4（加法式，向后兼容）。
+- **刻意未做**：完整训练系统、首发/换人、青年队补位、紧急转会、医疗团队/设施、复杂康复、比赛内伤病事件链、无限伤病历史。
+- 已交付测试：`tests/injury.test.js` 21 项（含整季 / 50 / 100 赛季压力）；累计 **104/104 通过**。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

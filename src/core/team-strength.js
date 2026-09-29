@@ -12,6 +12,7 @@ import {
   DEFAULT_FORMATION,
 } from './sim-config.js';
 import { ATTRIBUTE_DEFAULT } from '../shared/football-schema.js';
+import { getPlayerRuntime, INJURY_STATUS } from './player-runtime.js';
 
 /** 各线参考属性（MVP 最小集，DECISIONS D-11）。 */
 const LINE_ATTRIBUTES = Object.freeze({
@@ -61,7 +62,11 @@ function lineRating(players, position, count) {
  * @returns {{attack: number, midfield: number, defence: number, goalkeeping: number}}
  */
 export function computeTeamStrength(state, teamId, tactics = {}) {
-  const players = state.static.players.filter((p) => p.teamId === teamId);
+  // 伤病球员不可用（第 17 步）：实力计算跳过伤停球员；
+  // 若某线人数不足则用现有可用者，绝无候选时回退中性值（防空阵容 / NaN / 负数）。
+  const players = state.static.players
+    .filter((p) => p.teamId === teamId)
+    .filter((p) => getPlayerRuntime(state, p.id)?.injury?.status !== INJURY_STATUS.INJURED);
   const counts = lineCounts(tactics.formation);
   const gk = lineRating(players, 'GK', 1);
   const defence = lineRating(players, 'DF', counts.DF);

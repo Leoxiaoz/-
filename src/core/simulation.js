@@ -17,6 +17,7 @@ import { applyResult } from './standings.js';
 import { createLeagueRuntime, getClubRuntime, recordEvent } from './game-state.js';
 import { resetSeasonStats } from './player-runtime.js';
 import { developPlayers } from './player-growth.js';
+import { tickInjuries, resolveMatchInjuries, isAvailable } from './player-injury.js';
 import { SCHEDULE_CONFIG } from './sim-config.js';
 
 export class SimulationCore {
@@ -39,6 +40,8 @@ export class SimulationCore {
       });
     }
     state.currentDate = addDays(state.currentDate, 1);
+    // 伤病生命周期：每日递减 → 自动恢复（第 17 步，确定性）。
+    tickInjuries(state);
     this.playDueFixtures(state);
     this.#rollFinishedSeasons(state);
     return state;
@@ -96,6 +99,15 @@ export class SimulationCore {
       awayId: fixture.awayId,
       score: `${result.homeGoals}-${result.awayGoals}`,
     });
+
+    // 赛后最小伤病判定（第 17 步；不重构比赛模拟，不用首发/换人）。
+    resolveMatchInjuries(state, {
+      fixtureId: fixture.id,
+      season: comp.season,
+      round: fixture.round,
+      homeId: fixture.homeId,
+      awayId: fixture.awayId,
+    });
   }
 
   #buildSide(state, teamId) {
@@ -105,7 +117,8 @@ export class SimulationCore {
       teamId,
       tactics,
       strength: computeTeamStrength(state, teamId, tactics),
-      players: state.static.players.filter((p) => p.teamId === teamId),
+      // 出场/进球者仅从可用（非伤停）球员中产生（第 17 步）。
+      players: state.static.players.filter((p) => p.teamId === teamId && isAvailable(state, p.id)),
     };
   }
 

@@ -108,12 +108,72 @@ export const PLAYER_GROWTH_CONFIG = Object.freeze({
   NOISE_AMPLITUDE: 0.15,
   /** 超预期成长（C3）：触发概率与额外点数（不突破潜力上限）。 */
   BREAKOUT: Object.freeze({ CHANCE: 0.05, BONUS: 2 }),
-  /** 长期伤病（B7）：单次伤病剩余天数达到该阈值即触发「后续成长放缓」。 */
-  LONG_INJURY_DAYS: 90,
-  /** 长期伤病惩罚：成长倍率与持续赛季数。 */
-  INJURY_PENALTY: Object.freeze({ FACTOR: 0.85, SEASONS: 1 }),
+  /** 长期伤病放缓成长的幅度倍率（惩罚赛季数由**伤病系统**写入 `growth.injuryPenaltySeasons`）。 */
+  INJURY_PENALTY: Object.freeze({ FACTOR: 0.85 }),
   /** 训练修正默认值（B1：预留接口，本期不实现训练本体）。 */
   DEFAULT_TRAINING_FACTOR: 1.0,
+});
+
+/**
+ * 伤病系统参数（第 17 步；DECISIONS D-15）。
+ * 说明：**配置驱动**，类型/严重度不硬编码到逻辑。数值为暂定校准值，可统一调参。
+ */
+export const INJURY_CONFIG = Object.freeze({
+  /** 伤病类型表（数据驱动；逻辑不写死类型名）。 */
+  TYPES: Object.freeze({
+    knock: Object.freeze({ category: 'minor-blow', baseDays: 6, dayRange: 4 }),
+    muscle: Object.freeze({ category: 'soft-tissue', baseDays: 14, dayRange: 8 }),
+    hamstring: Object.freeze({ category: 'soft-tissue', baseDays: 21, dayRange: 10 }),
+    ankle: Object.freeze({ category: 'joint', baseDays: 28, dayRange: 12 }),
+    knee: Object.freeze({ category: 'joint', baseDays: 45, dayRange: 20 }),
+    concussion: Object.freeze({ category: 'head', baseDays: 14, dayRange: 6 }),
+    ligament: Object.freeze({ category: 'severe-structural', baseDays: 90, dayRange: 60 }),
+    illness: Object.freeze({ category: 'illness', baseDays: 10, dayRange: 5 }),
+  }),
+  /** 严重度分档（按缺阵天数；本阶段只有三级）。 */
+  SEVERITY_BANDS: Object.freeze([
+    Object.freeze({ name: 'minor', maxDays: 14 }),
+    Object.freeze({ name: 'moderate', maxDays: 45 }),
+    Object.freeze({ name: 'severe', maxDays: Infinity }),
+  ]),
+  /** 出场发生伤病的每场基础概率（由球员因素与随机修正）。 */
+  BASE_INJURY_CHANCE: 0.012,
+  /** 单名球员单场受伤概率上限（防止失控）。 */
+  MAX_INJURY_CHANCE: 0.05,
+  /** 每场每方最多新增伤病人数（防一次爆量）。 */
+  MAX_INJURIES_PER_MATCH_SIDE: 1,
+  /** 严重度抽取基准权重（随体能/倾向/年龄调整）。 */
+  SEVERITY_WEIGHTS: Object.freeze({ minor: 0.75, moderate: 0.21, severe: 0.04 }),
+  /** 严重度 -5 上限保护（severe 天数封顶，防止极端值）。 */
+  SEVERE_MAX_DAYS: 240,
+  /** 伤病发生时的 vitals 立即下降（按严重度）。 */
+  VITALS_DROP: Object.freeze({
+    FITNESS: Object.freeze({ minor: 8, moderate: 20, severe: 40 }),
+    FORM: Object.freeze({ minor: 5, moderate: 12, severe: 25 }),
+    MORALE: Object.freeze({ minor: 2, moderate: 6, severe: 15 }),
+  }),
+  /** 高 injuryProneness 对概率/恢复/复发的修正强度（每偏离 50 的影响比例）。 */
+  PRONENESS: Object.freeze({ CHANCE: 0.6, RECOVERY: 0.1, RECURRENCE: 0.2 }),
+  /** 年龄与体能对概率/恢复的修正。 */
+  AGE: Object.freeze({ CHANCE_START: 30, CHANCE_PER_YEAR: 0.02, RECOVERY_START: 30, RECOVERY_PER_YEAR: 0.01 }),
+  /** 体能对概率的修正（fitness 每低 10 点 → 概率乘数）。 */
+  FITNESS_CHANCE_STEP: 1.25,
+  /** 恢复期每日 fitness 回升（绝对点数）；伤病期间 fitness 日降。 */
+  FITNESS: Object.freeze({ RECOVER_PER_DAY: 0.8, INJURED_DROP_PER_DAY: 0.6 }),
+  /** 伤病期间 form 冻结目标（不随比赛建立），每日向 0 衰减。 */
+  FORM_INJURED_TARGET: 0,
+  /** 伤病期间 morale 日降（长期病尤甚，按剩余天数加权）。 */
+  MORALE_DROP_PER_DAY: 0.15,
+  /** 士气基线（康复后向其温和回归）。 */
+  BASELINE_MORALE: 50,
+  /** 康复后体能上限（不立即满值；伤病期间会继续跌）。 */
+  RECOVERY_FITNESS_CAP: 80,
+  /** 长期伤病（severity=severe）写入的成长放缓赛季数。 */
+  GROWTH_PENALTY_SEASONS: 1,
+  /** 康复后 morale 每日恢复至 50 的速度（分）。 */
+  MORALE_RECOVER_PER_DAY: 0.5,
+  /** 复发概率基数与加成上限（防止失控）。 */
+  RECURRENCE: Object.freeze({ BASE_CHANCE: 0.08, PER_INCIDENT: 0.03, MAX_MULTIPLIER: 1.8 }),
 });
 
 /** 积分规则。 */

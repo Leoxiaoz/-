@@ -22,6 +22,11 @@
 > **实现更新（2026-09-29，第 16 步 · 成长/衰退）**：`birthDate / potential / personality` 属**静态数据库**
 > （见 `DATABASE_SPEC` §2/§4），**不进存档**；成长/衰退结果仅追加 `ability.deltas` 与 `players[].growth`
 > 元数据（仍是引用 + 增量）。旧档读取经 `initializePlayerRuntime` 补齐 `growth`（保留已有值）。详见 `DECISIONS.md` D-14。
+>
+> **实现更新（2026-09-29，第 17 步 · 伤病生命周期）**：伤病为**运行时状态**，存档保存 `players[].injury`
+> （`status/type/category/severity/daysRemaining/totalDays/since`）与 `players[].injuryHistory`
+> （`recurrenceCount/lastInjuryDate/lastInjuryType`，定长）；`GAME_STATE_SCHEMA_VERSION` 3→4（加法式，向后兼容）。
+> 旧档经 `initializePlayerRuntime` 补齐新字段（保留已有值、按 `daysRemaining` 派生严重度）。详见 `DECISIONS.md` D-15。
 
 ## 0. 文档定位与边界
 

@@ -329,3 +329,28 @@
 - **明确未实现**：训练系统本体（B1 仅预留接口）、退役/新生代/青训（防膨胀 D1 不得借道未批准系统）。
 - **测试**：`tests/growth.test.js`（18 项）——确定性、潜力上限、成长/衰退方向、出场/士气/人格/训练/伤病修正、
   幂等、静态库只读、字段校验、防膨胀（10/50/100）。
+
+---
+
+## 21. 实现状态（第二阶段 · 第 17 步：伤病生命周期，2026-09-29）
+
+> 制定者已确认规则（见 `DECISIONS.md` D-15）。本节描述**已实现**的伤病引擎，与代码一致。
+
+- **模块**：`src/core/player-injury.js`（Simulation Core，纯逻辑，不依赖 DOM/存储/UI）；配置在 `sim-config.js` `INJURY_CONFIG`。
+- **来源（比赛产生）**：`simulation.js` `#playFixture` 赛后调用 `resolveMatchInjuries`——对双方**全队球员**逐一判定，
+  每方每场至多新增 `MAX_INJURIES_PER_MATCH_SIDE`（=1）人。**当前无首发/换人系统，故以全队为参赛集合**（已知限制）。
+- **类型 / 严重度（配置驱动）**：`TYPES` 8 种（含 category/baseDays/dayRange）；严重度 `minor(≤14d) / moderate(≤45d) / severe(>45d)`。
+  逻辑**不硬编码**具体类型；天数由类型 + 严重度 + injuryProneness + 年龄/体能 + 有界随机计算，夹取进该档（severe 上限 240 天）。
+- **恢复（确定性）**：`simulation.js` `advanceDay` 每日调用 `tickInjuries` → `decrementInjuryDays` 递减 `daysRemaining`，
+  归零自动 `recoverInjury`（`status → fit`）。伤病**不允许永久存在**。
+- **vitals（不改基础属性）**：发生即降 fitness/form/morale；伤病期间 fitness 日降、form 向 0 冻结衰减、长期伤病 morale 下降；
+  康复后 fitness 上限 80（不立即满值）、form 由比赛重建、morale 向基线温和恢复。静态库只读（规则第 6 条）。
+- **成长惩罚解耦**：`applyInjury` 在 severe 时写入 `growth.injuryPenaltySeasons`；成长系统**只消费**该字段（每季 -1）。
+  两系统**不互相推断状态**（修复第 16 步的 `daysRemaining >= 90` 隐患）。
+- **确定性**：种子 = `hash(worldId, fixtureId/date, playerId, 'injury')`；相同输入结果一致（`tests/injury.test.js` 验证）。
+- **运行时字段**：`players[].injury = {status, type, category, severity, daysRemaining, totalDays, since}`；
+  `players[].injuryHistory = {recurrenceCount, lastInjuryDate, lastInjuryType}`（定长，不无限增长）；`GAME_STATE_SCHEMA_VERSION` 3→4。
+- **空阵容保护**：`computeTeamStrength` / `#buildSide` 过滤伤病球员（`isAvailable`）；某线不足用现有可用者，无候选回退中性值，无 NaN/负数。
+- **明确未实现**：完整训练系统、首发/换人、青年队补位、紧急转会、医疗团队/设施、复杂康复、比赛内伤病事件链、无限伤病历史。
+- **测试**：`tests/injury.test.js`（21 项）——配置驱动、严重度分档、比赛产伤（整季）、每日递减/自动恢复、vitals、
+  injuryProneness 上限、复发信息定长、确定性、成长惩罚起止/不重复/不永久、旧档 normalize、空阵容保护、无 NaN/Infinity/负数（整季 / 50 / 100 赛季）。
