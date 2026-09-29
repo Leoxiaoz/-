@@ -89,6 +89,12 @@ export function deserializeState(raw) {
     payload.runtime.players ??= {};
     payload.runtime.competitions ??= {};
     payload.runtime.events ??= [];
+    // 球员生命周期容器（第 19 步；旧档兜底为空/零，populationTarget 由 initializePlayerRuntime 依据世界补齐）
+    payload.runtime.generated ??= {};
+    payload.runtime.retired ??= {};
+    if (!Number.isInteger(payload.runtime.nextGeneratedSeq) || payload.runtime.nextGeneratedSeq < 0) {
+      payload.runtime.nextGeneratedSeq = 0;
+    }
   }
   return payload;
 }

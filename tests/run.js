@@ -13,6 +13,7 @@ import './player-runtime.test.js';
 import './growth.test.js';
 import './injury.test.js';
 import './ecosystem.test.js';
+import './lifecycle.test.js';
 import './save.test.js';
 import './indexeddb.test.js';
 

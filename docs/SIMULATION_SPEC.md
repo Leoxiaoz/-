@@ -384,6 +384,41 @@
   - 世界均值 1→10 季约 55.6→57.9，随后随老龄化回落（50 季 15.6、100 季 1）。
 - **已知范围（本轮不修复）**：无退役/新生代/青训 → 长期世界均值与实力单调回落至下限（100 季比赛趋于 0-0）。
   属既有成长/衰退规则的确定性后果，按制定者指示保留为后续独立步骤（退役 + 新生代 + 人口生态平衡）。
+  **该项已由 §23（第 19 步）解决。**
 - **明确未实现**：首发/替补/换人、训练系统本体、青年队、紧急转会、退役/新生代。
-- **测试**：`tests/ecosystem.test.js`（17 项）——出场统计真值、进球与比分一致、deltas→有效属性→实力→比赛、
+- **测试**：`tests/ecosystem.test.js`（16 项）——出场统计真值、进球与比分一致、deltas→有效属性→实力→比赛、
   form 恢复、fitness 消耗与恢复、伤病不永久、10/50/100 季稳定、存档往返一致、确定性、参数守卫。
+
+---
+
+## 23. 实现状态（第二阶段 · 第 19 步：退役 + 新生代 + 世界人口生态平衡，2026-09-29）
+
+> 制定者已确认规则（见 `DECISIONS.md` D-17）。本节描述**已实现**的生命周期引擎，与代码一致。
+> 目标：为世界建立"退出/进入"通道，消除长期（50–100 赛季）世界均值坍缩。
+
+- **模块**：[player-lifecycle.js](file:///workspace/src/core/player-lifecycle.js)（退役/新生代/人口补位）；
+  访问器与容器在 [player-runtime.js](file:///workspace/src/core/player-runtime.js)；配置在 `sim-config.js`（`RETIREMENT_CONFIG` / `GENERATION_CONFIG`）。
+- **统一世界球员访问器**（唯一遍历入口，替代直读 `state.static.players`）：
+  `getWorldPlayers(state)`（静态未退役 ∪ 生成未退役）、`getTeamPlayers(state, teamId)`、
+  `getPlayerProfile(state, id)`（静态优先，其次 `runtime.generated`）、`isRetired(state, id)`。
+  `team-strength` / `player-growth` / `player-injury` / `player-runtime` 已全部迁移。
+- **退役**：软区间**线性概率** + 硬上限强制；曲线 FW 32/37、DF 33/38、MF 33/38、GK 35/40；
+  RNG 种子 `hashSeed(worldId|retire|season|playerId)`（可复现）；不使用能力/伤病史；已退役者移入 `runtime.retired`（保留 career/终值快照），
+  `playerId` 永久失效。
+- **新生代**：每赛季批次；年龄 17–19；同位置**静态模板 + 三路独立有界抖动**（base ±3 / headroom ±2 / personality ±3）；
+  `base ≤ potential ≤ 99`；默认 vitals（100/50/50）、健康、空伤病史；ID `ply_g_<seq>`（序号入档、永不回退）。
+- **首次成长时机**：`growth.lastEvaluatedSeason = 生成时 prevSeason`（**非 0**）→ 生成当次不成长，**完整下一赛季结束后**首次成长。
+- **人口补位**：`target(club) = 世界创建时该队初始人数`（`runtime.populationTarget` 快照，含按位置明细）；
+  生效目标 `max(初始位置数, 阵型最低需求)` 且 **GK ≥ 1/队**；只生成不删除；不设自由球员池；不无控增长；小型世界按自身规模自适应。
+- **赛季滚动顺序**（`simulation.js`）：结算上一赛季成长 → 退役+归档 → 计算缺口并生成（属下一赛季）→ 重置本赛季统计 → 进入下一赛季。
+- **确定性**：退役/生成均为项目 deterministic RNG；同（库+档+种子）完全可复现。
+- **开关**：`RETIREMENT_CONFIG.ENABLED`（默认 true）；false 时跳过退役与新生代，结构不变、行为回到 §22。
+- **运行时常量**：`generated` / `retired` / `nextGeneratedSeq` / `populationTarget`；`GAME_STATE_SCHEMA_VERSION` 4→5（加法式，旧档兜底）。
+- **长期护栏（实测，MVP 世界 8 队；1/10/50/100/200 赛季）**：总人口恒 112、GK 恒 8、无重复 ID；
+  年龄均值 22.3/25.3/23.9/25.2/26.6；base 均值 54.2/54.2/54.6/53.8/54.1；
+  potential 均值 62.2/62.2/62.5/61.9/62.1（**不坍缩、不膨胀**）；退役≈新生（108/108、221/221、454/454）。
+- **明确未实现**：自由球员池、转会、合同、青训梯队、预备队、名人堂 UI、财政、教练、多联赛、完整伤病史、
+  fixture 级 `recordAppearance` 防重、历史存档裁剪（均属后续步骤）。
+- **测试**：`tests/lifecycle.test.js`（19 项）——退役概率/曲线/硬上限/确定性/归档、
+  新生代字段/首次成长时机、人口（GK≥1/不超目标/不增长）、小型世界、访问器、退出/进入系统联动、
+  v4→v5 迁移、序号防回退、存档往返、ID 唯一不复用、10/50/100/200 赛季稳定。

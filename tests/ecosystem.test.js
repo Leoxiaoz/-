@@ -11,6 +11,7 @@ import { SimulationCore } from '../src/core/simulation.js';
 import {
   getPlayerRuntime,
   getEffectiveAttributes,
+  getWorldPlayers,
   applyAbilityDelta,
   setVitals,
   applyInjury,
@@ -104,13 +105,14 @@ test('team strength 能继续影响比赛结果（期望进球随实力上升）
   assert(strong > weak, `强队期望进球应更高（${strong.toFixed(2)} vs ${weak.toFixed(2)}）`);
 });
 
-test('长期衰退已进入球队实力（闭环：成长/衰退 → 实力）', () => {
+test('长期球队实力保持稳定（第 19 步退役+新生代修复了坍缩）', () => {
   const state = leagueState(8);
   const start = computeTeamStrength(state, 'clb_001').attack;
   new SimulationCore().advanceDays(state, 100 * 125);
   const late = computeTeamStrength(state, 'clb_001').attack;
   assert(Number.isFinite(late) && late >= 1, `实力应为有限正数（${late}）`);
-  assert(late < start, `老龄化衰退应降低实力（${start.toFixed(1)}→${late.toFixed(1)}）`);
+  // 有退役+新生代后，实力不应坍缩到下限（旧系统会跌到 1）。
+  assert(late >= start * 0.5, `长期实力不应坍缩（${start.toFixed(1)}→${late.toFixed(1)}）`);
 });
 
 // ---------- 6 + 7. form 通过比赛恢复；fitness 消耗并随时间恢复 ----------
@@ -169,6 +171,7 @@ test('整季后伤病均会恢复（受伤不永久、天数有界）', () => {
 function assertWorldSane(state, label) {
   for (const p of state.static.players) {
     const rt = getPlayerRuntime(state, p.id);
+    if (!rt) continue; // 已退役球员不再有 active 运行时状态（第 19 步）
     for (const v of VITALS) {
       assert(Number.isFinite(rt[v]) && rt[v] >= 0 && rt[v] <= 100, `${label} ${p.id}.${v} 越界: ${rt[v]}`);
     }
@@ -200,20 +203,22 @@ test('50 赛季生态稳定：无 NaN/Infinity/负值、无越界、无超潜力
   assertWorldSane(state, '50季');
 });
 
-test('100 赛季生态稳定：能力单调回落、无爆炸、无永久异常', () => {
+test('100 赛季生态稳定：无坍缩、无膨胀、无永久异常', () => {
   const state = leagueState(8);
   const mean0 = worldMean(state);
   new SimulationCore().advanceDays(state, 100 * 125);
   assertWorldSane(state, '100季');
   const mean100 = worldMean(state);
   assert(Number.isFinite(mean100) && mean100 >= 1, '世界均值应为有限正数');
-  assert(mean100 <= mean0 + 1e-9, `100 赛季均值不应高于初始（无新生代，自然回落）：${mean0.toFixed(2)}→${mean100.toFixed(2)}`);
+  // 第 19 步起有退役+新生代 → 均值应长期稳定（既不坍缩也不膨胀）。
+  assert(mean100 >= mean0 * 0.6 && mean100 <= mean0 * 1.4,
+    `100 赛季均值应在稳定区间：${mean0.toFixed(2)}→${mean100.toFixed(2)}`);
 });
 
 function worldMean(state) {
   let sum = 0;
   let n = 0;
-  for (const p of state.static.players) {
+  for (const p of getWorldPlayers(state)) { // 活跃世界球员（排除退役、含新生代）
     const eff = getEffectiveAttributes(state, p.id);
     for (const a of ATTRS) { sum += eff[a]; n += 1; }
   }

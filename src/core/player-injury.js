@@ -23,6 +23,9 @@ import { ageOn } from './date-utils.js';
 import {
   INJURY_STATUS,
   getPlayerRuntime,
+  getPlayerProfile,
+  getWorldPlayers,
+  getTeamPlayers,
   applyInjury,
   decrementInjuryDays,
   severityForDays,
@@ -108,7 +111,7 @@ function applyVitalsDrop(rt, severity) {
  * @returns {object|null} 新伤病描述或 null
  */
 export function rollPlayerInjury(state, playerId, ctx) {
-  const player = state.static.players.find((p) => p.id === playerId);
+  const player = getPlayerProfile(state, playerId);
   const rt = getPlayerRuntime(state, playerId);
   if (!player || !rt) return null;
   if (rt.injury.status === INJURY_STATUS.INJURED) return null; // 已在伤停，不重复判定
@@ -152,7 +155,7 @@ export function resolveMatchInjuries(state, ctx) {
   const ref = ctx.fixtureId;
   const out = [];
   for (const teamId of [ctx.homeId, ctx.awayId]) {
-    const squad = state.static.players.filter((p) => p.teamId === teamId);
+    const squad = getTeamPlayers(state, teamId);
     let count = 0;
     for (const player of squad) {
       if (count >= C.MAX_INJURIES_PER_MATCH_SIDE) break;
@@ -177,7 +180,7 @@ export function tickInjuries(state) {
     throw new SimulationError('tickInjuries 需要包含 runtime.players 的状态', { context: { received: typeof state } });
   }
   const recovered = [];
-  for (const player of state.static.players) {
+  for (const player of getWorldPlayers(state)) {
     const rt = getPlayerRuntime(state, player.id);
     if (!rt) continue;
     if (rt.injury.status === INJURY_STATUS.INJURED) {
@@ -218,7 +221,7 @@ export function isAvailable(state, playerId) {
  * @returns {number} 0..MAX_INJURY_CHANCE
  */
 export function injuryChanceFor(state, playerId) {
-  const player = state.static.players.find((p) => p.id === playerId);
+  const player = getPlayerProfile(state, playerId);
   const rt = getPlayerRuntime(state, playerId);
   if (!player || !rt) return 0;
   const age = player.birthDate ? ageOn(player.birthDate, state.currentDate) : 30;

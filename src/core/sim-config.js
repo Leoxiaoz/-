@@ -202,3 +202,42 @@ export const TABLE_CONFIG = Object.freeze({
   DRAW: 1,
   LOSS: 0,
 });
+
+/**
+ * 退役参数（第 19 步；DECISIONS D-17）。
+ * 说明：**配置驱动**，年龄曲线按「成长 peak + 衰退速率 + 实测年龄分布」推导（见 SIMULATION_SPEC §23），
+ * 非凭空取值。软区间内线性概率、hardCap 强制退役；MVP 不使用能力/伤病史作为退役条件。
+ */
+export const RETIREMENT_CONFIG = Object.freeze({
+  /** 总开关：false 时完全跳过退役与新生代（结构不变，行为回到第 18 步）。 */
+  ENABLED: true,
+  /** 各位置退役曲线（softStart 起线性升概率，hardCap 强制）。 */
+  CURVES: Object.freeze({
+    FW: Object.freeze({ softStart: 32, hardCap: 37 }),
+    DF: Object.freeze({ softStart: 33, hardCap: 38 }),
+    MF: Object.freeze({ softStart: 33, hardCap: 38 }),
+    GK: Object.freeze({ softStart: 35, hardCap: 40 }),
+  }),
+});
+
+/**
+ * 新生代生成参数（第 19 步；DECISIONS D-17）。
+ * 说明：采用「同位置静态模板 + 三路独立有界抖动」，模板恒取自**不可变 static DB**，避免逐代累积漂移。
+ */
+export const GENERATION_CONFIG = Object.freeze({
+  /** 入队年龄区间（含端点）。 */
+  AGE_MIN: 17,
+  AGE_MAX: 19,
+  /** base 属性独立抖动幅度（±）。 */
+  BASE_JITTER: 3,
+  /** potential headroom 独立抖动幅度（±）。 */
+  HEADROOM_JITTER: 2,
+  /** personality 独立抖动幅度（±）。 */
+  PERSONALITY_JITTER: 3,
+  /** headroom 上限（对齐库经验上限，避免潜力虚高）。 */
+  MAX_HEADROOM: 18,
+  /** 新生代 ID 命名空间前缀（D-04）。 */
+  ID_PREFIX: 'ply_g_',
+  /** ID 序号补零位数。 */
+  ID_PAD: 4,
+});

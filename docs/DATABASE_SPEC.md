@@ -28,6 +28,12 @@
 > `personality`（`professionalism/determination/ambition/consistency/injuryProneness`，1–99）。
 > 加载校验会拒绝缺失/越界/潜力低于基础值（见 §6）。两个仓库内数据库已补齐（A3，不得用默认年龄替代）。
 > 详见 `DECISIONS.md` D-14 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §20。
+>
+> **实现更新（2026-09-29，第 19 步 · 球员生命周期）**：**新生代球员是运行时实体**，**不写入** `.fdb`（静态库只读）；
+> 其档案（`name/position/birthDate/attributes/potential/personality/teamId`）存于存档 `runtime.generated`，使用
+> **独立 ID 命名空间 `ply_g_<全局递增序号>`**（D6/A4 落地），退役后进入 `runtime.retired`。退役与生成的判定/生成规则属模拟规则，
+> 见 `DECISIONS.md` D-17 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §23。
+> 数据库侧唯一新约束：静态球员仍须提供 `birthDate/potential/personality`（第 16 步），新生代沿用同结构但不入库。
 
 ## 0. 文档定位与边界
 

@@ -31,6 +31,12 @@
 > **实现更新（2026-09-29，第 18 步 · 生态联调）**：出场/进球统计自本步起**真实产生并持久化**（`stats.season` / `stats.career`）；
 > 赛季滚动重置 `season`、累计 `career`。本轮为**接线**，运行时结构未新增字段 → `GAME_STATE_SCHEMA_VERSION` **保持 4**。
 > 存档往返一致性（含统计/伤病/vitals/成长）由 `tests/ecosystem.test.js` 验证。详见 `DECISIONS.md` D-16。
+>
+> **实现更新（2026-09-29，第 19 步 · 球员生命周期）**：新增运行时容器 `generated`（新生代档案，含 `teamId`）、
+> `retired`（退役归档，保留 career/终值快照）、`nextGeneratedSeq`（生成序号，**永不回退**）、
+> `populationTarget`（各队人口目标快照）；`GAME_STATE_SCHEMA_VERSION` **4→5**（加法式，向后兼容）。
+> 旧档缺这些字段时经 `deserializeState` / `initializePlayerRuntime` 兜底补齐（保留已有值）；退役球员读档时**不再被复活**。
+> 详见 `DECISIONS.md` D-17 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §23。
 
 ## 0. 文档定位与边界
 

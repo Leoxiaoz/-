@@ -168,9 +168,37 @@
   - **出场集合**：无首发/替补/换人系统，出场球员 = **比赛模拟实际使用的球员**（`selectMatchSquad`：按阵型各线取有效评分最高者，GK×1）。该函数为**单一可替换点**，未来以正式首发/换人系统替换即可，统计层（`recordAppearance`）不必重写。
   - **赛后最小反馈**（`MATCH_LOAD_CONFIG`）：实际出场者记 90 分钟出场、按 `events[].scorerId` 记进球；体能耗 `FITNESS_COST`；form 向基线（50）按 `FORM_RECOVER_RATE` 逼近（有界，不会无限增长或永久停在 0）。不改任何基础属性。
   - **体能恢复改为分数式**（`INJURY_CONFIG.FITNESS.RECOVER_FRACTION_PER_DAY`）：健康球员按「缺口比例」回升，使比赛消耗后不每周回到满值；无比赛日自然回升、休赛期趋近满值。
-- **已知范围（非本轮修复）**：无退役/新生代/青训 → 长期（约 50–100 赛季）世界均值与球队实力随老龄化**单调回落**（100 赛季趋近下限），比赛趋于 0-0。属既有成长/衰退规则的确定性后果，保留为后续独立步骤（退役 + 新生代 + 人口生态平衡）。
+- **已知范围（非本轮修复）**：无退役/新生代/青训 → 长期（约 50–100 赛季）世界均值与球队实力随老龄化**单调回落**（100 赛季趋近下限），比赛趋于 0-0。属既有成长/衰退规则的确定性后果，保留为后续独立步骤（退役 + 新生代 + 人口生态平衡）。**该项已由 D-17（第 19 步）解决。**
 - **存档**：本轮为**接线**，运行时结构未新增字段 → `GAME_STATE_SCHEMA_VERSION` **保持 4**。
-- 落地：`src/core/team-strength.js`、`src/core/simulation.js`、`src/core/sim-config.js`、`src/core/player-injury.js`；`tests/ecosystem.test.js`（17 项）。
+- 落地：`src/core/team-strength.js`、`src/core/simulation.js`、`src/core/sim-config.js`、`src/core/player-injury.js`；`tests/ecosystem.test.js`（16 项）。
+
+---
+
+## D-17 球员生命周期：退役 + 新生代 + 人口平衡（对应 SIMULATION_SPEC §23、SAVE_SPEC §3、DATABASE_SPEC §3）
+
+- **背景（第 19 步）**：第 16–18 步闭环打通后，世界仍无"退出/进入"通道 → 长期（50–100 赛季）世界均值随老龄化坍缩至下限。
+- **已定规则**：
+  - **退役**：年龄软区间**线性概率** + **硬上限强制**；曲线按「成长 peak/decline + 实测年龄分布」推导：
+    FW 32/37、DF 33/38、MF 33/38、GK 35/40；RNG 种子 `worldId|retire|season|playerId`（可复现）；
+    **MVP 不使用能力/伤病史**作为退役条件；不允许永久不退、不允许超上限存在。
+  - **新生代**：**每赛季固定批次**（非"退一补一"）；属**下一赛季**；年龄 17–19；来源为**同位置静态模板 + 三路独立有界抖动**
+    （base ±3、potential headroom ±2、personality ±3）；保证 `base ≤ potential ≤ 99`；personality 取自库经验分布；
+    fitness 100 / form 50 / morale 50 / 健康 / injuryHistory 归零；**首个完整赛季后可正常参与 growth/injury/match**。
+  - **首次成长时机**：新生代 `growth.lastEvaluatedSeason = 生成时的 prevSeason`（= 所属新赛季号 − 1，**不使用 0**），
+    故生成当次不成长，首次成长发生在**完整下一赛季结束**的那次 rollover。
+  - **人口**：`target(club) = 世界创建时该队初始球员数`（快照于 `runtime.populationTarget`，含按位置明细）；
+    生效目标 = `max(初始位置数, 阵型最低需求)`，且 **GK ≥ 1/队**；只生成不删除；**不引入自由球员池**；不无控增长。
+  - **架构**：保持 `static.players` 只读；新生代落 `runtime.generated`（含 `teamId`）；退役落 `runtime.retired`（保留 career/终值快照）；
+    引入**统一世界球员访问器**（`getWorldPlayers` / `getTeamPlayers` / `getPlayerProfile` / `isRetired`），
+    既有 4 模块 9 处直读 `state.static.players` 全部迁移到访问器。
+  - **ID**：新生代用独立命名空间 `ply_g_<全局递增序号>`；退役 playerId **永久失效、永不复用**；禁用显示名作主键。
+  - **开关**：`RETIREMENT_CONFIG.ENABLED`（默认 true）；false 时完全跳过退役与新生代，**结构不变**，行为回到第 18 步。
+- **运行时新增字段**：`generated`、`retired`、`nextGeneratedSeq`、`populationTarget`；`GAME_STATE_SCHEMA_VERSION` 4→5（加法式）。
+- **接线**：`simulation.js` 赛季滚动顺序 = 结算成长 → 退役+归档 → 计算缺口并生成 → 重置赛季统计 → 进入下一赛季。
+- **实测（MVP 世界 8 队，10/50/100/200 赛季）**：总人口恒 112、GK 恒 8、无重复 ID、年龄均值 22–27、
+  base 均值 54.2→54.6/53.8/54.1、potential 均值 62.2→62.5/61.9/62.1（**不坍缩、不膨胀**）、退役≈新生（108/108、221/221、454/454）。
+- 落地：[player-lifecycle.js](file:///workspace/src/core/player-lifecycle.js)、`player-runtime.js`、`game-state.js`、`sim-config.js`、
+  [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §23、`tests/lifecycle.test.js`（19 项）。
 
 ---
 

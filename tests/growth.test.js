@@ -9,6 +9,7 @@ import { createGameState } from '../src/core/game-state.js';
 import {
   getEffectiveAttributes,
   getPlayerRuntime,
+  getWorldPlayers,
   recordAppearance,
   setVitals,
   applyInjury,
@@ -252,17 +253,19 @@ test('加载校验拒绝缺失人格的球员', () => {
   assertThrows(() => parseWorld(files), 'DataError');
 });
 
-// ---------- 防膨胀（D1/D2） ----------
-test('长期防膨胀：50/100 赛季后全世界属性均值不高于初始（D1），且 10/50/100 赛季无越界/NaN', () => {
+// ---------- 长期稳定（D1/D2） ----------
+test('长期稳定：50/100 赛季后世界属性均值既不坍缩也不膨胀（第 19 步含退役+新生代）', () => {
   const mean0 = worldMean(leagueState(8));
   // 短中期（10 季）：允许成长推高均值，仅校验边界与整数
   checkAllWithinPotential(seasonState(10), 10);
-  // 中长期（50/100 季）：均值不得高于初始（无新生代时随老化自然回落）
+  // 中长期（50/100 季）：第 19 步起有退役+新生代，世界均值应长期稳定（不坍缩、不无限膨胀）
   const mean50 = worldMean(seasonState(50));
   const mean100 = worldMean(seasonState(100));
   assert(Number.isFinite(mean50) && Number.isFinite(mean100), '属性均值应为有限值');
-  assert(mean50 <= mean0, `50 赛季后均值 ${mean50.toFixed(2)} 不应超过初始 ${mean0.toFixed(2)}`);
-  assert(mean100 <= mean50 + 0.5, `100 赛季不应相对 50 赛季反升（${mean100.toFixed(2)} vs ${mean50.toFixed(2)}）`);
+  assert(mean50 >= mean0 * 0.6 && mean50 <= mean0 * 1.4,
+    `50 赛季均值应在稳定区间（${mean50.toFixed(2)} vs 初始 ${mean0.toFixed(2)}）`);
+  assert(mean100 >= mean0 * 0.6 && mean100 <= mean0 * 1.4,
+    `100 赛季均值应在稳定区间（${mean100.toFixed(2)} vs 初始 ${mean0.toFixed(2)}）`);
   checkAllWithinPotential(seasonState(50), 50);
   checkAllWithinPotential(seasonState(100), 100);
 });
@@ -276,7 +279,7 @@ function seasonState(seasons) {
 function worldMean(state) {
   let sum = 0;
   let n = 0;
-  for (const p of state.static.players) {
+  for (const p of getWorldPlayers(state)) { // 活跃世界球员（排除退役、含新生代）
     const eff = getEffectiveAttributes(state, p.id);
     for (const a of ATTRS) { sum += eff[a]; n += 1; }
   }
@@ -284,7 +287,7 @@ function worldMean(state) {
 }
 
 function checkAllWithinPotential(state, seasons) {
-  for (const p of state.static.players) {
+  for (const p of getWorldPlayers(state)) {
     const eff = getEffectiveAttributes(state, p.id);
     for (const a of ATTRS) {
       assert(Number.isInteger(eff[a]), `${seasons} 赛季 ${p.id}.${a} 应为整数`);

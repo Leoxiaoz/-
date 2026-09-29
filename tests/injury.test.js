@@ -291,6 +291,7 @@ test('全队伤病时不产生 NaN/负数，比赛仍可模拟', () => {
 function assertVitalsAndInjuryConsistent(state) {
   for (const p of state.static.players) {
     const rt = getPlayerRuntime(state, p.id);
+    if (!rt) continue; // 已退役球员不再有 active 运行时状态（第 19 步）
     for (const v of VITALS) {
       assert(Number.isFinite(rt[v]) && rt[v] >= 0 && rt[v] <= 100, `${p.id}.${v} 越界: ${rt[v]}`);
     }

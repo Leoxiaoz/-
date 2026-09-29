@@ -23,6 +23,7 @@ import {
   setVitals,
 } from './player-runtime.js';
 import { developPlayers } from './player-growth.js';
+import { runPlayerLifecycle } from './player-lifecycle.js';
 import { tickInjuries, resolveMatchInjuries } from './player-injury.js';
 import { SCHEDULE_CONFIG, MATCH_LOAD_CONFIG } from './sim-config.js';
 
@@ -199,12 +200,15 @@ export class SimulationCore {
       if (nextSeason > maxSeason) maxSeason = nextSeason;
     }
     state.season = maxSeason;
-    // 赛季推进时：先按已结束赛季结算成长/衰退（需用该赛季统计与年龄），再重置本赛季统计（第 15/16 步）。
+    // 赛季推进顺序（第 15/16/19 步）：
+    //   1) 结算上一赛季成长 → 2) 退役+归档 → 3) 计算缺口并生成属于下一赛季的新生代
+    //   → 4) 重置本赛季统计 → 进入下一赛季。
     if (maxSeason > prevSeason) {
       developPlayers(state, {
         seasonNumber: prevSeason,
         training: this.trainingFactor ?? undefined,
       });
+      runPlayerLifecycle(state, { fromSeason: prevSeason, toSeason: maxSeason });
       resetSeasonStats(state, maxSeason);
     }
   }

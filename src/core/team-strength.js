@@ -18,6 +18,7 @@ import { ATTRIBUTE_DEFAULT } from '../shared/football-schema.js';
 import {
   getPlayerRuntime,
   getEffectiveAttributes,
+  getTeamPlayers,
   INJURY_STATUS,
 } from './player-runtime.js';
 
@@ -34,10 +35,9 @@ function lineCounts(formation) {
   return FORMATIONS[formation] ?? FORMATIONS[DEFAULT_FORMATION];
 }
 
-/** 某队**可用**（非伤停）球员。伤病球员不参与实力与出场（第 17 步）。 */
+/** 某队**可用**（非伤停）球员。经世界球员访问器获取（含新生代、排除退役）；伤病不参与（第 17 步）。 */
 function availablePlayers(state, teamId) {
-  return state.static.players
-    .filter((p) => p.teamId === teamId)
+  return getTeamPlayers(state, teamId)
     .filter((p) => getPlayerRuntime(state, p.id)?.injury?.status !== INJURY_STATUS.INJURED);
 }
 

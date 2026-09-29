@@ -11,7 +11,7 @@
 import { SimulationError } from '../shared/errors.js';
 import { generateDoubleRoundRobin } from './schedule.js';
 import { createTable } from './standings.js';
-import { createPlayerRuntime } from './player-runtime.js';
+import { createPlayerRuntime, computePopulationTarget } from './player-runtime.js';
 import { DEFAULT_FORMATION, SCHEDULE_CONFIG } from './sim-config.js';
 
 /**
@@ -19,9 +19,10 @@ import { DEFAULT_FORMATION, SCHEDULE_CONFIG } from './sim-config.js';
  * v2（第 15 步）：`runtime.players` 由占位改为**已定义的球员运行时状态**结构（player-runtime.js）。
  * v3（第 16 步）：球员运行时新增 `growth`（成长结算元数据）。
  * v4（第 17 步）：`injury` 增 `category/severity/totalDays`，新增 `injuryHistory`（定长有界）。
- * 均为**加法式**变更，旧档经 `initializePlayerRuntime` 自动补齐，非破坏性。
+ * v5（第 19 步）：新增 `generated`（新生代档案）、`retired`（退役归档）、`nextGeneratedSeq`（生成序号）、
+ *   `populationTarget`（各队人口目标快照）。均为**加法式**变更，旧档经兜底自动补齐，非破坏性。
  */
-export const GAME_STATE_SCHEMA_VERSION = 4;
+export const GAME_STATE_SCHEMA_VERSION = 5;
 
 /**
  * 基于已加载的静态世界，创建一个最小运行时状态。
@@ -50,6 +51,11 @@ export function createGameState(world, options = {}) {
       players: {},      // playerId -> 球员运行时状态（第 15 步，见 player-runtime.js）
       competitions: {}, // competitionId -> { 赛程/结果/积分 }（决策 A1：结果与赛程归存档）
       events: [],       // 世界事件/日志（最小占位，非新闻系统）
+      // 球员生命周期（第 19 步）
+      generated: {},    // playerId -> 新生代档案（引擎生成；teamId 存于此）
+      retired: {},      // playerId -> 退役归档（永久保留 career/终值快照）
+      nextGeneratedSeq: 0,
+      populationTarget: computePopulationTarget(world), // 各队人口目标快照
     },
   };
 

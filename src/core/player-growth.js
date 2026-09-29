@@ -22,7 +22,7 @@ import { SimulationError } from '../shared/errors.js';
 import { PLAYER_GROWTH_CONFIG } from './sim-config.js';
 import { createRng, hashSeed } from './rng.js';
 import { ageOn } from './date-utils.js';
-import { getEffectiveAttributes, getPlayerRuntime, applyAbilityDelta } from './player-runtime.js';
+import { getEffectiveAttributes, getPlayerRuntime, applyAbilityDelta, getPlayerProfile, getWorldPlayers } from './player-runtime.js';
 
 const C = PLAYER_GROWTH_CONFIG;
 
@@ -87,7 +87,7 @@ function noiseScale(personality) {
  * @returns {{ applied: boolean }}
  */
 function developPlayer(state, playerId, seasonNumber, trainingFactor, date) {
-  const player = state.static.players.find((p) => p.id === playerId);
+  const player = getPlayerProfile(state, playerId);
   const rt = getPlayerRuntime(state, playerId);
   if (!player || !rt) return { applied: false };
   if (rt.growth.lastEvaluatedSeason >= seasonNumber) return { applied: false }; // 幂等
@@ -167,7 +167,7 @@ export function developPlayers(state, options = {}) {
   const date = state.currentDate;
 
   state.runtime.players ??= {};
-  for (const player of state.static.players) {
+  for (const player of getWorldPlayers(state)) {
     const rt = getPlayerRuntime(state, player.id);
     if (!rt) continue;
     const factor = Number(training(player.id, { seasonNumber, date }));
