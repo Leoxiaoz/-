@@ -8,6 +8,7 @@ import { runTests } from './harness.js';
 // 导入即注册用例
 import './world.test.js';
 import './core.test.js';
+import './match.test.js';
 import './save.test.js';
 import './indexeddb.test.js';
 

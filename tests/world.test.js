@@ -2,7 +2,7 @@
 
 import { test, assert, assertEquals, assertThrows } from './harness.js';
 import { parseWorld, validateWorld, WORLD_FORMAT } from '../src/data/data-loader.js';
-import { makeWorldFiles } from './fixtures.js';
+import { makeWorldFiles, makeLeagueWorldFiles } from './fixtures.js';
 
 test('parseWorld 接受合法数据并保留各实体', () => {
   const world = parseWorld(makeWorldFiles());
@@ -56,4 +56,28 @@ test('validateWorld 的错误信息包含定位上下文', () => {
 
 test('WORLD_FORMAT 为占位格式标识', () => {
   assertEquals(WORLD_FORMAT, 'fdb-json-0');
+});
+
+test('validateWorld 拒绝非法位置枚举（DECISIONS D-11）', () => {
+  const files = makeWorldFiles();
+  files.players[0].position = 'SWEEPER';
+  assertThrows(() => parseWorld(files), 'DataError');
+});
+
+test('validateWorld 拒绝越界属性值', () => {
+  const files = makeWorldFiles();
+  files.players[0].pace = 150;
+  assertThrows(() => parseWorld(files), 'DataError');
+});
+
+test('validateWorld 拒绝非法攻守倾向', () => {
+  const files = makeWorldFiles();
+  files.teams[0].mentality = 'chaos';
+  assertThrows(() => parseWorld(files), 'DataError');
+});
+
+test('makeLeagueWorldFiles 生成的联赛世界可通过校验', () => {
+  const world = parseWorld(makeLeagueWorldFiles(8));
+  assertEquals(world.teams.length, 8);
+  assertEquals(world.players.length, 8 * 14);
 });

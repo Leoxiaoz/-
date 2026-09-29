@@ -14,6 +14,7 @@
  */
 
 import { createGameState } from '../core/game-state.js';
+import { sortTable } from '../core/standings.js';
 import { AppError } from '../shared/errors.js';
 
 export class GameController {
@@ -58,6 +59,7 @@ export class GameController {
   getSnapshot() {
     if (!this.state) return null;
     const { static: world, runtime } = this.state;
+    const teamName = (id) => world.teams.find((t) => t.id === id)?.name ?? id;
     return {
       worldId: this.state.worldId,
       worldName: world.manifest.name,
@@ -66,11 +68,44 @@ export class GameController {
       teamsCount: world.teams.length,
       playersCount: world.players.length,
       eventsCount: runtime.events.length,
-      leagues: world.leagues.map((l) => ({
-        id: l.id,
-        name: l.name,
-        teamsCount: world.teams.filter((t) => t.leagueId === l.id).length,
-      })),
+      leagues: world.leagues.map((l) => {
+        const comp = runtime.competitions[l.id];
+        return {
+          id: l.id,
+          name: l.name,
+          teamsCount: world.teams.filter((t) => t.leagueId === l.id).length,
+          status: comp?.status ?? 'empty',
+          competitionSeason: comp?.season ?? this.state.season,
+          matchesPerRound: comp ? comp.fixtures.filter((f) => f.round === 1).length : 0,
+          totalRounds: comp ? Math.max(0, ...comp.fixtures.map((f) => f.round)) : 0,
+          table: comp
+            ? sortTable(comp.table).map((row) => ({ ...row, teamName: teamName(row.teamId) }))
+            : [],
+          // 上赛季最终排名（若已滚动过赛季）
+          lastSeason: (() => {
+            const history = comp?.history ?? [];
+            if (history.length === 0) return null;
+            const last = history[history.length - 1];
+            const ranked = sortTable(last.table).map((row) => ({ ...row, teamName: teamName(row.teamId) }));
+            return { season: last.season, champion: ranked[0]?.teamName ?? null, table: ranked };
+          })(),
+          // 最近赛果（按轮次倒序取 6 场，便于移动端呈现）
+          recentResults: comp
+            ? comp.fixtures
+              .filter((f) => f.played)
+              .slice(-6)
+              .reverse()
+              .map((f) => ({
+                round: f.round,
+                date: f.date,
+                homeName: teamName(f.homeId),
+                awayName: teamName(f.awayId),
+                homeGoals: f.homeGoals,
+                awayGoals: f.awayGoals,
+              }))
+            : [],
+        };
+      }),
     };
   }
 
@@ -92,6 +127,14 @@ export class GameController {
   tick() {
     this.#requireRunning();
     this.simulation.advanceDay(this.state);
+    this.#emit();
+    return this.state;
+  }
+
+  /** 推进 N 天（用于快速跳过无比赛日）。 */
+  advanceDays(days) {
+    this.#requireRunning();
+    this.simulation.advanceDays(this.state, days);
     this.#emit();
     return this.state;
   }

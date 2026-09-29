@@ -98,6 +98,15 @@ body {
 }
 
 .card__title { margin: 0 0 var(--space-2); font-size: 0.95rem; }
+.card__subtitle { margin: var(--space-3) 0 var(--space-1); font-size: 0.85rem; color: var(--color-muted); }
+
+/* 积分榜：移动端紧凑表格 */
+.table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.table th, .table td { padding: 4px 2px; text-align: right; white-space: nowrap; }
+.table thead th { color: var(--color-muted); font-weight: 500; border-bottom: 1px solid var(--color-border); }
+.table tbody tr { border-bottom: 1px solid var(--color-border); }
+.table tbody tr:last-child { border-bottom: none; }
+.table__team { text-align: left; max-width: 96px; overflow: hidden; text-overflow: ellipsis; }
 
 .kv { display: grid; grid-template-columns: auto 1fr; gap: var(--space-1) var(--space-3); margin: 0; }
 .kv dt { color: var(--color-muted); }

@@ -2,14 +2,20 @@
  * Simulation Core（模拟核心门面）。
  * 层级归属：Simulation Core 层。纯逻辑，**不依赖 DOM / 存储 / UI**。
  *
- * 本阶段范围（第 13 步）：只提供「时间推进」这一最小真实行为。
- * 明确不实现：比赛模拟、训练、成长、转会、财政、AI、新闻等（未来阶段）。
+ * 本阶段范围（MVP，DECISIONS D-09）：编排「时间推进 → 比赛日结算 → 赛季滚动」这条最小闭环。
+ * 明确不实现：训练、成长、转会、财政、AI 决策、新闻等（后续阶段）。
  *
- * 预留接口说明：未来比赛模拟将按 SIMULATION_SPEC §1 拆为多个可独立替换的阶段，
- * 由本类编排；比赛抽象层级（SIMULATION_SPEC S1/T6）**尚未决定**，故此处不作任何假设。
+ * 比赛引擎按 SIMULATION_SPEC §1 拆为可独立替换的阶段（见 match.js / team-strength.js /
+ * standings.js / schedule.js），本类只做编排，不含比赛算法本身。
  */
 
 import { SimulationError } from '../shared/errors.js';
+import { addDays } from './date-utils.js';
+import { computeTeamStrength } from './team-strength.js';
+import { simulateMatch } from './match.js';
+import { applyResult } from './standings.js';
+import { createLeagueRuntime, getClubRuntime, recordEvent } from './game-state.js';
+import { SCHEDULE_CONFIG } from './sim-config.js';
 
 export class SimulationCore {
   /** @param {{logger?: object}} [deps] */
@@ -18,9 +24,7 @@ export class SimulationCore {
   }
 
   /**
-   * 推进一个模拟日。
-   * 注意：时间推进粒度（按天/周/比赛日）见 GAME_DESIGN T1，**尚未决定**；
-   * 当前以「天」为单位仅为骨架实现，不代表最终粒度。
+   * 推进一个模拟日：推进日期 → 结算当日到期的比赛 → 必要时滚动赛季。
    * @param {object} state 运行时状态
    * @returns {object} 同一个 state（原地更新）
    */
@@ -31,7 +35,8 @@ export class SimulationCore {
       });
     }
     state.currentDate = addDays(state.currentDate, 1);
-    // TODO(未来阶段)：在此编排比赛日 / 训练 / 成长 / AI 决策等阶段；本阶段不实现。
+    this.playDueFixtures(state);
+    this.#rollFinishedSeasons(state);
     return state;
   }
 
@@ -43,20 +48,92 @@ export class SimulationCore {
     for (let i = 0; i < days; i += 1) this.advanceDay(state);
     return state;
   }
-}
 
-/**
- * ISO 日期（YYYY-MM-DD）加天数。使用 UTC，避免时区漂移导致的可复现性问题。
- * @param {string} isoDate
- * @param {number} days
- * @returns {string}
- */
-export function addDays(isoDate, days) {
-  const [y, m, d] = isoDate.split('-').map(Number);
-  if (!y || !m || !d) {
-    throw new SimulationError('日期格式需为 YYYY-MM-DD', { context: { isoDate } });
+  /**
+   * 结算所有「已到期且未进行」的比赛（日期 <= 当前日期）。
+   * 用 `<=` 而非 `==`，保证不会因某天未推进而漏赛。
+   */
+  playDueFixtures(state) {
+    for (const comp of Object.values(state.runtime.competitions)) {
+      for (const fixture of comp.fixtures) {
+        if (fixture.played || fixture.date > state.currentDate) continue;
+        this.#playFixture(state, comp, fixture);
+      }
+      this.#updateStatus(comp);
+    }
   }
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  dt.setUTCDate(dt.getUTCDate() + days);
-  return dt.toISOString().slice(0, 10);
+
+  #playFixture(state, comp, fixture) {
+    const home = this.#buildSide(state, fixture.homeId);
+    const away = this.#buildSide(state, fixture.awayId);
+    const result = simulateMatch({
+      home,
+      away,
+      context: {
+        worldId: state.worldId,
+        season: comp.season,
+        round: fixture.round,
+        homeId: fixture.homeId,
+        awayId: fixture.awayId,
+      },
+    });
+
+    fixture.played = true;
+    fixture.homeGoals = result.homeGoals;
+    fixture.awayGoals = result.awayGoals;
+    applyResult(comp.table, fixture.homeId, fixture.awayId, result.homeGoals, result.awayGoals);
+
+    recordEvent(state, 'match_played', {
+      leagueId: comp.leagueId,
+      season: comp.season,
+      round: fixture.round,
+      fixtureId: fixture.id,
+      homeId: fixture.homeId,
+      awayId: fixture.awayId,
+      score: `${result.homeGoals}-${result.awayGoals}`,
+    });
+  }
+
+  #buildSide(state, teamId) {
+    const club = getClubRuntime(state, teamId);
+    const tactics = club?.tactics ?? {};
+    return {
+      teamId,
+      tactics,
+      strength: computeTeamStrength(state, teamId, tactics),
+      players: state.static.players.filter((p) => p.teamId === teamId),
+    };
+  }
+
+  #updateStatus(comp) {
+    const allPlayed = comp.fixtures.length > 0 && comp.fixtures.every((f) => f.played);
+    if (allPlayed) {
+      comp.status = 'finished';
+    } else if (comp.fixtures.some((f) => f.played)) {
+      comp.status = 'in_progress';
+    }
+  }
+
+  /** 赛季滚动：某联赛全部赛完则归档本季积分榜并生成下一赛季赛程（运行时，确定性）。 */
+  #rollFinishedSeasons(state) {
+    let maxSeason = state.season;
+    for (const comp of Object.values(state.runtime.competitions)) {
+      if (comp.status !== 'finished') continue;
+      const nextSeason = comp.season + 1;
+      const startDate = addDays(state.currentDate, SCHEDULE_CONFIG.SEASON_GAP_DAYS);
+      const next = createLeagueRuntime(state, comp.leagueId, {
+        season: nextSeason,
+        startDate,
+      });
+      // 归档本季最终积分榜，保留回看能力（可解释性，第 22 条）。
+      next.history = [
+        ...(comp.history ?? []),
+        { season: comp.season, table: comp.table },
+      ];
+      state.runtime.competitions[comp.leagueId] = next;
+      recordEvent(state, 'season_started', { leagueId: comp.leagueId, season: nextSeason, startDate });
+      if (nextSeason > maxSeason) maxSeason = nextSeason;
+    }
+    state.season = maxSeason;
+  }
 }

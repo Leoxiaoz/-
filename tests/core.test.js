@@ -2,7 +2,8 @@
 
 import { test, assert, assertEquals, assertThrows } from './harness.js';
 import { createGameState, getTeamsByLeague, GAME_STATE_SCHEMA_VERSION } from '../src/core/game-state.js';
-import { SimulationCore, addDays } from '../src/core/simulation.js';
+import { SimulationCore } from '../src/core/simulation.js';
+import { addDays } from '../src/core/date-utils.js';
 import { parseWorld } from '../src/data/data-loader.js';
 import { makeWorldFiles } from './fixtures.js';
 
@@ -77,6 +78,7 @@ test('headless：可批量推进 50 赛季天数且确定性可复现（A8 压�
   assertEquals(a.currentDate, b.currentDate, '同输入必须可复现');
   // 2026-07-01 起算 18250 天（含插值闰年）的确定结果
   assertEquals(a.currentDate, '2076-06-18');
-  // 说明：赛季滚动、比赛、成长等属未来系统，本阶段未实现，故 season 不变。
+  // 说明：本夹具联赛仅 1 支球队 → 无可生成赛程（status='empty'），故不滚动赛季。
+  // 含赛程的多赛季滚动见 match.test.js。
   assertEquals(a.season, 1);
 });

@@ -46,6 +46,9 @@ export class AppView {
       if (action === 'tick') {
         this.controller.tick();
         this.setStatus('已推进一天');
+      } else if (action === 'advance-week') {
+        this.controller.advanceDays(7);
+        this.setStatus('已推进一周');
       } else if (action === 'save') {
         const slot = await this.controller.save('slot1');
         this.setStatus(`已保存到存档 ${slot}`);
@@ -96,6 +99,10 @@ export class AppView {
     }
     leagueCard.appendChild(ul);
     this.root.appendChild(leagueCard);
+
+    for (const league of snapshot.leagues) {
+      this.root.appendChild(renderLeague(league));
+    }
   }
 
   #statusNode() {
@@ -117,4 +124,73 @@ function el(tag, attrs = {}, text) {
 function appendKV(dl, key, value) {
   dl.appendChild(el('dt', {}, key));
   dl.appendChild(el('dd', {}, value));
+}
+
+const STATUS_TEXT = {
+  scheduled: '未开始',
+  in_progress: '进行中',
+  finished: '已结束',
+  empty: '参赛队不足',
+};
+
+/** 渲染单个联赛卡片：概览 + 积分榜 + 最近赛果。纯呈现。 */
+function renderLeague(league) {
+  const card = el('section', { class: 'card' });
+  card.appendChild(el('h2', { class: 'card__title' }, league.name));
+  card.appendChild(
+    el(
+      'p',
+      { class: 'muted' },
+      `第 ${league.competitionSeason} 赛季 · ${league.teamsCount} 队 · ${league.totalRounds} 轮 · ${STATUS_TEXT[league.status] ?? league.status}`,
+    ),
+  );
+
+  if (league.table.length > 0) {
+    card.appendChild(buildTable(league.table));
+  }
+
+  if (league.lastSeason) {
+    card.appendChild(
+      el('h3', { class: 'card__subtitle' }, `上赛季（第 ${league.lastSeason.season} 赛季）最终排名 · 冠军 ${league.lastSeason.champion ?? '—'}`),
+    );
+    card.appendChild(buildTable(league.lastSeason.table));
+  }
+
+  if (league.recentResults.length > 0) {
+    card.appendChild(el('h3', { class: 'card__subtitle' }, '最近赛果'));
+    const ul = el('ul', { class: 'list' });
+    for (const r of league.recentResults) {
+      ul.appendChild(
+        el('li', {}, `第 ${r.round} 轮 · ${r.homeName} ${r.homeGoals}-${r.awayGoals} ${r.awayName}`),
+      );
+    }
+    card.appendChild(ul);
+  }
+
+  return card;
+}
+
+/** 构建积分榜表格（当前赛季 / 上赛季共用）。 */
+function buildTable(rows) {
+  const table = el('table', { class: 'table' });
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  for (const h of ['#', '球队', '场', '胜', '平', '负', '进', '失', '净', '分']) {
+    headRow.appendChild(el('th', {}, h));
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  rows.forEach((row, i) => {
+    const tr = document.createElement('tr');
+    tr.appendChild(el('td', {}, String(i + 1)));
+    tr.appendChild(el('td', { class: 'table__team' }, row.teamName));
+    for (const v of [row.played, row.won, row.drawn, row.lost, row.gf, row.ga, row.gd, row.points]) {
+      tr.appendChild(el('td', {}, String(v)));
+    }
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  return table;
 }

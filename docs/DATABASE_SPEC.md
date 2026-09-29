@@ -13,6 +13,11 @@
 > **D4** 结果 / 赛程归**存档**（A1）；**D6** ID = **类型前缀字符串 + 库内唯一 + 可选 externalRef + 新生代独立命名空间**（A4）；
 > **D7** 边界 = **库不随时间变 / 档随时间变**（A3）；**D10** 版本策略 = **向后兼容**（A5）。
 > 其余 `[TBD]` 仍然有效。
+>
+> **实现更新（2026-09-29，MVP 第一阶段）**：
+> **D2（球员属性粒度）暂定落地**为 `pace, technique, passing, defending, finishing, goalkeeping`（1–99），
+> 位置枚举 `GK/DF/MF/FW`，球队可选 `formation` / `mentality`；枚举定义于 `src/shared/football-schema.js`，
+> 加载校验会拒绝越界属性与非法位置/倾向（见 §6）。**D2 的最终粒度仍为 TBD**，扩展须带存档迁移。
 
 ## 0. 文档定位与边界
 
@@ -135,6 +140,7 @@ erDiagram
 ```
 
 - `manifest.json`：数据库元信息（名称、版本、作者、覆盖范围、引擎兼容版本等）。
+- 当前仓库内示例包：`data/worlds/test-world.fdb`（骨架，2 联赛各 2 队）、`data/worlds/mvp-league.fdb`（MVP 单联赛 8 队、球员带属性）。
 - `assets/`：徽章 / 队徽等**非必需**资源；引擎不得假定其存在。
   - `[TBD]` 资源与第三方版权边界（项目规则第 28 条：不得假定真实名称/徽章/肖像可自由分发）。
 - `[TBD]` `.fdb` 物理形态：单文件（zip 容器）vs 目录；影响加载、体积、Mod 叠加。

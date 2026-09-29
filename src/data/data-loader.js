@@ -12,6 +12,7 @@
  */
 
 import { DataError } from '../shared/errors.js';
+import { POSITIONS, PLAYER_ATTRIBUTES, ATTRIBUTE_RANGE, MENTALITIES } from '../shared/football-schema.js';
 
 /** 占位格式标识；正式值待 DATABASE_SPEC 决策后替换。 */
 export const WORLD_FORMAT = 'fdb-json-0';
@@ -82,11 +83,38 @@ export function validateWorld(world) {
         context: { file: 'teams.json', entity: 'team', id: team.id, field: 'leagueId', value: team.leagueId },
       });
     }
+    if (team.mentality != null && !MENTALITIES.includes(team.mentality)) {
+      throw new DataError('球队攻守倾向不在允许枚举内', {
+        context: { file: 'teams.json', entity: 'team', id: team.id, field: 'mentality', value: team.mentality, allowed: MENTALITIES },
+      });
+    }
   }
   for (const player of world.players) {
     if (player.teamId != null && !teamIds.has(player.teamId)) {
       throw new DataError('球员引用了不存在的球队', {
         context: { file: 'players.json', entity: 'player', id: player.id, field: 'teamId', value: player.teamId },
+      });
+    }
+    validatePlayer(player);
+  }
+}
+
+/**
+ * 校验单个球员：位置枚举、属性数值与取值范围（DATABASE_SPEC §6 红线：显式报错 + 定位）。
+ * 属性为可选字段（缺失时模拟回退到 ATTRIBUTE_DEFAULT），但一旦提供必须合法。
+ */
+function validatePlayer(player) {
+  if (player.position != null && !POSITIONS.includes(player.position)) {
+    throw new DataError('球员位置不在允许枚举内', {
+      context: { file: 'players.json', entity: 'player', id: player.id, field: 'position', value: player.position, allowed: POSITIONS },
+    });
+  }
+  for (const attr of PLAYER_ATTRIBUTES) {
+    const v = player[attr];
+    if (v == null) continue;
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < ATTRIBUTE_RANGE.MIN || v > ATTRIBUTE_RANGE.MAX) {
+      throw new DataError('球员属性超出允许范围', {
+        context: { file: 'players.json', entity: 'player', id: player.id, field: attr, value: v, range: ATTRIBUTE_RANGE },
       });
     }
   }

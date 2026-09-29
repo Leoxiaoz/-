@@ -14,8 +14,8 @@ import { SimulationCore } from './core/simulation.js';
 import { GameController } from './controller/game-controller.js';
 import { AppView } from './ui/app-view.js';
 
-/** 骨架阶段使用的最小测试世界。 */
-const DEFAULT_WORLD_DIR = 'data/worlds/test-world.fdb';
+/** MVP 阶段的默认世界（单联赛 8 队双循环，DECISIONS D-10）。 */
+const DEFAULT_WORLD_DIR = 'data/worlds/mvp-league.fdb';
 
 /**
  * 存档介质优先级（决策 A7）：IndexedDB（主）→ localStorage（降级）→ 内存（兜底）。
