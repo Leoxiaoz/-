@@ -12,7 +12,12 @@ import { SimulationError } from '../shared/errors.js';
 import { generateDoubleRoundRobin } from './schedule.js';
 import { createTable } from './standings.js';
 import { createPlayerRuntime, computePopulationTarget } from './player-runtime.js';
-import { DEFAULT_FORMATION, SCHEDULE_CONFIG } from './sim-config.js';
+import {
+  DEFAULT_FORMATION,
+  FORMATIONS,
+  MENTALITY,
+  SCHEDULE_CONFIG,
+} from './sim-config.js';
 
 /**
  * 运行时状态结构的版本号（与存档格式、数据库格式相互独立）。
@@ -21,8 +26,10 @@ import { DEFAULT_FORMATION, SCHEDULE_CONFIG } from './sim-config.js';
  * v4（第 17 步）：`injury` 增 `category/severity/totalDays`，新增 `injuryHistory`（定长有界）。
  * v5（第 19 步）：新增 `generated`（新生代档案）、`retired`（退役归档）、`nextGeneratedSeq`（生成序号）、
  *   `populationTarget`（各队人口目标快照）。均为**加法式**变更，旧档经兜底自动补齐，非破坏性。
+ * v6（第 20 步）：新增 `managedClubId`（玩家管理球队，默认 null）与 `clubs[].lineup`（首发/替补，默认空）。
+ *   均为**加法式**变更，旧档经 `initializeClubRuntime` 兜底补齐，非破坏性。
  */
-export const GAME_STATE_SCHEMA_VERSION = 5;
+export const GAME_STATE_SCHEMA_VERSION = 6;
 
 /**
  * 基于已加载的静态世界，创建一个最小运行时状态。
@@ -47,10 +54,12 @@ export function createGameState(world, options = {}) {
     static: world,
     runtime: {
       // 仅保存相对数据库的增量
-      clubs: {},        // clubId -> 运行时俱乐部状态（战术等；财政/成长属未来阶段）
+      clubs: {},        // clubId -> 运行时俱乐部状态（战术/阵容等；财政/成长属未来阶段）
       players: {},      // playerId -> 球员运行时状态（第 15 步，见 player-runtime.js）
       competitions: {}, // competitionId -> { 赛程/结果/积分 }（决策 A1：结果与赛程归存档）
       events: [],       // 世界事件/日志（最小占位，非新闻系统）
+      // 玩家管理球队（第 20 步）：默认 null（不自动选择首支球队；未选择时走自动选阵）。
+      managedClubId: null,
       // 球员生命周期（第 19 步）
       generated: {},    // playerId -> 新生代档案（引擎生成；teamId 存于此）
       retired: {},      // playerId -> 退役归档（永久保留 career/终值快照）
@@ -68,6 +77,9 @@ export function createGameState(world, options = {}) {
       },
     };
   }
+
+  // 兜底补齐俱乐部运行时字段（阵型/战术/空阵容容器）；不自动创建玩家阵容。
+  initializeClubRuntime(state);
 
   // 初始化球员运行时状态（只建增量结构，不复制静态属性；第 15 步）。
   for (const player of world.players) {
@@ -129,6 +141,39 @@ export function createLeagueRuntime(state, leagueId, options = {}) {
     // 'empty'：参赛队不足 2 支，无可生成赛程；不参与赛季滚动。
     status: fixtures.length === 0 ? 'empty' : 'scheduled',
   };
+}
+
+/**
+ * 兜底补齐所有俱乐部的运行时字段（第 20 步；向后兼容，不覆盖已有值）：
+ * - `tactics.formation`（非法/缺失回退默认阵型）、`tactics.mentality`（非法/缺失回退 balanced）；
+ * - `lineup = { starters: [], bench: [] }`（缺失补齐；**不自动生成玩家阵容**）；
+ * - `managedClubId`（缺失补齐为 null；指向不存在的俱乐部时重置为 null）。
+ * 读取旧档后调用即完成兼容。不修改 `state.static`。
+ * @returns {object} state（原地）
+ */
+export function initializeClubRuntime(state) {
+  if (!state?.runtime?.clubs) return state;
+  state.runtime.managedClubId ??= null;
+  if (state.runtime.managedClubId && !state.runtime.clubs[state.runtime.managedClubId]) {
+    state.runtime.managedClubId = null;
+  }
+  for (const club of Object.values(state.runtime.clubs)) {
+    if (!club || typeof club !== 'object') continue;
+    club.tactics ??= {};
+    if (!club.tactics.formation || !FORMATIONS[club.tactics.formation]) {
+      club.tactics.formation = DEFAULT_FORMATION;
+    }
+    if (!club.tactics.mentality || !(club.tactics.mentality in MENTALITY)) {
+      club.tactics.mentality = 'balanced';
+    }
+    if (!club.lineup || typeof club.lineup !== 'object') {
+      club.lineup = { starters: [], bench: [] };
+    } else {
+      if (!Array.isArray(club.lineup.starters)) club.lineup.starters = [];
+      if (!Array.isArray(club.lineup.bench)) club.lineup.bench = [];
+    }
+  }
+  return state;
 }
 
 /** 按 id 取静态球队。 */

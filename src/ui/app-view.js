@@ -33,6 +33,15 @@ export class AppView {
       if (!btn) return;
       this.#handleAction(btn.dataset.action);
     });
+    // 视图内交互（玩家阵容 / 战术）：事件委托，UI 只转发，规则在 Controller。
+    this.root?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action]');
+      if (btn) this.#handleViewAction(btn);
+    });
+    this.root?.addEventListener('change', (e) => {
+      const sel = e.target.closest('select[data-action]');
+      if (sel) this.#handleViewChange(sel);
+    });
     this.#unsubscribe = this.controller.subscribe((snapshot) => this.render(snapshot));
     this.render(this.controller.getSnapshot());
   }
@@ -55,6 +64,51 @@ export class AppView {
       } else if (action === 'load') {
         await this.controller.load('slot1');
         this.setStatus('已读取存档 slot1');
+      }
+    } catch (err) {
+      this.setStatus(reportError(err, this.logger ?? { error() {} }), true);
+    }
+  }
+
+  /** 视图内按钮：转发到 Controller，并把结果问题反馈到状态栏（不吞错误）。 */
+  #handleViewAction(btn) {
+    try {
+      const action = btn.dataset.action;
+      const clubId = btn.dataset.club ?? this.controller.getManagedClubId();
+      let result = { success: true, issues: [] };
+      if (action === 'auto-fill') {
+        result = this.controller.autoFillManagedLineup();
+      } else if (action === 'clear-lineup') {
+        result = this.controller.setLineup(clubId, { starters: [], bench: [] });
+      } else if (action === 'assign-player') {
+        result = this.controller.assignLineupPlayer(clubId, btn.dataset.player, btn.dataset.zone);
+      } else {
+        return;
+      }
+      const issues = result?.issues ?? [];
+      if (!result?.success) {
+        this.setStatus(issues.join('；') || '操作未生效', true);
+      } else {
+        this.setStatus(issues.length > 0 ? issues.join('；') : '已更新');
+      }
+    } catch (err) {
+      this.setStatus(reportError(err, this.logger ?? { error() {} }), true);
+    }
+  }
+
+  /** 视图内下拉：管理球队 / 阵型 / 战术。 */
+  #handleViewChange(sel) {
+    try {
+      const action = sel.dataset.action;
+      if (action === 'select-club') {
+        this.controller.setManagedClub(sel.value || null);
+        this.setStatus(sel.value ? '已选择管理球队' : '已切换为自动管理');
+      } else if (action === 'set-formation') {
+        this.controller.setFormation(sel.dataset.club, sel.value);
+        this.setStatus('已更新阵型');
+      } else if (action === 'set-mentality') {
+        this.controller.setMentality(sel.dataset.club, sel.value);
+        this.setStatus('已更新战术');
       }
     } catch (err) {
       this.setStatus(reportError(err, this.logger ?? { error() {} }), true);
@@ -91,6 +145,9 @@ export class AppView {
     card.appendChild(dl);
     this.root.appendChild(card);
 
+    // 玩家阵容 / 战术（第 20 步：唯一让玩家参与球队管理的入口）。
+    this.root.appendChild(renderManagedClub(snapshot));
+
     const leagueCard = el('section', { class: 'card' });
     leagueCard.appendChild(el('h2', { class: 'card__title' }, '联赛'));
     const ul = el('ul', { class: 'list' });
@@ -119,6 +176,107 @@ function el(tag, attrs = {}, text) {
   for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
   if (text != null) node.textContent = text;
   return node;
+}
+
+/** 构建一个 <select>；options = [{value,label}]，current 为当前选中值。 */
+function select(attrs, options, current) {
+  const node = el('select', { ...attrs, class: 'select' });
+  for (const opt of options) {
+    const o = el('option', { value: opt.value }, opt.label);
+    if (opt.value === current) o.setAttribute('selected', '');
+    node.appendChild(o);
+  }
+  node.value = current ?? '';
+  return node;
+}
+
+/** 「我的球队」卡片：选择管理球队 → 阵型/战术 → 首发/替补（第 20 步）。纯呈现 + 事件转发。 */
+function renderManagedClub(snapshot) {
+  const card = el('section', { class: 'card' });
+  card.appendChild(el('h2', { class: 'card__title' }, '我的球队'));
+
+  // 未选择管理球队：仅提供选择入口（默认 null = 全部自动管理）。
+  if (!snapshot.managedClub) {
+    card.appendChild(el('p', { class: 'muted' }, '尚未选择管理球队：当前所有球队均由 AI 自动排阵。选择一支球队后即可自定义阵型、战术与首发。'));
+    const clubOptions = [{ value: '', label: '不管理（全部自动）' }]
+      .concat(snapshot.clubs.map((c) => ({ value: c.id, label: c.name })));
+    card.appendChild(select({ 'data-action': 'select-club' }, clubOptions, ''));
+    return card;
+  }
+
+  const mc = snapshot.managedClub;
+  const clubOptions = [{ value: '', label: '不管理（全部自动）' }]
+    .concat(snapshot.clubs.map((c) => ({ value: c.id, label: c.name })));
+  card.appendChild(select({ 'data-action': 'select-club' }, clubOptions, mc.id));
+
+  // 阵型 / 战术
+  const rows = el('div', { class: 'field-rows' });
+  rows.appendChild(fieldRow('阵型', select(
+    { 'data-action': 'set-formation', 'data-club': mc.id },
+    snapshot.formations.map((f) => ({ value: f, label: f })),
+    mc.formation,
+  )));
+  rows.appendChild(fieldRow('战术', select(
+    { 'data-action': 'set-mentality', 'data-club': mc.id },
+    snapshot.mentalities.map((m) => ({ value: m.value, label: m.label })),
+    mc.mentality,
+  )));
+  card.appendChild(rows);
+
+  // 操作
+  const bar = el('div', { class: 'row-actions' });
+  bar.appendChild(el('button', { class: 'btn btn--small', 'data-action': 'auto-fill' }, '自动填充最佳阵容'));
+  bar.appendChild(el('button', { class: 'btn btn--small', 'data-action': 'clear-lineup', 'data-club': mc.id }, '清空'));
+  card.appendChild(bar);
+
+  if (mc.issues.length > 0) {
+    card.appendChild(el('p', { class: 'error' }, mc.issues.join('；')));
+  }
+
+  // 首发
+  card.appendChild(el('h3', { class: 'card__subtitle' }, `首发（${mc.starters.length}/${mc.limits.starters}）`));
+  card.appendChild(squadList(mc.starters, mc, 'starters'));
+
+  // 替补席（本步骤不参与换人）
+  card.appendChild(el('h3', { class: 'card__subtitle' }, `替补席（${mc.bench.length}/${mc.limits.bench}）·本步骤暂不参与换人`));
+  card.appendChild(squadList(mc.bench, mc, 'bench'));
+
+  // 其余球员
+  const others = mc.squad.filter((p) => p.zone === 'none');
+  card.appendChild(el('h3', { class: 'card__subtitle' }, `其余球员（${others.length}）`));
+  card.appendChild(squadList(others, mc, 'none'));
+
+  return card;
+}
+
+function fieldRow(label, control) {
+  const row = el('div', { class: 'field-row' });
+  row.appendChild(el('span', { class: 'field-row__label' }, label));
+  row.appendChild(control);
+  return row;
+}
+
+/** 球员列表：每名球员提供「首发 / 替补 / 移除」操作（zone='none' 时隐藏"移除"）。 */
+function squadList(players, mc, zone) {
+  if (players.length === 0) return el('p', { class: 'muted' }, '无');
+  const ul = el('ul', { class: 'list lineup' });
+  for (const p of players) {
+    const li = el('li', { class: 'lineup__item' });
+    li.appendChild(el('span', { class: 'lineup__name' }, `${p.name}（${p.position}${p.injured ? ' · 伤' : ''}）`));
+    const acts = el('span', { class: 'lineup__actions' });
+    if (zone !== 'starters') {
+      acts.appendChild(el('button', { class: 'btn btn--mini', 'data-action': 'assign-player', 'data-club': mc.id, 'data-player': p.playerId, 'data-zone': 'starters' }, '首发'));
+    }
+    if (zone !== 'bench') {
+      acts.appendChild(el('button', { class: 'btn btn--mini', 'data-action': 'assign-player', 'data-club': mc.id, 'data-player': p.playerId, 'data-zone': 'bench' }, '替补'));
+    }
+    if (zone !== 'none') {
+      acts.appendChild(el('button', { class: 'btn btn--mini', 'data-action': 'assign-player', 'data-club': mc.id, 'data-player': p.playerId, 'data-zone': 'none' }, '移除'));
+    }
+    li.appendChild(acts);
+    ul.appendChild(li);
+  }
+  return ul;
 }
 
 function appendKV(dl, key, value) {

@@ -89,6 +89,8 @@ export function deserializeState(raw) {
     payload.runtime.players ??= {};
     payload.runtime.competitions ??= {};
     payload.runtime.events ??= [];
+    // 玩家管理球队（第 20 步；旧档兜底为 null，clubs[].lineup 由 initializeClubRuntime 补齐）。
+    payload.runtime.managedClubId ??= null;
     // 球员生命周期容器（第 19 步；旧档兜底为空/零，populationTarget 由 initializePlayerRuntime 依据世界补齐）
     payload.runtime.generated ??= {};
     payload.runtime.retired ??= {};

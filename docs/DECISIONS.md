@@ -202,6 +202,34 @@
 
 ---
 
+## D-18 玩家阵容 / 战术选择（对应 SIMULATION_SPEC §24、SAVE_SPEC §3、GAME_DESIGN §4/§6）
+
+- **背景（第 20 步）**：第 16–19 步世界已能自主运转（成长/伤病/退役/新生代），但玩家始终是旁观者。
+  本步建立「玩家管理球队 → 比赛 → 结果反馈」的**最小可玩闭环**：玩家选择阵容/阵型/战术，**真正进入比赛模拟**。
+- **已定规则（制定者确认）**：
+  - **玩家阵容进入 runtime，而非 UI 状态**：`runtime.managedClubId`（**默认 null**，玩家主动选择后才进入玩家模式）+
+    `runtime.clubs[].lineup = { starters: string[], bench: string[] }`（**playerId** 列表，**不自动创建**）。
+  - **两套选阵路径（统一入口 `resolveMatchSquad`）**：玩家管理球队用**已保存阵容**（`repairSquadForMatch` 按阵型严格修复）；
+    其余球队（AI / 未选择）继续使用 `selectMatchSquad`（自动选阵，**行为与第 16–19 步一致**）。
+  - **首发严格匹配阵型**：GK=1，DF/MF/FW 等于 `FORMATIONS` 各线人数（合计恒 11）；无法修复（某线无健康球员）→
+    记录 `lineup_fallback` 事件并**回退自动阵容**（不静默使用错误数据）。
+  - **替补席**：允许保存与展示，**本步骤不参与比赛、不参与换人**（UI 明确标注；换人引擎属 out-of-scope）。
+  - **伤病**：不得进入实际首发（比赛时以同位置健康球员顶替）；**允许进入替补席**；玩家选择被保留，康复后可再次首发。
+  - **清洗规则**：不存在 / 已退役 / 非本队 / 重复 playerId 一律剔除；首发与替补去重。
+- **比赛接入（不重写比分算法）**：`computeTeamStrength(state, teamId, tactics, squad)` 接受**本场实际出场集合**，
+  阵型（各线取样人数）与阵容（具体球员）变化改变实力 → 改变期望进球与结果；战术倾向经 `MENTALITY` 倍率影响期望。
+  `match.js` 核心比分算法**不改动**。
+- **自愈**：赛季滚动（退役/离队后）调用 `repairManagedLineups`；比赛时 `repairSquadForMatch` 按阵型回填。
+- **运行时新增字段**：`managedClubId`、`clubs[].lineup`；`GAME_STATE_SCHEMA_VERSION` 5→6（加法式，旧档经 `initializeClubRuntime` 兜底）。
+- **UI/Controller**：Controller 提供 `getManagedClubId/setManagedClub/setFormation/setMentality/setLineup/assignLineupPlayer/autoFillManagedLineup`
+  与扩展快照；UI 只在「我的球队」卡片内呈现，规则全部在 Core/Controller。
+- **明确未做**：转会、合同、财政、工资、身价、球探、教练、青训、预备队、AI 转会市场、多联赛、升降级、杯赛、
+  红黄牌、换人引擎、大规模比赛表现系统、名人堂、新闻系统。
+- 落地：[player-lineup.js](file:///workspace/src/core/player-lineup.js)、`team-strength.js`、`simulation.js`、`game-state.js`、
+  `game-controller.js`、`app-view.js`、`sim-config.js`、[SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §24、`tests/lineup.test.js`（22 项）。
+
+---
+
 ## 仍属 TBD（未受影响）
 
 - GAME_DESIGN：T1、T2、T3、T4、T5、T7–T13、T15、T16、T17

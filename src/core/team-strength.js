@@ -13,6 +13,7 @@
 import {
   FORMATIONS,
   DEFAULT_FORMATION,
+  LINE_ATTRIBUTES,
 } from './sim-config.js';
 import { ATTRIBUTE_DEFAULT } from '../shared/football-schema.js';
 import {
@@ -21,14 +22,8 @@ import {
   getTeamPlayers,
   INJURY_STATUS,
 } from './player-runtime.js';
-
-/** 各线参考属性（MVP 最小集，DECISIONS D-11）。 */
-const LINE_ATTRIBUTES = Object.freeze({
-  GK: ['goalkeeping'],
-  DF: ['defending', 'pace'],
-  MF: ['passing', 'technique'],
-  FW: ['finishing', 'technique', 'pace'],
-});
+import { getClubRuntime, recordEvent } from './game-state.js';
+import { repairSquadForMatch, selectBenchCandidates, LINEUP_LIMITS } from './player-lineup.js';
 
 /** 阵型各线人数（含 GK 固定 1）。 */
 function lineCounts(formation) {
@@ -57,9 +52,8 @@ function playerLineRating(state, player, attrs) {
 }
 
 /**
- * 选出本场**出场集合**（比赛模拟实际使用的球员）。
- * 本步无首发/替补/换人系统，故按位置取各线评分最高者（与实力计算同源）。
- * **可替换点**：未来以正式首发/换人系统替换本函数即可，无需重写统计层。
+ * 自动选阵：选出本场**出场集合**（比赛模拟实际使用的球员），按位置取各线评分最高者。
+ * 用于 AI 球队 / 未选择管理球队 / 玩家阵容修复失败时的回退（第 20 步起统一入口见 `resolveMatchSquad`）。
  * @returns {object[]} 静态球员对象数组（GK×1 + 各线按阵型人数）
  */
 export function selectMatchSquad(state, teamId, tactics = {}) {
@@ -80,16 +74,54 @@ export function selectMatchSquad(state, teamId, tactics = {}) {
 }
 
 /**
+ * 解析某队本场的**出场集合**——统一入口（第 20 步）。
+ * - 若该队是玩家**管理球队**且已保存首发：先用 `repairSquadForMatch` 按阵型严格修复玩家阵容；
+ *   修复失败（某线无法凑齐健康球员）时记录 `lineup_fallback` 事件并**回退自动选阵**。
+ * - 其余情况（AI 球队 / 未选择管理球队 / 首发为空）继续使用 `selectMatchSquad`（自动选阵）。
+ * @param {object} state
+ * @param {string} teamId
+ * @param {{formation?: string, mentality?: string}} [tactics]
+ * @returns {object[]} 静态球员对象数组
+ */
+export function resolveMatchSquad(state, teamId, tactics = {}) {
+  const club = getClubRuntime(state, teamId);
+  const lineup = club?.lineup;
+  if (teamId === state.runtime?.managedClubId && Array.isArray(lineup?.starters) && lineup.starters.length > 0) {
+    const squad = repairSquadForMatch(
+      state,
+      teamId,
+      lineup,
+      tactics.formation,
+      (player, position) => playerLineRating(state, player, LINE_ATTRIBUTES[position]),
+    );
+    if (squad) return squad;
+    recordEvent(state, 'lineup_fallback', { clubId: teamId, reason: 'invalid lineup' });
+  }
+  return selectMatchSquad(state, teamId, tactics);
+}
+
+/**
+ * 基于自动选阵生成一份玩家阵容（供"自动填充"）：首发 = 自动选阵；替补 = 剩余球员综合评分前 N。
+ * @returns {{starters: string[], bench: string[]}}
+ */
+export function buildAutoLineup(state, teamId, tactics = {}) {
+  const starters = selectMatchSquad(state, teamId, tactics).map((p) => p.id);
+  const bench = selectBenchCandidates(state, teamId, starters, LINEUP_LIMITS.BENCH);
+  return { starters, bench };
+}
+
+/**
  * 计算一支球队的四维实力（基于有效属性）。
  * @param {object} state 运行时状态（读取 static 世界 + runtime 增量）
  * @param {string} teamId
  * @param {{formation?: string, mentality?: string}} [tactics]
+ * @param {object[]} [squad] 显式传入的出场集合（玩家阵容修复结果）；缺省则自动选阵
  * @returns {{attack: number, midfield: number, defence: number, goalkeeping: number}}
  */
-export function computeTeamStrength(state, teamId, tactics = {}) {
-  const squad = selectMatchSquad(state, teamId, tactics);
+export function computeTeamStrength(state, teamId, tactics = {}, squad = null) {
+  const used = squad ?? selectMatchSquad(state, teamId, tactics);
   const average = (position) => {
-    const ratings = squad
+    const ratings = used
       .filter((p) => p.position === position)
       .map((p) => playerLineRating(state, p, LINE_ATTRIBUTES[position]));
     if (ratings.length === 0) return ATTRIBUTE_DEFAULT; // 空阵容保护：回退中性值

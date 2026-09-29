@@ -26,6 +26,29 @@ export const FORMATIONS = Object.freeze({
   '5-3-2': Object.freeze({ DF: 5, MF: 3, FW: 2 }),
 });
 
+/**
+ * 阵容参数（第 20 步）。
+ * 说明：首发人数与阵型各线人数强绑定（`FORMATIONS` 之和恒为 STARTERS）；替补仅**存储与展示**，
+ * **本步骤不参与比赛、不参与换人**（换人引擎属 out-of-scope）。
+ */
+export const LINEUP_CONFIG = Object.freeze({
+  /** 首发总人数（= GK 1 + 阵型 DF/MF/FW 之和）。 */
+  STARTERS: 11,
+  /** 替补席容量（仅存储/展示，暂不参与换人）。 */
+  BENCH: 7,
+});
+
+/**
+ * 各线评分参考属性（MVP 最小集，DECISIONS D-11）。
+ * 供 `team-strength`（选阵/实力/比赛修复）与 `player-lineup`（赛季自愈回填）共用，避免重复定义。
+ */
+export const LINE_ATTRIBUTES = Object.freeze({
+  GK: ['goalkeeping'],
+  DF: ['defending', 'pace'],
+  MF: ['passing', 'technique'],
+  FW: ['finishing', 'technique', 'pace'],
+});
+
 /** 比赛模拟参数（时段制，DECISIONS D-02）。 */
 export const MATCH_CONFIG = Object.freeze({
   /** 一场比赛的时段数（90 分钟按此均分）。 */

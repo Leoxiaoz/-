@@ -127,6 +127,18 @@
 - 已交付测试：`tests/lifecycle.test.js` 19 项（含 10/50/100/200 赛季）；累计 **139/139 通过** + 浏览器冒烟通过。
 - **长期护栏（实测 1/10/50/100/200 季）**：总人口恒 112、GK 恒 8、无重复 ID、均值不坍缩不膨胀、退役≈新生。
 
+### 2.6 已交付（2026-09-29，第 20 步：玩家阵容 / 战术选择）
+
+- 目标：建立「玩家管理球队 → 比赛 → 结果反馈」的**最小可玩闭环**（D-18）。
+- 已实现：`src/core/player-lineup.js`（阵容槽位/校验/清洗/比赛修复/赛季自愈）；`team-strength.js` 新增
+  `resolveMatchSquad`（玩家阵容 vs 自动选阵统一入口）、`buildAutoLineup`，`computeTeamStrength` 接收实际出场集合；
+  `simulation.js#buildSide` 使用统一入口、赛季滚动调用 `repairManagedLineups`；`game-state.js` 新增
+  `managedClubId`（默认 null）与 `clubs[].lineup`、`initializeClubRuntime`，`GAME_STATE_SCHEMA_VERSION` 5→6（加法式）；
+  `game-controller.js` 新增阵容/战术 API 与快照；`app-view.js` + `main.css` 新增「我的球队」卡片。
+- **刻意未做（out-of-scope）**：转会、合同、财政、工资、身价、球探、教练、青训、预备队、AI 转会市场、多联赛、
+  升降级、杯赛、红黄牌、**换人引擎**、大规模比赛表现系统、名人堂、新闻系统。
+- 已交付测试：`tests/lineup.test.js` 22 项（含 save/load、阵型/战术真实影响比赛、10/50 赛季）；累计 **159/159 通过** + 浏览器冒烟通过。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

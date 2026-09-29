@@ -422,3 +422,41 @@
 - **测试**：`tests/lifecycle.test.js`（19 项）——退役概率/曲线/硬上限/确定性/归档、
   新生代字段/首次成长时机、人口（GK≥1/不超目标/不增长）、小型世界、访问器、退出/进入系统联动、
   v4→v5 迁移、序号防回退、存档往返、ID 唯一不复用、10/50/100/200 赛季稳定。
+
+---
+
+## 24. 实现状态（第二阶段 · 第 20 步：玩家阵容 / 战术选择，2026-09-29）
+
+> 制定者已确认规则（见 `DECISIONS.md` D-18）。本节描述**已实现**的玩家阵容系统，与代码一致。
+> 目标：建立「玩家管理球队 → 比赛 → 结果反馈」的**最小可玩闭环**——玩家选择阵容/阵型/战术，真正进入比赛模拟。
+
+- **模块**：[player-lineup.js](file:///workspace/src/core/player-lineup.js)（阵容解析/校验/清洗/修复）；
+  比赛接入在 [team-strength.js](file:///workspace/src/core/team-strength.js) `resolveMatchSquad` 与 [simulation.js](file:///workspace/src/core/simulation.js) `#buildSide`；
+  配置在 `sim-config.js` `LINEUP_CONFIG`。
+- **数据结构（进入 runtime，非 UI 状态）**：
+  - `runtime.managedClubId: string|null`——玩家管理球队，**默认 null**（不自动选择首支球队；未选择时全部走自动选阵）。
+  - `runtime.clubs[].lineup = { starters: string[], bench: string[] }`——首发/替补的 **playerId** 列表；**不自动创建**。
+  - `runtime.clubs[].tactics = { formation, mentality }`——阵型取自 `FORMATIONS`，战术倾向取自 `MENTALITY`。
+- **两种选择路径（统一入口 `resolveMatchSquad`）**：
+  - **玩家路径**：`teamId === runtime.managedClubId` 且已保存首发 → `repairSquadForMatch` 按当前阵型**严格修复**玩家阵容；
+    修复失败（某线无健康球员）→ 记录 `lineup_fallback` 事件并**回退自动选阵**（不静默使用错误数据）。
+  - **AI 路径（未变）**：其余球队继续使用 `selectMatchSquad`（按阵型各线取有效评分最高者）。
+- **阵容合法性规则**：
+  - 首发严格匹配阵型：GK=1，DF/MF/FW 等于 `FORMATIONS` 各线人数（合计恒 11）；替补上限 `LINEUP_CONFIG.BENCH`（=7）。
+  - 首发与替补**去重**；不存在 / 已退役 / 非本队 playerId **一律清洗剔除**。
+  - **伤病球员不得进入实际首发**（比赛时以同位置健康球员顶替）；允许进入替补席；玩家选择被保留，康复后可再次首发。
+  - 清洗 `cleanLineup` 保证结构合法；校验 `validateLineup` 返回**可解释问题列表**（UI 展示，不阻塞）。
+- **替补席**：仅**存储与展示**，**本步骤不参与比赛、不参与换人**（UI 明确标注"本步骤暂不参与换人"；换人引擎属 out-of-scope）。
+- **真实影响比赛**：比赛实力基于**本场实际出场集合**（`computeTeamStrength(state, teamId, tactics, squad)`），
+  故阵型（各线取样人数）与阵容（具体球员）变化会改变实力，进而改变期望进球与结果；战术倾向经 `MENTALITY` 倍率影响期望。
+  **不重写 `match.js` 的比分算法**——只把玩家阵容/战术作为输入喂入既有引擎。
+- **自愈**：赛季滚动（退役/离队后）调用 `repairManagedLineups` 剔除失效引用；比赛时 `repairSquadForMatch` 按阵型回填。
+- **存档**：`GAME_STATE_SCHEMA_VERSION` 5→6（**加法式**，向后兼容）；旧档经 `initializeClubRuntime` 兜底
+  （`managedClubId → null`、`lineup → {starters:[],bench:[]}`、阵型/战术非法回退默认）。
+- **Controller API**：`getManagedClubId` / `setManagedClub` / `setFormation` / `setMentality` / `setLineup` /
+  `assignLineupPlayer` / `autoFillManagedLineup`；`getSnapshot()` 新增 `managedClubId / clubs / formations / mentalities / managedClub`。
+- **UI**：`app-view.js`「我的球队」卡片——选择管理球队 → 阵型/战术下拉 → 自动填充/清空 → 首发/替补/其余球员分区与「首发/替补/移除」操作。
+- **明确未实现（out-of-scope）**：转会、合同、财政、工资、身价、球探、教练、青训、预备队、AI 转会市场、
+  多联赛、升降级、杯赛、红黄牌、换人引擎、大规模比赛表现系统、名人堂、新闻系统。
+- **测试**：`tests/lineup.test.js`（22 项）——阵容保存读取、首发/替补人数、位置合法性、GK 约束、重复/伤病/退役/非本队/不存在引用、
+  AI 自动选阵不受影响、玩家阵容真实出场、阵型与战术真实影响比赛、赛季滚动自愈、save/load 回归（v6 兜底）、10/50 赛季长期稳定。

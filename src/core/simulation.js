@@ -11,7 +11,8 @@
 
 import { SimulationError } from '../shared/errors.js';
 import { addDays } from './date-utils.js';
-import { computeTeamStrength, selectMatchSquad } from './team-strength.js';
+import { computeTeamStrength, resolveMatchSquad } from './team-strength.js';
+import { repairManagedLineups } from './player-lineup.js';
 import { simulateMatch } from './match.js';
 import { applyResult } from './standings.js';
 import { createLeagueRuntime, getClubRuntime, recordEvent } from './game-state.js';
@@ -122,8 +123,8 @@ export class SimulationCore {
 
   /**
    * 赛后生态反馈（第 18 步，最小闭环）：把比赛**实际使用**的球员记为出场（含分钟/进球），
-   * 并施加体能消耗与状态建立。统计接口沿用 `recordAppearance`，未来以正式首发/换人系统替换
-   * `selectMatchSquad` 即可，无需重写本层。
+   * 并施加体能消耗与状态建立。实际使用球员由 `resolveMatchSquad` 解析（玩家阵容 / 自动选阵），
+   * 统计接口沿用 `recordAppearance`，未来以换人系统扩展时无需重写本层。
    */
   #applyPostMatch(state, sides, result) {
     const goalsByScorer = new Map();
@@ -151,12 +152,13 @@ export class SimulationCore {
   #buildSide(state, teamId) {
     const club = getClubRuntime(state, teamId);
     const tactics = club?.tactics ?? {};
-    // 出场集合 = 比赛模拟实际使用的球员（第 18 步；受伤球员已被剔除）。
-    const squad = selectMatchSquad(state, teamId, tactics);
+    // 出场集合 = 比赛模拟实际使用的球员（第 20 步统一入口：玩家管理球队用已保存阵容，其余自动选阵）。
+    const squad = resolveMatchSquad(state, teamId, tactics);
     return {
       teamId,
       tactics,
-      strength: computeTeamStrength(state, teamId, tactics),
+      // 实力必须基于**本场实际出场集合**，玩家阵容/阵型变化才能真实影响比赛。
+      strength: computeTeamStrength(state, teamId, tactics, squad),
       // 传给比赛引擎的球员带**有效属性**（基础 + deltas，已夹取潜力上限），
       // 使 `selectScorer` 按球员当前能力（而非静态基础）判分。
       players: squad.map((p) => ({
@@ -202,13 +204,15 @@ export class SimulationCore {
     state.season = maxSeason;
     // 赛季推进顺序（第 15/16/19 步）：
     //   1) 结算上一赛季成长 → 2) 退役+归档 → 3) 计算缺口并生成属于下一赛季的新生代
-    //   → 4) 重置本赛季统计 → 进入下一赛季。
+    //   → 4) 修复玩家阵容 → 5) 重置本赛季统计 → 进入下一赛季。
     if (maxSeason > prevSeason) {
       developPlayers(state, {
         seasonNumber: prevSeason,
         training: this.trainingFactor ?? undefined,
       });
       runPlayerLifecycle(state, { fromSeason: prevSeason, toSeason: maxSeason });
+      // 退役/离队后修复玩家阵容：剔除失效引用、去重、保持容量（第 20 步）。
+      repairManagedLineups(state);
       resetSeasonStats(state, maxSeason);
     }
   }

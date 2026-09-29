@@ -87,6 +87,29 @@ body {
 
 .btn:active { background: var(--color-accent); }
 
+.btn--small { min-height: 36px; flex: 0 1 auto; font-size: 0.82rem; }
+.btn--mini { min-height: 30px; flex: 0 0 auto; padding: 2px var(--space-2); font-size: 0.72rem; }
+
+/* 我的球队：阵型/战术选择与阵容列表 */
+.select {
+  min-height: 40px;
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  max-width: 60%;
+}
+.field-rows { display: flex; flex-direction: column; gap: var(--space-2); margin: var(--space-2) 0; }
+.field-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.field-row__label { color: var(--color-muted); font-size: 0.85rem; }
+.row-actions { display: flex; gap: var(--space-2); margin: var(--space-2) 0; }
+
+.lineup__item { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.lineup__name { font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lineup__actions { display: flex; gap: var(--space-1); flex: 0 0 auto; }
+
 .muted { color: var(--color-muted); }
 
 .card {
