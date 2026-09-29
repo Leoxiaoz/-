@@ -230,6 +230,31 @@
 
 ---
 
+## D-19 运行期成员关系层（G0）（对应 SIMULATION_SPEC §25、SAVE_SPEC §3、DATABASE_SPEC §3/§4）
+
+- **背景（G0）**：审计发现 player→club 存在**两个真相源**（基础球员读 `static.players[].teamId`，新生代读 `runtime.generated[].teamId`），
+  club→league 只读 `static.teams[].leagueId`；导致转会、升降级、AI 建队、财政等无法实现。本步**只**建立统一的运行期成员关系层。
+- **已定规则（制定者确认）**：
+  - **唯一真相源**：`runtime.membership = { schema: 1, players: {playerId→clubId}, clubs: {clubId→leagueId} }`。
+  - **静态字段**保留为**数据库种子 + 加载期引用完整性校验**；运行期归属判断**不得**再直接依赖。
+  - **`runtime.generated[].teamId` 保留为 denormalized 兼容镜像**；除初始化/迁移/兼容场景外，不用于判断当前归属。
+  - **实体字段名**继续对外暴露 `teamId`（内部 registry 用 `clubId`）。
+  - **自由球员**本阶段不实现：active 球员必须属于一个 club，不引入 null club。
+  - **顺序契约**：`getClubPlayers()` 返回顺序必须与「`getWorldPlayers()` 过滤」一致（静态库原序 → 新生代插入序），
+    **不做 playerId 排序**，以保住 Step 16–20 的确定性与行为等价。
+  - **`validateMembership`**：致命问题（缺归属 / 无效 league / 退役残留）**明确报错**、不静默继续；非致命记 diagnostics。
+  - **`computePopulationTarget`** 改经 membership；初始化结果与 Step 19/20 完全一致。
+  - **Controller 快照** club→league 统一经 membership；对外 API 行为兼容。
+- **生命周期接入**：新生代生成在同一事件内写 generated + membership（镜像 + 权威一致）；退役从 active membership 移除。
+- **存档**：`GAME_STATE_SCHEMA_VERSION` 6→7（**加法式**）；v6 旧档经 `initializeMembership` 从静态/新生代种子建立；迁移前遵循备份规则。
+- **架构**：`membership.js` 为**叶子模块**（不 import player-runtime / game-state），避免循环依赖。
+- **明确未做**：转会、合同、自由球员、财政、工资、身价、AI 转会、升降级、多联赛、杯赛；
+  不改 `match.js` 比分算法、不改 Step 20 lineup 存储、不改 Step 16–19 核心规则、不改 AI 自动选阵。
+- 落地：[membership.js](file:///workspace/src/core/membership.js)、`player-runtime.js`、`game-state.js`、`player-lifecycle.js`、
+  `save-manager.js`、`game-controller.js`、[SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §25、`tests/membership.test.js`（19 项）。
+
+---
+
 ## 仍属 TBD（未受影响）
 
 - GAME_DESIGN：T1、T2、T3、T4、T5、T7–T13、T15、T16、T17

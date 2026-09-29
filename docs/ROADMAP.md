@@ -139,6 +139,17 @@
   升降级、杯赛、红黄牌、**换人引擎**、大规模比赛表现系统、名人堂、新闻系统。
 - 已交付测试：`tests/lineup.test.js` 22 项（含 save/load、阵型/战术真实影响比赛、10/50 赛季）；累计 **159/159 通过** + 浏览器冒烟通过。
 
+### 2.7 已交付（2026-09-29，G0：运行期成员关系层）
+
+- 目标：把 player→club / club→league 从"主要依赖静态字段"升级为**统一、可变、可持久化的运行期唯一真相源**（D-19）。
+  不新增玩法，仅为后续财政/转会/合同/AI/升降级/赛事扩展提供唯一基础。
+- 已实现：`src/core/membership.js`（叶子模块）；`player-runtime.js` 访问器改经 membership（`getTeamPlayers`/`getPlayerProfile`
+  归属、`computePopulationTarget`）；`game-state.js` 建世界时初始化 membership、`getTeamsByLeague` 经 membership；
+  `player-lifecycle.js` 新生代入队 + 退役出队；`save-manager.js` 兜底；`game-controller.js` 读档校验 + 快照；
+  `GAME_STATE_SCHEMA_VERSION` **6→7**（加法式）。
+- **刻意未做（out-of-scope）**：转会、合同、自由球员、财政、工资、身价、AI 转会、升降级、多联赛、杯赛。
+- 已交付测试：`tests/membership.test.js` 19 项（含 v6→v7 迁移、唯一真相源、顺序契约、10/50/100/200 赛季）；累计 **178/178 通过** + 浏览器冒烟通过。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

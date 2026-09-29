@@ -460,3 +460,40 @@
   多联赛、升降级、杯赛、红黄牌、换人引擎、大规模比赛表现系统、名人堂、新闻系统。
 - **测试**：`tests/lineup.test.js`（22 项）——阵容保存读取、首发/替补人数、位置合法性、GK 约束、重复/伤病/退役/非本队/不存在引用、
   AI 自动选阵不受影响、玩家阵容真实出场、阵型与战术真实影响比赛、赛季滚动自愈、save/load 回归（v6 兜底）、10/50 赛季长期稳定。
+
+---
+
+## 25. 实现状态（第二阶段 · G0：运行期成员关系层，2026-09-29）
+
+> 制定者已确认规则（见 `DECISIONS.md` D-19）。本节描述**已实现**的运行期成员关系层，与代码一致。
+> 目标：把 player→club / club→league 从"主要依赖静态数据库字段"升级为**统一、可变、可持久化的运行期唯一真相源**，
+> 为后续财政、转会、合同、AI、升降级与赛事扩展提供唯一基础（本阶段**不实现**这些玩法）。
+
+- **模块**：[membership.js](file:///workspace/src/core/membership.js)（Simulation Core，**叶子模块**：不 import player-runtime / game-state，避免循环依赖）。
+- **数据结构（唯一真相源）**：
+  ```
+  runtime.membership = {
+    schema: 1,
+    players: { [playerId]: clubId },   // active player → club
+    clubs:   { [clubId]:  leagueId }   // club → league
+  }
+  ```
+  - active 球员**必须**属于一个 club（不实现自由球员）；退役球员一律移出 active membership。
+  - 全部初始化/迁移/修复**确定性**（无随机、无时间戳）。
+- **单一真相源规则**：运行期**任何**归属判断只经 `membership`；`static.players[].teamId` / `static.teams[].leagueId` /
+  `runtime.generated[].teamId` 降级为**初始化种子 / 兼容镜像**（`generated.teamId` 仍写入，但运行期不用于判断）。
+- **API**：`getPlayerClub` / `getClubPlayers` / `getClubLeague` / `getLeagueClubs` / `isActiveMember` /
+  `initializeMembership` / `addPlayerMembership` / `removePlayerMembership` / `validateMembership` / `assertMembershipValid`。
+- **访问器改造（签名不变）**：`player-runtime.getTeamPlayers` 改由 `getClubPlayers` 驱动；`getPlayerProfile` 的 `teamId` 取自 membership；
+  `getWorldPlayers` 顺序**保持不变**（静态库原序 → 新生代插入序）——**顺序契约**保证 Step 16–20 的确定性/行为等价。
+  `game-state.getTeamsByLeague` 改经 `getLeagueClubs`；`computePopulationTarget(state)` 改经成员关系统计（初始化结果与 Step 19/20 一致）。
+- **生命周期接入**：新生代 `generatePlayer` **同一次事件内**写入 `generated` 与 membership（兼容镜像 + 权威归属）；
+  退役 `archiveRetired` 从 active membership **移除**（退役不复活）。
+- **初始化顺序**：`createGameState` = 建 clubs → 建 players → **initializeMembership** → 计算 populationTarget → 建 competitions。
+- **读档校验**：`controller.load` 在补齐运行时后执行 `initializeMembership` + `assertMembershipValid`；
+  **致命问题明确报错**（缺归属 / 无效 league / 退役残留），非致命问题记为 diagnostics，**不静默继续模拟**。
+- **存档**：`GAME_STATE_SCHEMA_VERSION` 6→7（**加法式**）；v6 旧档经 `initializeMembership` 从静态/新生代种子建立 membership。
+- **明确未实现（out-of-scope）**：转会、合同、自由球员、财政、工资、身价、AI 转会、升降级、多联赛、杯赛。
+- **测试**：`tests/membership.test.js`（19 项）——初始化、访问器等价与顺序契约、唯一真相源（篡改静态/镜像不改归属）、
+  generated 同事件一致、退役出队、club→league、确定性、v6→v7 迁移、save/load 往返、校验器（致命/诊断）、
+  managedClub/lineup 不受影响、10/50/100/200 赛季长期稳定。

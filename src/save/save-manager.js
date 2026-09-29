@@ -11,6 +11,7 @@
  */
 
 import { SaveError } from '../shared/errors.js';
+import { createMembership } from '../core/membership.js';
 
 /** 存档格式版本（独立于数据库格式与运行时 schema）。 */
 export const SAVE_FORMAT_VERSION = 1;
@@ -91,6 +92,17 @@ export function deserializeState(raw) {
     payload.runtime.events ??= [];
     // 玩家管理球队（第 20 步；旧档兜底为 null，clubs[].lineup 由 initializeClubRuntime 补齐）。
     payload.runtime.managedClubId ??= null;
+    // 运行期成员关系层（G0；旧档兜底为空容器，实际内容由 initializeMembership 从静态/新生代种子建立）。
+    if (!payload.runtime.membership || typeof payload.runtime.membership !== 'object') {
+      payload.runtime.membership = createMembership();
+    } else {
+      if (!payload.runtime.membership.players || typeof payload.runtime.membership.players !== 'object') {
+        payload.runtime.membership.players = {};
+      }
+      if (!payload.runtime.membership.clubs || typeof payload.runtime.membership.clubs !== 'object') {
+        payload.runtime.membership.clubs = {};
+      }
+    }
     // 球员生命周期容器（第 19 步；旧档兜底为空/零，populationTarget 由 initializePlayerRuntime 依据世界补齐）
     payload.runtime.generated ??= {};
     payload.runtime.retired ??= {};

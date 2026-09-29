@@ -133,6 +133,10 @@ erDiagram
 
 - 数据库加载后，运行时**不得**反向写回数据库。
 - 存档**必须**保存"相对于数据库的增量 + 引用"，避免整库冗余（具体见 `SAVE_SPEC.md`）。
+- `[已定 ⚠ 落地]` **运行期成员关系（G0）**：player→club / club→league 的运行期**唯一真相源**为
+  `runtime.membership`（`{players:{playerId→clubId}, clubs:{clubId→leagueId}}`）；`static.players[].teamId` 与
+  `static.teams[].leagueId` 降级为**数据库种子 + 加载期引用完整性校验**，运行期归属判断不得直接依赖。
+  见 `DECISIONS.md` D-19 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §25。
 - `[TBD]` 边界判定规则：当某字段既似静态又会被运行时改动（如"当前能力" vs "基础潜力"），其**归属需逐项裁定**，并在实现前成文。
 - `[TBD]` 数据库是否允许含"初始运行时值"（如初始财政、初始合同）——建议允许，但必须标注为初始值而非权威值。
 

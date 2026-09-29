@@ -24,6 +24,11 @@
 import { SimulationError } from '../shared/errors.js';
 import { PLAYER_ATTRIBUTES, ATTRIBUTE_DEFAULT, ATTRIBUTE_RANGE } from '../shared/football-schema.js';
 import { PLAYER_RUNTIME_CONFIG, INJURY_CONFIG } from './sim-config.js';
+import {
+  initializeMembership,
+  getPlayerClub,
+  getClubPlayers,
+} from './membership.js';
 
 /** 伤病状态枚举。 */
 export const INJURY_STATUS = Object.freeze({ FIT: 'fit', INJURED: 'injured' });
@@ -189,6 +194,8 @@ export function initializePlayerRuntime(state) {
   state.runtime.players ??= {};
   state.runtime.generated ??= {};
   state.runtime.retired ??= {};
+  // 成员关系层：读档后据此建立/补齐（幂等、确定性；退役者不复活）。
+  initializeMembership(state);
   // 生成序号：不得回退（取存档值与已生成记录最大序号中的较大者）。
   const maxSeq = maxGeneratedSequence(state.runtime.generated);
   const savedSeq = Number(state.runtime.nextGeneratedSeq);
@@ -196,9 +203,9 @@ export function initializePlayerRuntime(state) {
     Number.isInteger(savedSeq) && savedSeq >= 0 ? savedSeq : 0,
     maxSeq,
   );
-  // 人口目标快照：旧档缺失时依据世界补齐（第 19 步）。
+  // 人口目标快照：旧档缺失时依据世界补齐（第 19 步；G0 起经成员关系层统计）。
   if (!state.runtime.populationTarget || typeof state.runtime.populationTarget !== 'object') {
-    state.runtime.populationTarget = computePopulationTarget(state.static);
+    state.runtime.populationTarget = computePopulationTarget(state);
   }
   const seasonNumber = state.season ?? 1;
   // 静态球员：**跳过已退役者**（避免读档时把退役球员"复活"）。
@@ -230,19 +237,19 @@ export function initializePlayerRuntime(state) {
 }
 
 /**
- * 依世界初始静态球员，按球队推导「人口目标快照」（第 19 步）。
- * `target(club) = 该队世界创建时的初始球员数`（含按位置明细）；数据驱动，不硬编码规模。
- * @param {{teams: any[], players: any[]}} world
+ * 依世界初始化时各队球员数推导「人口目标快照」（第 19 步；G0 起改经**成员关系层**统计）。
+ * `target(club) = 该队创建时的初始球员数`（含按位置明细）；数据驱动，不硬编码规模。
+ * 说明：初始化阶段 membership 刚由静态种子建立，故结果与 Step 19/20 完全一致。
+ * @param {object} state 运行时状态（需已 initializeMembership）
  * @returns {Record<string, {total: number, byPosition: Record<string, number>}>}
  */
-export function computePopulationTarget(world) {
+export function computePopulationTarget(state) {
   const target = {};
-  for (const team of world.teams) {
+  for (const team of state.static?.teams ?? []) {
     const byPosition = { GK: 0, DF: 0, MF: 0, FW: 0 };
-    for (const player of world.players) {
-      if (player.teamId === team.id && byPosition[player.position] != null) {
-        byPosition[player.position] += 1;
-      }
+    for (const playerId of getClubPlayers(state, team.id)) {
+      const position = getPlayerProfile(state, playerId)?.position;
+      if (byPosition[position] != null) byPosition[position] += 1;
     }
     target[team.id] = {
       total: byPosition.GK + byPosition.DF + byPosition.MF + byPosition.FW,
@@ -267,12 +274,12 @@ export function isRetired(state, playerId) {
   return Boolean(state?.runtime?.retired?.[playerId]);
 }
 
-/** 静态球员 → 统一球员实体（基础属性展平，供访问器使用）。 */
-function staticEntity(player) {
+/** 静态球员 → 统一球员实体（基础属性展平，供访问器使用）。归属取自**成员关系层**。 */
+function staticEntity(state, player) {
   const entity = {
     id: player.id,
     name: player.name,
-    teamId: player.teamId ?? null,
+    teamId: getPlayerClub(state, player.id),
     position: player.position,
     birthDate: player.birthDate,
     potential: player.potential,
@@ -283,12 +290,12 @@ function staticEntity(player) {
   return entity;
 }
 
-/** 新生代档案 → 统一球员实体（teamId 取自运行时档案）。 */
-function generatedEntity(g) {
+/** 新生代档案 → 统一球员实体（归属取自**成员关系层**；档案中的 teamId 仅为兼容镜像，不用于判断）。 */
+function generatedEntity(state, g) {
   return {
     id: g.playerId,
     name: g.name,
-    teamId: g.teamId ?? null,
+    teamId: getPlayerClub(state, g.playerId),
     position: g.position,
     birthDate: g.birthDate,
     potential: g.potential,
@@ -298,12 +305,12 @@ function generatedEntity(g) {
   };
 }
 
-/** 统一球员档案：优先静态库，其次运行时新生代；未找到返回 null。 */
+/** 统一球员档案：优先静态库，其次运行时新生代；未找到返回 null。归属统一经成员关系层。 */
 export function getPlayerProfile(state, playerId) {
   const staticPlayer = getStaticPlayer(state, playerId);
-  if (staticPlayer) return staticEntity(staticPlayer);
+  if (staticPlayer) return staticEntity(state, staticPlayer);
   const g = state?.runtime?.generated?.[playerId];
-  if (g && typeof g.playerId === 'string') return generatedEntity(g);
+  if (g && typeof g.playerId === 'string') return generatedEntity(state, g);
   return null;
 }
 
@@ -311,19 +318,24 @@ export function getPlayerProfile(state, playerId) {
 export function getWorldPlayers(state) {
   const out = [];
   for (const player of state.static.players) {
-    if (!isRetired(state, player.id)) out.push(staticEntity(player));
+    if (!isRetired(state, player.id)) out.push(staticEntity(state, player));
   }
   for (const g of Object.values(state.runtime?.generated ?? {})) {
     if (g && typeof g.playerId === 'string' && !isRetired(state, g.playerId)) {
-      out.push(generatedEntity(g));
+      out.push(generatedEntity(state, g));
     }
   }
   return out;
 }
 
-/** 某队全部活跃球员。 */
+/**
+ * 某队全部活跃球员（经**成员关系层**）。
+ * 顺序契约：与 `getWorldPlayers` 过滤顺序完全一致（G0 起由 `getClubPlayers` 保证）。
+ */
 export function getTeamPlayers(state, teamId) {
-  return getWorldPlayers(state).filter((p) => p.teamId === teamId);
+  return getClubPlayers(state, teamId)
+    .map((id) => getPlayerProfile(state, id))
+    .filter((p) => p != null);
 }
 
 /** 读取球员运行时状态（不存在返回 null）。 */

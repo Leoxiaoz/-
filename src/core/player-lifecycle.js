@@ -35,6 +35,7 @@ import {
   getPlayerRuntime,
   createPlayerRuntime,
 } from './player-runtime.js';
+import { addPlayerMembership, removePlayerMembership } from './membership.js';
 import { recordEvent } from './game-state.js';
 
 const POSITIONS = ['GK', 'DF', 'MF', 'FW'];
@@ -97,6 +98,8 @@ function archiveRetired(state, player, season) {
   };
   delete state.runtime.players[player.id];
   if (state.runtime.generated[player.id]) delete state.runtime.generated[player.id];
+  // 退役者移出运行期成员关系（active membership 不得含退役球员；G0）。
+  removePlayerMembership(state, player.id);
   recordEvent(state, 'player_retired', {
     playerId: player.id,
     season,
@@ -173,7 +176,7 @@ export function generatePlayer(state, ctx) {
   state.runtime.generated[id] = {
     playerId: id,
     name: `Player g${String(sequence).padStart(G.ID_PAD, '0')}`,
-    teamId: ctx.teamId,
+    teamId: ctx.teamId, // 兼容镜像（denormalized）；归属真相源为 membership
     position: ctx.position,
     birthDate,
     attributes,
@@ -182,6 +185,9 @@ export function generatePlayer(state, ctx) {
     generatedSeason: ctx.season,
     sequence,
   };
+
+  // 运行期成员关系（G0）：与 generated 写入在同一次生命周期事件内保持一致。
+  addPlayerMembership(state, id, ctx.teamId);
 
   // 运行时状态：默认 vitals / 健康 / 空伤病史。
   const rt = createPlayerRuntime(id, { seasonNumber: ctx.season });

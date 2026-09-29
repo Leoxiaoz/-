@@ -12,6 +12,7 @@ import { SimulationError } from '../shared/errors.js';
 import { generateDoubleRoundRobin } from './schedule.js';
 import { createTable } from './standings.js';
 import { createPlayerRuntime, computePopulationTarget } from './player-runtime.js';
+import { createMembership, initializeMembership, getLeagueClubs } from './membership.js';
 import {
   DEFAULT_FORMATION,
   FORMATIONS,
@@ -28,8 +29,10 @@ import {
  *   `populationTarget`（各队人口目标快照）。均为**加法式**变更，旧档经兜底自动补齐，非破坏性。
  * v6（第 20 步）：新增 `managedClubId`（玩家管理球队，默认 null）与 `clubs[].lineup`（首发/替补，默认空）。
  *   均为**加法式**变更，旧档经 `initializeClubRuntime` 兜底补齐，非破坏性。
+ * v7（G0）：新增 `membership`（运行期成员关系层：player→club / club→league，唯一真相源）。
+ *   为**加法式**变更，旧档经 `initializeMembership` 从静态/新生代种子建立，非破坏性。
  */
-export const GAME_STATE_SCHEMA_VERSION = 6;
+export const GAME_STATE_SCHEMA_VERSION = 7;
 
 /**
  * 基于已加载的静态世界，创建一个最小运行时状态。
@@ -60,11 +63,13 @@ export function createGameState(world, options = {}) {
       events: [],       // 世界事件/日志（最小占位，非新闻系统）
       // 玩家管理球队（第 20 步）：默认 null（不自动选择首支球队；未选择时走自动选阵）。
       managedClubId: null,
+      // 运行期成员关系层（G0）：player→club / club→league 的唯一真相源。
+      membership: createMembership(),
       // 球员生命周期（第 19 步）
-      generated: {},    // playerId -> 新生代档案（引擎生成；teamId 存于此）
+      generated: {},    // playerId -> 新生代档案（引擎生成；teamId 为兼容镜像，非归属真相源）
       retired: {},      // playerId -> 退役归档（永久保留 career/终值快照）
       nextGeneratedSeq: 0,
-      populationTarget: computePopulationTarget(world), // 各队人口目标快照
+      populationTarget: {}, // 各队人口目标快照（成员关系建立后计算，见下）
     },
   };
 
@@ -85,6 +90,10 @@ export function createGameState(world, options = {}) {
   for (const player of world.players) {
     state.runtime.players[player.id] = createPlayerRuntime(player.id, { seasonNumber: season });
   }
+
+  // 建立运行期成员关系（G0）：静态/新生代种子 → membership；随后据此计算人口目标快照。
+  initializeMembership(state);
+  state.runtime.populationTarget = computePopulationTarget(state);
 
   // 初始化各联赛赛程与积分（决策 A1：赛程由规则生成、结果归运行时）。
   for (const league of world.leagues) {
@@ -186,9 +195,14 @@ export function getLeague(state, leagueId) {
   return state.static.leagues.find((l) => l.id === leagueId) ?? null;
 }
 
-/** 取某联赛下的球队（基于静态数据）。 */
+/**
+ * 取某联赛下的球队（**经运行期成员关系层**；G0 起不再直读静态 leagueId）。
+ * 返回静态球队实体对象数组（实体字段来自只读静态库；**归属判定**来自 membership）。
+ */
 export function getTeamsByLeague(state, leagueId) {
-  return state.static.teams.filter((t) => t.leagueId === leagueId);
+  return getLeagueClubs(state, leagueId)
+    .map((clubId) => getTeam(state, clubId))
+    .filter((t) => t != null);
 }
 
 /** 取某球队的运行时状态（不存在则返回 null）。 */

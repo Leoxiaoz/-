@@ -37,6 +37,16 @@
 > `populationTarget`（各队人口目标快照）；`GAME_STATE_SCHEMA_VERSION` **4→5**（加法式，向后兼容）。
 > 旧档缺这些字段时经 `deserializeState` / `initializePlayerRuntime` 兜底补齐（保留已有值）；退役球员读档时**不再被复活**。
 > 详见 `DECISIONS.md` D-17 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §23。
+>
+> **实现更新（第 20 步 · 玩家阵容）**：运行时新增 `managedClubId`（默认 null）与 `clubs[].lineup`
+> （`{starters:[],bench:[]}`，仅存 playerId）；`GAME_STATE_SCHEMA_VERSION` **5→6**（加法式，向后兼容）。
+> 旧档经 `initializeClubRuntime` / `deserializeState` 兜底补齐。详见 `DECISIONS.md` D-18 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §24。
+>
+> **实现更新（G0 · 运行期成员关系层）**：运行时新增 `membership`（`{schema, players:{playerId→clubId}, clubs:{clubId→leagueId}}`），
+> 作为 player→club / club→league 的**运行期唯一真相源**；`GAME_STATE_SCHEMA_VERSION` **6→7**（加法式，向后兼容）。
+> v6 旧档经 `deserializeState` 补齐空容器 + `initializeMembership` 从静态/新生代种子建立，退役者不复活；
+> 读档后执行 `assertMembershipValid`，致命问题**明确报错**不静默。既有字段（`managedClubId/lineup/tactics/generated/retired/nextGeneratedSeq`）
+> 行为不变。详见 `DECISIONS.md` D-19 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §25。
 
 ## 0. 文档定位与边界
 

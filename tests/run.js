@@ -14,6 +14,7 @@ import './growth.test.js';
 import './injury.test.js';
 import './ecosystem.test.js';
 import './lifecycle.test.js';
+import './membership.test.js';
 import './lineup.test.js';
 import './save.test.js';
 import './indexeddb.test.js';

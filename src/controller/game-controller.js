@@ -16,6 +16,7 @@
 import { createGameState, initializeClubRuntime } from '../core/game-state.js';
 import { sortTable } from '../core/standings.js';
 import { initializePlayerRuntime, getTeamPlayers, getPlayerProfile, getPlayerRuntime, INJURY_STATUS } from '../core/player-runtime.js';
+import { initializeMembership, assertMembershipValid, getClubLeague, getLeagueClubs } from '../core/membership.js';
 import { buildAutoLineup } from '../core/team-strength.js';
 import { cleanLineup, validateLineup, LINEUP_LIMITS } from '../core/player-lineup.js';
 import { FORMATIONS, MENTALITY, DEFAULT_FORMATION } from '../core/sim-config.js';
@@ -77,7 +78,7 @@ export class GameController {
       eventsCount: runtime.events.length,
       // 玩家阵容 / 战术（第 20 步）
       managedClubId: runtime.managedClubId ?? null,
-      clubs: world.teams.map((t) => ({ id: t.id, name: t.name, leagueId: t.leagueId })),
+      clubs: world.teams.map((t) => ({ id: t.id, name: t.name, leagueId: getClubLeague(this.state, t.id) })),
       formations: Object.keys(FORMATIONS),
       mentalities: Object.keys(MENTALITY).map((k) => ({ value: k, label: MENTALITY_LABELS[k] ?? k })),
       managedClub: this.#managedClubView(),
@@ -86,7 +87,7 @@ export class GameController {
         return {
           id: l.id,
           name: l.name,
-          teamsCount: world.teams.filter((t) => t.leagueId === l.id).length,
+          teamsCount: getLeagueClubs(this.state, l.id).length,
           status: comp?.status ?? 'empty',
           competitionSeason: comp?.season ?? this.state.season,
           matchesPerRound: comp ? comp.fixtures.filter((f) => f.round === 1).length : 0,
@@ -227,9 +228,13 @@ export class GameController {
     });
     this.state.runtime = payload.runtime ?? this.state.runtime;
     // 补齐/兼容球员运行时状态：保留旧档已有值，仅补缺失字段（第 15 步；不覆盖静态库）。
+    // 内部会调用 initializeMembership 从静态/新生代种子建立运行期成员关系（G0）。
     initializePlayerRuntime(this.state);
     // 补齐/兼容俱乐部运行时（阵型/战术/阵容容器/managedClubId；第 20 步）。
     initializeClubRuntime(this.state);
+    // 读档后显式校验运行期成员关系（G0）：致命问题必须报错，不静默继续模拟。
+    initializeMembership(this.state);
+    assertMembershipValid(this.state);
     this.logger?.info?.(`已读取存档槽 ${slot}`);
     this.#emit();
     return this.state;
