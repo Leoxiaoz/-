@@ -264,6 +264,21 @@
 - **仍未实现（Step 28+）**：Transfer / 转会费 / Contract Expiry / 续约 / AI 转会 / 签约费 / 工资现金流 / **D10（Deferred）** / Free Agent 市场 UI。
 - 详见 [DECISIONS D-26](file:///workspace/docs/DECISIONS.md) 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §32。
 
+### 2.17 设计冻结（2026-09-30，Step 28A：Transfer System v1）
+
+- **性质**：**纯设计冻结，无代码 / 无 schema / 无数据 / 无测试变更**（schema 仍 **10**，`SAVE_FORMAT_VERSION` 仍 **1**）。
+  决策编号 **T1–T30**，详见 [DECISIONS D-27](file:///workspace/docs/DECISIONS.md) 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §33。
+- **已冻结 `[已定]`**：Transfer = Club A→B 的**原子交易**（一次性改 Membership / Contract / Finance / Seller Lineup）；
+  **确定性能力定价**（`Base × Ability × Age × Position`，纯函数、无 RNG、不读 cash/budget/squad）且 `MIN=0` / `MAX` 由 `sim-config` 定义；
+  buyer `fee ≤ min(cash, transferBudget)`、buyer `cash & transferBudget -= fee`、seller `cash += fee`（budget 不增）；
+  旧合同 terminate + 新 active 合同（模板条款）；**不建 contract/transfer history**；seller 允许暂 <MIN、**GK 硬保护**；buyer `≥24` 拒绝（`ROSTER_FULL`），无位置要求；
+  受伤可转会（不重置状态）；generated 可转会（不改 D10 / registry）；Free Agent 禁入（走 `signFreeAgent`）；runtime `TRANSFER_COMPLETED` 事件；
+  day-advance 之外执行、下一场生效；`validate→plan→commit→assert`；**保持 schema 10 / save 1**；**无 RNG**；不改 world population。
+- **架构**：新模块 `src/core/transfer.js`（`transferPlayer` / `validateTransfer` / `buildTransferPlan` / `commitTransferPlan` / `assertTransferInvariants`），
+  单向依赖 contract / membership / finance / player-lineup / player-runtime / sim-config / game-state，**禁止反向依赖**；与 `free-agent.js` 为 sibling。
+- **Deferred / 未来**：**D10**（Deferred）；AI Transfer、Transfer Window、Contract Expiry / Renewal、Loan、Negotiation、Market Value UI、Transfer History、收入系统。
+- **下一步（未开始）**：**Step 28B Implementation** —— `src/core/transfer.js` + 确定性 fee + finance cash primitive + lineup 清理下沉 + controller forwarding + `tests/transfer.test.js`（**不含 Transfer UI**）。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

@@ -371,8 +371,8 @@
   wageBudget / transferBudget 为**约束**，**不作为额外现金余额**。
 - **D7 Squad Size** `[已定]`：引入俱乐部阵容人数 **lower/upper bound**；转会 / 释放 / 生成球员均须遵守；
   **不允许**人口补充系统因一次转会/释放就立即恢复到固定 112。
-- **D8 Transfer Fee** `[已定]`：v1 使用**确定性转会费模板**（依能力/年龄/位置等已有数据）；暂不建独立 player value / market value 系统；**不新增随机数源**。
-- **D9 Transfer Window** `[已定]`：v1 **转会窗口永久开放**；暂不实现夏窗/冬窗限制。
+- **D8 Transfer Fee** `[已定]`：v1 使用**确定性转会费模板**（依能力/年龄/位置等已有数据）；暂不建独立 player value / market value 系统；**不新增随机数源**。（**Step 28A 具体化为 D-27 T2/T3**。）
+- **D9 Transfer Window** `[已定]`：v1 **转会窗口永久开放**；暂不实现夏窗/冬窗限制。（**Step 28A 保持：D-27 T26**。）
 - **D10 Generated Player Contract** `[TBD → Deferred]`：**暂不锁定**（原因见下）；**Step 27A 明确为 Deferred、不阻塞 Step 27**（见 D-26.9）。
 - **D11 Retirement** `[已定]`：退役必须**移除 active contract** + **移出 active membership**；retired archive 保存**最终合同快照**等必要历史；
   退役者不得再出现在转会市场或 active contract 中。
@@ -535,6 +535,109 @@
 - **读档不变量**：`controller.load` 追加 `assertFreeAgentInvariants`（不静默）。
 - **仍未实现**：Transfer、Contract Expiry、续约、AI 转会、签约费、工资现金流、**D10（Deferred）**、Free Agent 市场 UI。
 - 落地测试：`tests/free-agent.test.js`（A–Z + 不变量 + Controller）。
+
+---
+
+## D-27 Transfer System v1（Step 28A 设计冻结）（对应 SIMULATION_SPEC §33、SAVE_SPEC §3）
+
+> 本条使用 **Step 28 决策编号 T1–T30**（与项目 `D-xx` 编号属不同命名空间）。本步骤**纯设计冻结**：
+> **不修改代码 / 测试 / `.fdb` / schema（仍 10）/ `SAVE_FORMAT_VERSION`（仍 1）**；**未实现** Transfer / UI / AI / Expiry / Renewal / Loan / Window / Negotiation；
+> **未改 D10**；**未新增 RNG**。Transfer **运行时实现属 Step 28B**。
+
+### T1 Transfer 定义 `[已定]`
+- Transfer = **Club A → Club B 的一次原子球员交易**；**不是**「改 `player.clubId`」，也**不是** Release + sign、Free Agent signing、临时 ownership 或 Loan。
+- 一次性完成 **Membership / Contract / Finance / Seller Lineup** 四域的一致变更；**Team Strength / Match Squad 不直接修改**（继续经 Membership 派生）。
+
+### T2 Transfer Fee 模型 `[已定]`
+- 采用**确定性能力定价模型**；v1 **不维护独立 `marketValue` 字段**；Fee **由当前球员状态计算，不存储**。
+- 模型：`Fee = Base × AbilityFactor × AgeFactor × PositionFactor`：
+  - AbilityFactor：基于 **effective attributes 的完整属性向量**（不使用单一 OVR）；
+  - AgeFactor：基于出生/年龄，**遵循现有 Growth/Decline 年龄曲线**（年轻溢价、巅峰正常、高龄贬值）；
+  - PositionFactor：仅允许**轻微**位置差异，不造成极端位置通胀。
+- **不进入 Fee 的因素**：Potential、Fitness、Form、Morale、Injury、Match Rating、Season/Career Stats（避免与短期状态过度耦合；Potential 仍只作成长上限）。
+- **纯函数**：同 state + player + seller + buyer → 同 Fee；**禁止** `Math.random()` / 新 RNG / 随机市场波动。`stableHash` 可作确定性档位微调，但**不得形成不可解释的随机价格**。
+- **费用输入禁止**：当前 cash / buyer cash / seller cash / transferBudget / squad size / 随机市场事件（尤其禁止「买方越有钱越贵」）。
+
+### T3 Fee Bounds `[已定]`
+- `MIN_TRANSFER_FEE = 0`；`MAX_TRANSFER_FEE` **由 `sim-config.js` 定义**。
+- Fee 必须 finite、非 NaN、可重复；越界则 **clamp** 到合法区间。MAX 用于防止长期成长导致经济数值无限膨胀（不引入复杂经济平衡）。
+
+### T4 Buyer Cash 约束 `[已定]`
+- 必须 `fee <= buyer.finance.cash`，否则拒绝；**不允许 cash < 0**（cash 是唯一真实 money）。错误码 **`INSUFFICIENT_CASH`**。
+
+### T5 Transfer Budget 约束 `[已定]`
+- 必须同时 `fee <= getSpendableCash(state, buyerClubId)`，即 `min(cash, transferBudget)` → **fee ≤ cash 且 fee ≤ transferBudget** 两者都满足。
+
+### T6 Transfer Budget 消耗 `[已定]`
+- Buyer：`cash -= fee` **且** `transferBudget -= fee`；Seller：`cash += fee`，**transferBudget 不增加**。
+- 转会费是**实际现金流**；transferBudget 是**买方可用支出额度**，非卖方收入来源。v1 不实现：自动增预算 / Board 调整 / 预算与现金重分配 / FFP / 负 transferBudget / 收入系统。
+
+### T7 Seller Cash `[已定]` / T8 Buyer Cash `[已定]`
+- `seller.cash += fee`；`buyer.cash -= fee`。**必须经 finance 层的纯状态变更接口**完成（建议 `applyCashDelta(state, clubId, delta)`，具体命名由架构决定）；**禁止 `transfer.js` 直接深入改 finance 结构**。validation 全部完成后再 commit，commit 阶段不得再有可失败的业务判断。
+
+### T9 新合同 `[已定]`
+- Club→Club 完成时：**旧合同终止 + 新 active 合同创建**。新合同：`playerId`、`clubId=buyer`、`status=active`、`startSeason=当前赛季`、`endSeason/wage` 取自现有 `defaultContractTemplate`。
+- v1 **不允许调用方传入复杂 contract terms**；不实现 Negotiation / Signing bonus / Release clause / Agent fee / Performance bonus / Extension / Salary negotiation。Transfer 自身生成基础合同。
+
+### T10 Contract History `[已定]`
+- v1 **不新增 Contract History 容器**；继续 `runtime.contracts[playerId] = 单条 current contract`（旧 terminate + 新 create）。未来 Player Career / Transfer History / Contract History 另设独立模型，本步禁止提前增加。
+
+### T11 Seller MIN Roster `[已定]`
+- **允许** Transfer 后 seller roster **暂时低于** `ROSTER_CONFIG.MIN_PLAYERS`。Transfer **不立即** generate / sign FA / 自动补人；此为合法中间状态；下一次 **population boundary** 优先 Free Agent，不足再 generation。
+
+### T12 Position Protection `[已定]`
+- **GK 硬保护**：若 seller 只有 1 个 GK，则该 GK **不允许 Transfer**（不得使 seller GK = 0）；错误码建议 **`SELLER_LAST_GK`**。
+- **DF/MF/FW 允许暂时低于位置最低人数**（由 Population Health 边界补位）。v1 不实现自动换人/自动补 GK/自动 swap/位置交换交易。
+
+### T13 Buyer MAX `[已定]`
+- 若 `buyer roster >= ROSTER_CONFIG.MAX_PLAYERS` → **拒绝**；**不得** auto-release / auto-retire / swap / kick / 自动清理。错误码 **`ROSTER_FULL`**。
+
+### T14 Buyer Position `[已定]`
+- Buyer **无 Transfer Position Requirement**：任何合法球员均可签入；不要求 buyer 缺该位置 / 满足 position minimum / 有空位。Transfer 是玩家明确操作；位置最低保障由 Population Health 负责，**不作为交易限制**。
+
+### T15 Injured Player `[已定]`
+- 受伤球员**允许** Transfer（injury ≠ ownership restriction）。Transfer **不清除/不重置** injury，**不改** fitness / form / morale；只改 Membership / Contract / Finance / Lineup。（与 D-24 D18 一致。）
+
+### T16 Generated Player Transfer `[已定]`
+- **允许** generated player 进行 Club→Club Transfer，`runtime.generated[playerId]` 的存在**不阻止** Transfer。
+- 若 generated player 当前「Club + 无 active contract」，Transfer **可直接建立**新的 active contract（Transfer 本身就是建立新 Club Contract 的 domain operation）。
+- **这不是修改 D10**：`generatePlayer()` 是否自动建合同**不变**；`D10` 仍 **Deferred**。Transfer **不得修改 generated registry**。
+
+### T17 Free Agent Transfer `[已定]`
+- Free Agent **不允许**进入 `transferPlayer`（须走 `signFreeAgent`）。二者是两个不同 domain operation。
+
+### T18 Transfer Event `[已定]`
+- 完成后记录 **`TRANSFER_COMPLETED`** runtime event，至少含 `playerId / sellerClubId / buyerClubId / transferFee / season / date`；复用现有 `recordEvent`；**runtime-only**，不建新的持久历史容器。
+
+### T19 Transfer History `[已定]`
+- v1 **不新增** `runtime.transferHistory` / `save.transferHistory`；**不改 `SAVE_FORMAT_VERSION`**。当前只保留 `TRANSFER_COMPLETED` runtime event。
+
+### T20 Timing `[已定]`
+- Transfer domain operation **在 day advancement 之外执行**；**不允许**在比赛 resolve 过程中修改 ownership；Transfer 完成后**下一场比赛即可使用**新 Membership。不实现 Transfer Window / Mid-match Transfer / Match-day lock / Negotiation period。
+
+### T21 Atomic Transfer `[已定]`
+- 采用 `validate → plan → commit → assert`。Validate 只读；Plan 计算所有 before/after；Commit **一次性写入**（seller membership、buyer membership、旧合同终止、新合同创建、buyer cash、seller cash、buyer transferBudget、seller lineup 清理、event）；**commit 阶段不得再执行可能失败的业务验证**。
+- 最终必须通过：`assertMembershipValid` / `assertContractInvariants` / `assertFinanceInvariants` / `assertFreeAgentInvariants` / `assertTransferInvariants`。**禁止**「先改一半再 rollback」。
+
+### T22 Schema `[已定]`
+- **保持 `GAME_STATE_SCHEMA_VERSION = 10`、`SAVE_FORMAT_VERSION = 1`**；Transfer 不新增持久化容器（只改已有 `membership` / `contracts` / `clubs.finance` / `lineup`）。
+
+### T23 RNG `[已定]`
+- **不新增 RNG**；不得 `Math.random()`；不得改变 growth / injury / retirement / generation / match seed；Fee 必须 deterministic。
+
+### T24 Population Interaction `[已定]`
+- Transfer **不改变 world active population**；不 generate / 不 retire / 不 create FA；只 `seller roster -1`、`buyer roster +1`。seller deficit 等待 population boundary。
+
+### T25 AI Transfer `[已定]` / T26 Transfer Window `[已定]` / T27 Contract Expiry `[已定]` / T28 Wage Cash Flow `[已定]` / T29 Loan `[已定]` / T30 Transfer UI `[已定]`
+- 均**不实现**。Transfer 永久开放（D-24 D9）；工资实时扣现金不实现（D-24 D13/D17）；Step 28B **不实现 Transfer UI**，仅 Domain API + Controller forwarding + Tests。
+
+### T28.1 Transfer v1 架构冻结（Step 28B 遵循）`[已定]`
+- 新模块 `src/core/transfer.js`；API：`transferPlayer(state, playerId, buyerClubId)`；内部 `validateTransfer` / `buildTransferPlan` / `commitTransferPlan` / `assertTransferInvariants`。
+- 依赖（单向，无环）：`transfer.js → contract.js / membership.js / finance.js / player-lineup.js / player-runtime.js / sim-config.js / game-state.js`。
+- **禁止** `contract.js / membership.js / finance.js / player-lineup.js / game-state.js → transfer.js`。`free-agent.js` 与 `transfer.js` 为 **sibling domain modules**；共同能力下沉到低层 primitive（如 lineup 清理提取为共享 `removePlayerFromAllLineups`）。
+
+### T28.2 Transfer 完成后必须满足的不变量 `[已定]`
+1 球员只有一个 membership；2 Club Player membership ≠ null；3 `contract.clubId === membership.clubId`；4 无 seller ownership 残留；5 buyer ownership 存在；6 不同时属于两个 club；7 不成为 Free Agent；8 不入 retired archive；9 `cash ≥ 0`；10 `transferBudget ≥ 0`；11 `buyer roster ≤ 24`；12 seller 不失去最后 GK；13 lineup 不保留 seller 中的 playerId；14 runtime player identity 不变；15 world population 不变；16 generated registry 不变；17 injury/fitness/form/morale 不被重置；18 不产生 RNG；19 Save/Load 后一致。
 
 ---
 

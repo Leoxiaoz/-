@@ -715,3 +715,33 @@
 - **实现验证（Step 27B）**：`tests/free-agent.test.js`（release/sign 原子性、membership null、重播种防护、lineup 清理、
   team strength / match squad 排除、Population 优先复用 Free Agent、退休、save/load、确定性、无 RNG、失败不半提交、Controller）；
   10/50/100/200 赛季长跑不变量全通过；比赛黄金指纹（143/143/1141）不变；浏览器冒烟 0 error / 0 warning。
+
+---
+
+## §33 Transfer System v1（Step 28A 设计冻结，未实现）
+
+- **状态**：**设计已冻结（Step 28A）；运行时未实现（属 Step 28B）**。**未实现** Transfer / Transfer UI / AI Transfer / Contract Expiry / Renewal / Loan / Window / Negotiation / Market Value UI。
+  schema 仍为 **10**、`SAVE_FORMAT_VERSION` 仍为 **1**；**未新增 RNG**；**D10 仍 Deferred**。决策编号见 [DECISIONS D-27](file:///workspace/docs/DECISIONS.md)。
+- **定义（T1）**：Club A → Club B 的**一次原子球员交易**；一次性完成 **Membership / Contract / Finance / Seller Lineup** 一致变更；
+  **Team Strength / Match Squad 不直接修改**（经 Membership 派生）。
+- **费用模型（T2/T3）**：**确定性能力定价** `Base × AbilityFactor × AgeFactor × PositionFactor`，纯函数、不存储、无 RNG；
+  Ability 用**完整 effective attribute 向量**（非单一 OVR），Age 遵循 Growth/Decline 曲线，Position 仅轻微差异；
+  **不使用** Potential/Fitness/Form/Morale/Injury/Stats，**不读取** cash/transferBudget/squad size 等（禁止「越有钱越贵」）；
+  `MIN_TRANSFER_FEE=0`、`MAX_TRANSFER_FEE` 由 `sim-config.js` 定义，越界 clamp。
+- **Finance（T4/T5/T6/T7/T8）**：buyer `fee ≤ cash` 且 `fee ≤ getSpendableCash=min(cash,transferBudget)`；
+  buyer `cash -= fee` **且** `transferBudget -= fee`；seller `cash += fee`（transferBudget **不增**）；
+  经 finance 层纯接口完成（**禁止** transfer 直接改 finance 结构）；错误码 `INSUFFICIENT_CASH`。
+- **Contract（T9/T10）**：旧合同 **terminate** + 新 **active** 合同创建（`clubId=buyer`、`startSeason=当前赛季`、`endSeason/wage` 取自 `defaultContractTemplate`）；
+  **不新增 Contract History**（保持单合同）。
+- **Roster（T11/T12/T13/T14）**：seller **允许暂时 < MIN_PLAYERS**（population boundary 补位）；**GK 硬保护**（不得卖到最后 0 GK，`SELLER_LAST_GK`）；
+  DF/MF/FW 允许暂时 deficit；buyer `>= MAX_PLAYERS → 拒绝`（`ROSTER_FULL`，不 auto-release/swap）；buyer **无位置要求**。
+- **Injury（T15）**：允许受伤球员转会；**不重置** injury / fitness / form / morale。
+- **Generated（T16）**：允许 generated player 转会；「Club + 无合同」可由 Transfer 直接建立新 active 合同；**不改 `generatePlayer` / 不改 D10**、**不改 generated registry**。
+- **Free Agent（T17）**：**禁止**进入 `transferPlayer`（走 `signFreeAgent`）。
+- **Event / History（T18/T19）**：记录 **runtime-only** `TRANSFER_COMPLETED`（playerId/seller/buyer/fee/season/date）；**不建持久 transfer history**。
+- **Timing / Atomicity（T20/T21）**：day advancement **之外**执行，下一场生效；`validate → plan → commit → assert`，一次性提交、**不 rollback**。
+- **Schema / RNG（T22/T23）**：保持 **10 / 1**；不新增容器；不新增 RNG。
+- **Population（T24）**：不改 world population；只重分布 roster；deficit 等待 boundary。
+- **架构（T28.1）**：新模块 `src/core/transfer.js`（`transferPlayer` / `validateTransfer` / `buildTransferPlan` / `commitTransferPlan` / `assertTransferInvariants`），
+  单向依赖 contract / membership / finance / player-lineup / player-runtime / sim-config / game-state；**禁止反向依赖**；与 `free-agent.js` 为 sibling。
+- **不变量**：见 [DECISIONS D-27 T28.2](file:///workspace/docs/DECISIONS.md)（19 条）。
