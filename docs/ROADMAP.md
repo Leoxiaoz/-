@@ -225,6 +225,30 @@
   生成球员合同最终语义（**D10 仍 TBD**）、AI、UI。
 - 已交付测试：`tests/foundation.test.js` 16 项（合同/财政/迁移/不变量/确定性/长期）；累计 **238/238 通过** + 浏览器冒烟通过。
 
+### 2.14 已交付（2026-09-30，Step 26B：Population Health + Club Roster Bounds）
+
+- **目标**：落地 D16——**废弃「每赛季精确恢复到 112」**，将 **World Population（最低边界）** 与 **Club Roster（上下限 + 位置最低保障）** 分离。
+- **已实现**：`sim-config.js` 新增 `ROSTER_CONFIG`（`MIN_PLAYERS=12 / MAX_PLAYERS=24 / PREFERRED_PLAYERS=14`（软偏好）/ `MIN_GK=1` /
+  `MIN_BY_POSITION={DF:4,MF:4,FW:2}`）与 `WORLD_MIN_POPULATION=96`（有效世界下限 `min(96, clubCount×MIN_PLAYERS)`）；
+  `player-lifecycle.js` 重写 `replenishPopulation`（边界驱动）并新增 `evaluatePopulationHealth`（World/Club 双职责）。
+- **语义**：World 只判「是否缺人」；Club 只判「是否低于下限/位置保障」；**超 MAX 仅诊断、不裁员**；`PREFERRED_PLAYERS` 为软偏好非硬目标；
+  `runtime.populationTarget` **退出人口业务逻辑**（legacy 快照保留）；生成**绝不创建无归属 active 球员**。
+- **schema**：**保持 10**；`SAVE_FORMAT_VERSION` 保持 1。**确定性**：未新增 RNG；比赛/成长/伤病黄金指纹不变。
+- **验证**：`247/247` 测试通过；10/50/100/200 赛季长跑通过（人口稳定于 96，非 exact-112，无坍缩/无膨胀）；Save/Load + 浏览器冒烟通过。
+- 详见 [DECISIONS D-17 人口条目](file:///workspace/docs/DECISIONS.md)（Step 26B 更新）与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §23。
+
+### 2.15 设计冻结（2026-09-30，Step 27A：Free Agent + Membership Integration）
+
+- **性质**：**纯设计冻结，无代码 / 无 schema / 无数据 / 无测试变更**（schema 仍为 **10**，`SAVE_FORMAT_VERSION` 仍为 **1**）。
+  决策编号 **D-26**，详见 [DECISIONS D-26](file:///workspace/docs/DECISIONS.md) 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §32。
+- **已冻结 `[已定]`**：Free Agent 真相 = `runtime.contracts[playerId]`（`status='free_agent'`、`clubId=null`、`wage=0`、`startSeason=endSeason=进入自由身的赛季`）；
+  membership 以 **`players[id]=null`** 表示无俱乐部（**禁止 delete key**，避免 `initializeMembership` 依 `static.teamId` 重播种）；
+  Active player 仅两态（Club-attached / Free Agent）；**Free Agent 计入 world population、不计入 club roster / team strength / lineup**；
+  继续参与 lifecycle（growth/injury/retirement）；**release 不立即生成**（仅真实 deficit 才补位，优先复用 Free Agent）；
+  `MAX_PLAYERS` 双重语义（Population 仅诊断 / Signing 硬上限，拒绝签约）；**不升级 schema**。
+- **Deferred（非 Step 27 blocker）**：**D10**（生成球员合同语义）——`generatePlayer()` 维持「直接入 club、暂可能无 contract」，本阶段不冻结。
+- **下一步（未开始）**：**Step 27 Implementation** —— `releasePlayerToFreeAgent()` / `signFreeAgent()`（未实现）；再进入 **Step 28 Transfer**。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

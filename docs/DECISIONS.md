@@ -364,6 +364,7 @@
 - **D2 Contract Model** `[已定]`：`runtime.contracts[playerId]` 为合同业务真相；v1 每人**至多一个 active contract**；暂不建完整合同历史系统。
 - **D3 Free Agent** `[已定]`：v1 **允许 active free agent**；自由球员不属于任何 club，membership 不记 clubId，以 `contract.status='free_agent'` 表示。
   **不得**出现 membership / contracts / freeAgents **三套并列业务真相**；如需阻止 `initializeMembership` 重播种，可加**内部辅助机制**，但不得构成第三套权威状态。
+  （**Step 27A 落地形式见 D-26.2**：以 `membership.players[id]=null` 表示，不新增第三套结构。）
 - **D4 Contract Duration** `[已定]`：期限用**整数赛季**；v1 **不做自动续约**。
 - **D5 Wage Unit** `[已定]`：工资以**每赛季工资**记录，且属**合同属性**。
 - **D6 Finance** `[已定]`：`club.finance = { cash, wageBudget, transferBudget }`；**只有 cash 是实际货币余额**，
@@ -372,7 +373,7 @@
   **不允许**人口补充系统因一次转会/释放就立即恢复到固定 112。
 - **D8 Transfer Fee** `[已定]`：v1 使用**确定性转会费模板**（依能力/年龄/位置等已有数据）；暂不建独立 player value / market value 系统；**不新增随机数源**。
 - **D9 Transfer Window** `[已定]`：v1 **转会窗口永久开放**；暂不实现夏窗/冬窗限制。
-- **D10 Generated Player Contract** `[TBD]`：**暂不锁定**（原因见下）。
+- **D10 Generated Player Contract** `[TBD → Deferred]`：**暂不锁定**（原因见下）；**Step 27A 明确为 Deferred、不阻塞 Step 27**（见 D-26.9）。
 - **D11 Retirement** `[已定]`：退役必须**移除 active contract** + **移出 active membership**；retired archive 保存**最终合同快照**等必要历史；
   退役者不得再出现在转会市场或 active contract 中。
 - **D12 Save Migration** `[已定]`：Contract/Finance 真正落地时再做 **schema 9→10** 迁移；旧档现有 112 名 active 球员须获得**确定性初始合同**；
@@ -424,6 +425,108 @@
 - 落地：[contract.js](file:///workspace/src/core/contract.js)、[finance.js](file:///workspace/src/core/finance.js)、
   `game-state.js`、`game-controller.js`、`player-lifecycle.js`、`sim-config.js`、
   [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §31、`tests/foundation.test.js`（16 项）。
+
+---
+
+## D-26 Free Agent + Membership Integration（Step 27A 设计冻结）（对应 SIMULATION_SPEC §32、SAVE_SPEC §3）
+
+- **性质**：**纯设计冻结**——本步骤**只修改设计文档**；未改代码 / 测试 / `.fdb` / schema / `SAVE_FORMAT_VERSION` / `sim-config`；
+  **未实现** Free Agent / Release / Signing / Transfer / Contract Expiry；**未新增 RNG**。Free Agent 运行时生命周期仍**未实现**。
+- **背景**：Step 25 落地 Contract / Finance Foundation（D-25），Step 26B 落地 Population Health + Club Roster Bounds（D16 落地）。
+  Step 27 只读审计确认唯一硬阻塞是 `initializeMembership` 的**重播种**行为。本决策即冻结 Free Agent 语义，供 Step 27 Implementation 遵循。
+
+### D-26.1 Free Agent 数据模型 `[已定]`
+- Free Agent 的**唯一业务真相**是 `runtime.contracts[playerId]`：
+  `{ playerId, clubId: null, startSeason, endSeason, wage: 0, status: "free_agent" }`。
+- **不新增** `runtime.freeAgents` / `runtime.playersWithoutClub` / `runtime.marketPlayers`（禁止三套并列业务真相，延续 D3）。
+
+### D-26.2 Membership 语义 `[已定]`
+- Free Agent 使用 **`runtime.membership.players[playerId] = null`**（key **存在**、value 显式为 `null`）。
+- **禁止**用 `delete membership.players[playerId]` 表示 Free Agent——否则 `initializeMembership()` 会依 `static.teamId` / `generated.teamId` **重播种回原俱乐部**。
+- 这是 D3 所述「阻止重播种的内部辅助机制」的**正式落地形式**，且**未引入第三套真相**（仍是同一张 membership 表）。
+- `membership` 仍为「球员是否属于某俱乐部、属于哪个俱乐部」的**唯一运行期归属真相**；**`membership.js` 不得依赖 `contract.js`**（保持叶子模块；契约一致性校验属更高层 invariant）。
+
+### D-26.3 Active Player 语义 `[已定]`
+- Active player = **未退役**球员。仅两种合法状态，不得出现第三种：
+  - **A. Club-attached**：`contract.status="active"` + `contract.clubId=clubId` + `membership.players[id]=clubId`；
+  - **B. Free Agent**：`contract.status="free_agent"` + `contract.clubId=null` + `membership.players[id]=null`。
+- Retired：无 membership、无 contract，进入 retired archive。
+
+### D-26.4 Free Agent 合同字段语义（原 TBD-1，已冻结）`[已定]`
+- `status="free_agent"`、`clubId=null`、`wage=0`。
+- `startSeason = endSeason = 进入 Free Agent 的**当前赛季**`（作为「进入自由身状态的赛季锚点」）。
+- **不沿用旧合同**的结束赛季、**不保留旧工资**；Free Agent 不被视为仍在履行旧合同。
+- 未来重新签约（free_agent → active）时写入**全新的** `clubId / startSeason / endSeason / wage`（签约属 Step 27 Implementation，本步不实现）。
+
+### D-26.5 MAX_PLAYERS 语义（原 TBD-2，已冻结）`[已定]`
+- `ROSTER_CONFIG.MAX_PLAYERS = 24` 具有**两重、须区分**的语义：
+  - **Population 层**：`当前人数 > 24` → **仅诊断，不自动裁员**（延续 Step 26B）；
+  - **Signing Domain Operation**：`当前人数 >= 24` → **拒绝签约**（写入侧硬上限，禁止主动制造第 25 名俱乐部球员）。
+- 两者不得混淆：Population 不因超过 24 而裁员；Signing 不允许把球队写超上限。
+- **Transfer 是否允许突破 24 留给 Step 28 决定**。
+
+### D-26.6 Release 语义（原 TBD-3 的一部分，已冻结）`[已定]`
+- 未来领域操作 `releasePlayerToFreeAgent()` 必须**原子**完成：
+  1. `contract.status`：active → free_agent；2. `contract.clubId`：clubId → null；
+  3. `contract.startSeason = 当前赛季`；4. `contract.endSeason = 当前赛季`；5. `contract.wage = 0`；
+  6. `membership.players[id]`：clubId → **null**；7. 源俱乐部 **persistent lineup** 清除该 playerId（starters 与 bench）。
+- Release **不直接改变**：world active population、player runtime existence、generated registry、retired archive。
+- **Release 后球员仍是 active player**（Free Agent）。
+- **前置条件（Step 27 MVP）**：仅当球员 `非 retired` + `当前属于 club` + `存在 active contract` 时可 release。
+  「Club player + 无 active contract」（如 Step 27 阶段的 generated player，见 D-26.9）**必须拒绝**，错误原因明确（如 `PLAYER_HAS_NO_ACTIVE_CONTRACT`）。
+
+### D-26.7 Release 与 Population / 补位关系 `[已定]`
+- **Release 不立即触发 Generation**，也不允许形成 `release → generate → 自动补回`。
+- 若 release 后俱乐部仍满足 `MIN_PLAYERS` / `MIN_GK` / `MIN_BY_POSITION`，则**不生成新人**。
+- 仅当**正常 Population Health evaluation** 发现**真实 roster deficit** 时才允许补位。
+- 补位**最小语义方向**：`Club roster deficit → Population Health evaluation → 优先检查现有 Free Agent 是否可补位 → 若无可用 Free Agent 才允许 Generation`。
+  （具体的候选选择 / 位置匹配 / 确定性排序 / 合同条款由 Step 27 Implementation 实现，本步不实现。）
+
+### D-26.8 Free Agent 与 World Population `[已定]`
+- Free Agent **仍属于 world active population**（`getWorldPlayers()` 含非退役球员，与 club 归属无关）。
+- 例：112 active 释放 10 → **world active 仍为 112**、Free Agents = 10、club roster 合计 = 102。
+  **不得**因 Free Agent 无 club 而减少 world population（否则会误导 Population Controller 生成新人）。
+- Free Agent **参与**：growth / decline、injury tick / recovery、retirement、career stats 生命周期。
+- Free Agent **不参与**：club roster、team strength、lineup、match squad。
+
+### D-26.9 Generated Player / D10（原 TBD-4，Deferred）`[已延期，不阻塞 Step 27]`
+- **本阶段不冻结 D10**，保持当前行为：`generatePlayer()` **直接加入 club membership**，**暂可能没有 contract**（已知 contract asymmetry）。
+- Step 27 **不得**为消除该不对称而修改 `generatePlayer()`，**不得**自动为生成球员创建合同。
+- 因此 Step 27 阶段「`Club + 无 active contract`」是**受控的过渡状态**；此类球员**不能执行 `releasePlayerToFreeAgent()`**（无 active contract）。
+- D10 留待后续**独立决策**，**明确为 Deferred、非 Step 27 blocker**。
+
+### D-26.10 Schema（原 TBD-5，已冻结）`[已定]`
+- **不升级 schema**：`GAME_STATE_SCHEMA_VERSION` 保持 **10**；`SAVE_FORMAT_VERSION` 保持 **1**。
+- 原因：现有结构已可表达 `membership.players[id]=null` 与 `contract.status="free_agent"`/`clubId=null`，且**不新增 runtime container**，故无需新容器、无需版本迁移。
+
+### D-26.11 Domain Operation 边界 `[已定]`
+- **Step 27 MVP**：`releasePlayerToFreeAgent()`、`signFreeAgent()`（及必要的 Free Agent 查询 accessor）。
+- 所有操作遵循 `plan → validate → commit → assert invariants`；UI / AI **不得**直接写 `membership` / `contract` / `finance`。
+- **Step 28**：`transferPlayer()` 属 Transfer 阶段，本步不设计完整 Transfer transaction。
+
+### D-26.12 Finance 语义 `[已定]`
+- Free Agent signing v1：**不产生 transfer fee**、**不新增复杂 signing fee**、**不从 cash 扣除工资**（延续 D13/D17）。
+- `cash` 仍为唯一真实余额；`wageBudget` / `transferBudget` 继续存在；签约工资由 signing contract terms 决定。Finance 复杂化留给后续。
+
+### D-26.13 核心不变量 `[已定]`
+- **FA-INV-01** retired → 无 membership、无 contract。
+- **FA-INV-02** `contract.status==="active"` → membership 存在且 `=== contract.clubId` 且 club 有效。
+- **FA-INV-03** `contract.status==="free_agent"` → `membership.players[id]===null` 且 `contract.clubId===null`。
+- **FA-INV-04** Free Agent 不在任何 club roster。　**FA-INV-05** Free Agent 不在 lineup。
+- **FA-INV-06** Free Agent 不计入 team strength。　**FA-INV-07** Free Agent 仍在 world active population。
+- **FA-INV-08** active player 恰好属于 {active contract + club membership} 或 {free_agent contract + null membership} 之一。
+- **FA-INV-09** membership value 为 string clubId 或显式 null；active player **不得为 undefined**。
+- **FA-INV-10** 每球员至多一条 contract 记录。
+- **FA-INV-11** release 不直接生成替代球员。　**FA-INV-12** signing 不得主动制造 roster > `MAX_PLAYERS`。
+
+### D-26.14 Save / Load 语义 `[已定]`
+- 旧档（无 Free Agent）**继续正常加载**；新档 Free Agent（`contract.status=free_agent` + `clubId=null` + `membership.players[id]=null`）必须 **save → load 状态完全一致**。
+- `initializeMembership()` **不得**把 `null` membership 的 Free Agent 依 `static.teamId` 拉回原俱乐部（依赖 D-26.2 的「key 存在」表示法）。
+- 本步**不升级** `GAME_STATE_SCHEMA_VERSION` / `SAVE_FORMAT_VERSION`。
+
+### D-26.15 状态 `[未实现]`
+- 本决策为**设计冻结**：**Free Agent / Release / Signing / Transfer / Contract Expiry 均未实现**；Implementation 尚未开始。
+- **Step 27 仍待实现的决策外事项**：补位候选选择、位置匹配、确定性排序、签约条款模板（属 Step 27 Implementation，不再作为设计阻塞项）。
 
 ---
 

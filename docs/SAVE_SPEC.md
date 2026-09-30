@@ -70,6 +70,14 @@
 > 旧档经 `normalizeContracts`（**确定性**、**不创建 free agent**）与 `normalizeFinance`（确定性模板）补齐，不再改 `SAVE_FORMAT_VERSION`；
 > 读档后执行 `assertContractInvariants` / `assertFinanceInvariants`（不静默）。退役归档新增 `retired[].contract` 快照。
 > 详见 `DECISIONS.md` D-25 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §31。
+>
+> **设计冻结（Step 27A · Free Agent + Membership Integration，2026-09-30）**：Free Agent 语义正式冻结，**实现尚未开始**。
+> 存档表达：Free Agent = `runtime.contracts[playerId]`（`status='free_agent'`、`clubId=null`、`wage=0`、
+> `startSeason=endSeason=进入自由身的当前赛季`）**且** `runtime.membership.players[playerId]=null`（**key 存在、值显式 null**；
+> **禁止 delete key**，否则读档时 `initializeMembership` 会依 `static.teamId` / `generated.teamId` 把 Free Agent 重播种回原俱乐部）。
+> **不新增任何 runtime 容器**（无 `freeAgents` / `playersWithoutClub` / `marketPlayers`），**不升级 `GAME_STATE_SCHEMA_VERSION`（仍 10）**、
+> **不改 `SAVE_FORMAT_VERSION`（仍 1）**。旧档（无 Free Agent）继续正常加载；新档 Free Agent 必须 save → load 状态完全一致。
+> 详见 `DECISIONS.md` D-26 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §32。
 
 ## 0. 文档定位与边界
 

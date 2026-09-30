@@ -675,3 +675,36 @@
   生成球员合同最终语义（**D10 仍 TBD**）/ UI。
 - **测试**：`tests/foundation.test.js`（16 项）——合同创建/终止/归一化/不变量、free_agent 结构、退役清理、
   财政初始化/归一化/spendable、schema 9→10 迁移、save/load continuation、比赛黄金指纹不变、10/50/100 长期。
+
+---
+
+## §32 Free Agent + Membership Integration（Step 27A 设计冻结，未实现）
+
+- **状态**：**设计已冻结（Step 27A）；Implementation 尚未开始**。Free Agent / Release / Signing / Transfer / Contract Expiry **均未实现**；
+  schema 仍为 **10**，`SAVE_FORMAT_VERSION` 仍为 **1**。决策编号见 [DECISIONS D-26](file:///workspace/docs/DECISIONS.md)。
+- **Contract 是 Free Agent 真相**：`runtime.contracts[playerId] = { playerId, clubId:null, startSeason, endSeason, wage:0, status:'free_agent' }`。
+  **不新增** `runtime.freeAgents` / `playersWithoutClub` / `marketPlayers`（不引入第三套业务真相）。
+  Free Agent 的 `startSeason = endSeason = 进入自由身的当前赛季`；**不沿用旧合同结束赛季、不保留旧工资**。
+- **`membership` null 是无俱乐部状态**：Free Agent 使用 `runtime.membership.players[playerId] = null`（key **存在**、value 显式 `null`）；
+  **禁止 delete key**（否则 `initializeMembership` 会依 `static.teamId` / `generated.teamId` 重播种回原俱乐部）。
+  `membership` 仍是 player→club 的**唯一运行期归属真相**；`membership.js` **不依赖** `contract.js`。
+- **Active player 两态**（不得出现第三种）：Club-attached（active contract + membership=clubId）或 Free Agent（free_agent contract + membership=null）。
+  Retired：无 membership、无 contract。
+- **Free Agent 计入 world active population**：`getWorldPlayers()` 含非退役球员（与 club 无关）。
+  例：112 active 释放 10 → world active **仍 112**、Free Agents=10、club roster 合计=102。
+- **不计入 club roster**：`getTeamPlayers()` 以 membership 为 roster 真相，Free Agent（null）天然被排除。
+- **不计入 team strength**：`computeTeamStrength` 基于出场集合 / `getTeamPlayers`，Free Agent 不参与。
+- **不进入 lineup**：Free Agent 不得存在于任何 club lineup；release 操作须主动清除源 club 的 starters / bench；
+  `cleanLineup` / `repairManagedLineups` / `resolveMatchSquad` 均以 `getTeamPlayers` 为准，残留引用会被清除、绝不进入比赛。
+- **继续参与 lifecycle**：Free Agent 仍属 `getWorldPlayers()`，继续参与 growth / decline、injury tick / recovery、retirement、career stats；
+  但因不参赛，**不产生比赛伤病、无出场加成**；未退役前不因无 club 而报错。
+- **release 不立即生成**：`releasePlayerToFreeAgent()` **不触发 Generation**，不允许 `release → generate → 自动补回`；
+  仅当**正常 Population Health evaluation** 发现**真实 roster deficit** 时才补位，且**优先检查现有 Free Agent 是否可补位，无可用 Free Agent 才允许 Generation**。
+- **MAX_PLAYERS 双重语义**：Population 层「> 24 → 仅诊断、不裁员」（Step 26B）；Signing operation「>= 24 → 拒绝签约」。Transfer 是否突破 24 留 Step 28。
+- **generated player / D10 暂不冻结**：`generatePlayer()` 维持「直接入 club、暂可能无 contract」；Step 27 不改 `generatePlayer()`、不为生成球员自动建合同；
+  此「Club + 无 active contract」为**受控过渡状态**，**不能 release**。**D10 为 Deferred、非 Step 27 blocker**。
+- **Schema**：**不升级**——现有结构已可表达 `membership.players[id]=null` 与 free_agent contract，无需新容器、无需迁移。
+- **Domain Operations（Step 27 MVP）**：`releasePlayerToFreeAgent()` / `signFreeAgent()`（及 Free Agent 查询 accessor），统一 `plan → validate → commit → assert invariants`；
+  UI / AI 不得直接写 membership / contract / finance。`transferPlayer()` 属 Step 28。
+- **Finance**：Free Agent signing v1 **无 transfer fee、无复杂 signing fee、不从 cash 扣工资**（延续 D13/D17）。
+- **不变量**：FA-INV-01 … FA-INV-12（见 [DECISIONS D-26.13](file:///workspace/docs/DECISIONS.md)）。
