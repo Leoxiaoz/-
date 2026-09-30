@@ -772,3 +772,4 @@
   - **D-34.2 transferBudget Carry-over Regeneration**：`new = min(INITIAL_TRANSFER_BUDGET, current + REPLENISHMENT_AMOUNT)`；carry-over、有上限、不 reset、不改 cash；**D-27 T6 单笔语义不变**。
   - **D-34.3 Competitive > Soft Priority / Dedup**：优先级 `HARD > COMPETITIVE > SOFT > NONE`；`COMPETITIVE` 独立档、仅在无 HARD 时考虑、reasonCode `COMPETITIVE_UPGRADE`、不使用 OVR/单一全队均值；与 SOFT `ATTRIBUTE_GAP` 同位置去重。
   - 状态：**Schema 10 / Save Format 1 不变**；**Step 34 实现完成**（测试 312 通过，Golden 143/143/1141 保持；长跑吸收态未破除，属目标级 BLOCKER，待后续决策供给侧机制）。
+  - **Step 35A 供给审计（只读）**：确认 `96/12/0` 为**不动点**；`Σ_c R_c + F = N`（transfer/release/sign 不改 N）；**恒为 0 的约束 = Seller Supply**；`WORLD_MIN(96)=ClubCount(8)×CLUB_MIN(12)` 且 active ≡ first-team roster → **Population Floor ≡ Market Supply Floor**。候选机制 A–H 全部 **[TBD]**，未选择；禁止随机 FA 供货 / 强制交易。详见 [DECISIONS D-35A](file:///workspace/docs/DECISIONS.md) 与 [ROADMAP 2.23](file:///workspace/docs/ROADMAP.md)。

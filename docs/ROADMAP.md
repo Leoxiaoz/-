@@ -339,6 +339,25 @@
 - **⚠ 未达成 D-33.1（长期生态）**：50/100/200/500 季仍收敛到 `population=96 / roster=12 / FA=0 / transfer=0` —— **吸收态未被打破**。根因：D-34.1 的 generation 只补结构性缺口、不提升 world stock，供给恒为 0；Competitive Need 与 budget 再生只解决 demand/capacity。
 - **Decision 冲突登记**：**D-33.1 与 D-34.1 互斥**（详见 [DECISIONS D-29/D-34 实现状态](file:///workspace/docs/DECISIONS.md)）。**待 Step 35 Decision Freeze 裁定供给侧机制**；本步未擅自修改冻结规则。
 
+### 2.23 Supply-Side Audit（2026-09-30，Step 35A：只读设计审计）
+
+- **性质**：**READ-ONLY**。未改代码 / 数据 / 测试 / Schema / Save Format / 配置；**未冻结新规则**。结论见 [DECISIONS D-35A](file:///workspace/docs/DECISIONS.md)。
+- **系统模型**：`Σ_c R_c + F = N`；transfer/release/sign 不改变 N；retirement `N-1`；generation `N+1`（恒分配入 club，不入 FA）。
+- **吸收态证明**：`96/12/0` 为不动点（无结构缺口 → 不生成；`R_c≤12<14` → 不 RELEASE/SELL；任意 seller 违反 `sellerKeepsStructure`）。**恒为 0 的是 Seller Supply（伴 FA=0）**。
+- **关键耦合**：`WORLD_MIN(96)=ClubCount(8)×CLUB_MIN(12)`，且 active player ≡ first-team roster（无 youth/reserve）→ Population Floor ≡ Market Supply Floor。
+- **机制审查（A–H）**：A 补到14 → 新不动点 `112/14/0`（无 seller）；B 人口带 → 常数目标会形成新不动点；C 非均匀深度 → 可产 seller（需确定性轮换）；D Youth Domain → 可解耦但高成本；E 仅 retirement+generation → 不可能产 surplus；F generation→FA → 冲突 D-33.6/D-34.1；G 仅 Policy → 不足；H 市场驱动 → 循环依赖。**全部 [TBD]，未选择。**
+- **禁止**：随机生成 FA 供货 / 按目标笔数强制交易。
+- **Decision Questions（供 Step 35B）**：
+  1. Population Floor 是否应 `> ClubCount × ClubMin`（解耦）？还是保留 floor 另加 Market Supply 机制？
+  2. `HOLDING_TARGET` 是否应成为**向上深度目标**（补到 14），还是仅保留 release 阈值（>14）？前者是否引入 `112/14/0` 新不动点？
+  3. 谁创造 roster surplus：非均匀 generation / policy 深度目标 / FA 缓冲 / youth 池？
+  4. 是否需要"active but not first-team"概念（youth/reserve/FA buffer）？是否新增 Domain（schema 影响）？
+  5. generation 是否可直接进入 FA（有界缓冲）？与 D-33.6/D-34.1 如何协调？
+  6. Depth 分配是否 policy 驱动 + 确定性轮换（避免永久 supplier）？
+  7. 用什么确定性机制保证既无 `96/12/0` 也无 `112/14/0` 吸收态、且人口不无限增长？
+  8. Step 35 可实现范围 vs 延期（youth Domain 预计延期）？
+- **原则（[建议]）**：仅改阈值/触发器不足；核心是引入一个**高于 Domain Min 的向上深度/供给机制**，并使其**状态相关 + 有界 + 确定性**。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

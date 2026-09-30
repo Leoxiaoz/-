@@ -860,6 +860,17 @@ Step 34 实现后必须测试 **10 / 50 / 100 / 200 / 500** 赛季，至少检�
 - **根因（bottleneck = Supply）**：`D-34.1` 的 generation 触发条件（仅 club 结构性缺口 / `world<96`）**不会提升 world stock**；retirement 使 world 单调降到 96；`Σ=96 ∧ 每 club ≥ 12 ⇒ 每 club 恰为 12` ⇒ 卖方 surplus 恒为 0 ⇒ 无候选。`Competitive Need`（demand）与 `transferBudget 再生`（capacity）均**不能**产生供给。
 - **Decision 冲突登记**：**D-33.1（不接受吸收态）与 D-34.1（generation 仅补缺口）在当前参数下互斥**；D-33.6 ②"可向 holding target 补位" 与 D-34.1 措辞亦冲突。**待后续 Decision Freeze（Step 35 候选）裁定**：是否允许“有界 population 维持 / 向 holding target 补位”，或引入其它供给侧机制。**本步未擅自修改任何冻结规则**。
 
+### D-35A Supply-Side / Population Cycle Audit（Step 35A）`[审计；不冻结规则]`
+> 性质：**只读设计审计**。未修改代码 / 数据 / 测试 / Schema / Save Format / 配置；**未冻结任何新规则**。凡涉及新机制一律 **[TBD]**；复用既有冻结规则者标 **[已定]**。
+
+- **系统模型（守恒）**：`Σ_c R_c(t) + F(t) = N(t)`。`transferPlayer`（club↔club）、`release`（club→FA）、`signFreeAgent`（FA→club）**均不改变 N**；retirement `N-1`；generation `N+1`，且 generation **恒分配给某 club**（`teamId`），**不直接进入 FA**。`transferPlayer` 亦不改 `generated`/`retired`（D-27 T24）。
+- **当前吸收态（已证明）**：`N=96, R_c=12 ∀c, F=0` 是**不动点**——(1) 每 club 满足 GK≥1/DF≥4/MF≥4/FW≥2 且 `roster=12` → 无结构性缺口 → generation=0；(2) `worldMin=min(96,8×12)=96` → 世界安全网不触发；(3) 无 club `R_c>HOLDING_TARGET(14)` → RELEASE/SELL 不触发；(4) 任意 seller 会让 `R_c-1=11<12` → `sellerKeepsStructure` 否决全部 Club↔Club 候选。唯一存活动作 = retirement + 1:1 结构补位 → 回到同一状态。**长期单调收敛**（起始 112 经 retirement 降至 96 后锁定）。
+- **供给三问**：Population Supply = generation（当前净零，仅抵消 retirement）；Club Surplus Supply = **当前无任何机制**；Transfer Liquidity = 需 `R_c>14` 的 seller（恒 0）。**最终恒为 0 的项 = Seller Supply（伴随 FA=0）**。
+- **关键耦合**：`WORLD_MIN_POPULATION(96) = ClubCount(8) × CLUB_MIN(12)`，且 active player **等价于** first-team roster（membership 仅 `clubId | null`，**无** youth/reserve/development squad 维度）→ **Population Floor ≡ Market Supply Floor**。
+- **候选机制审查（全部 [TBD]，未选择）**：A 补到14 → 新不动点 `112/14/0`，仍不产生 seller；B 人口带 → 常数目标必然形成新不动点，须状态相关触发；C 非均匀深度 → 可产生 seller，需确定性轮换避免永久 supplier；D Youth/Reserve Domain → 可解耦 N 与 ΣR，但属新 Domain / 高成本；E 仅 retirement+generation → 数学上不可能产生 surplus；F generation→FA → 可造 FA 缓冲，但**与 D-33.6/D-34.1 冲突**且需上限防膨胀；G 仅靠 Policy → 现 policy 无 roster-size 目标，**不足**；H 市场驱动 surplus → 数据齐备但依赖先有深度积累（循环依赖）。
+- **禁止解法**：随机生成 FA 供货；按目标笔数强制交易（违背 deterministic-first 与因果）。
+- **核心待裁问题**：是否让 `Population Floor > ClubCount × ClubMin`（解耦）或保留 floor 另加 Market Supply 机制。**Decision Questions 见 [ROADMAP 2.23](file:///workspace/docs/ROADMAP.md)**。
+
 ---
 
 ## 仍属 TBD（未受影响）
