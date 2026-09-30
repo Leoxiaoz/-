@@ -387,6 +387,14 @@
 - **残余限制（超出 DDTI）**：存在 **managed club** 时 cash 单向集中（D-33.8 cash 不再生 + managed 免 AI）→ 长期冻结；需后续 finance 决策。**待 Step 35E 冻结参数。**
 - **测试**：**321/321 通过**（新增 `tests/ai-depth-intake.test.js`）；Browser Smoke clean。
 
+### 2.27 DDTI 参数冻结 + 合同一致性冻结（2026-09-30，Step 35E）
+
+- **性质**：冻结已验证参数 + 接受合同一致性修复；**未新增/修改任何 DDTI·Transfer·Finance·AI 机制**。详见 [DECISIONS D-35E](file:///workspace/docs/DECISIONS.md)。
+- **基准参数 C1 正式冻结（`[已定]`）**：`DEPTH_CAP=14`、`PER_CLUB_INTAKE_CAP=1`、`WORLD_INTAKE_CAP=4`、`HYSTERESIS_UP=0.30`、`HYSTERESIS_DOWN=0.15`；`sim-config.DDTI_CONFIG` 已同步。**C2/C3 降为历史实验记录，不作为当前配置。**
+- **合同一致性修复正式接受（`[已定]`）**：AI 候选/SELL eligibility = `activeOwned || (generated 且无 contract)`，与 Transfer Domain T9 一致；保留 `sellerKeepsStructure`/exit cap/`transferPlayer`/fee/finance/membership；**Transfer Domain 未改**。
+- **Deferred Issue `DF-01`（→ Step 36）**：Managed Club Cash Concentration / World Finance Feedback（Finance 问题，非 DDTI/Transfer/Match）。
+- **回归**：**321/321 通过**；Golden `143/143/1141` 不变；Schema **10** / Save Format **1**；determinism 不变。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

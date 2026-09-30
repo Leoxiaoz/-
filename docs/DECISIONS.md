@@ -915,16 +915,16 @@ Step 34 实现后必须测试 **10 / 50 / 100 / 200 / 500** 赛季，至少检�
 ### D-35.5 Target hysteresis `[已定]`
 - target **必须具备 hysteresis / hysteresis window**，避免 `12 → 13 → 12 → 13` 每季抖动。
 - 概念上区分**进入**条件（`target_up_condition`）与**退出**条件（`target_down_condition`），且退出条件应更严格/不同。
-- **具体阈值与公式 `[TBD]`**，由 Step 35D 参数实验决定。
+- **阈值已由 Step 35E 冻结：`HYSTERESIS_UP = 0.30`、`HYSTERESIS_DOWN = 0.15`（C1）。**
 
-### D-35.6 Hard depth cap = `DEPTH_CAP` `[TBD]`
-- **只冻结存在性**：`target ≤ DEPTH_CAP`，且 `DEPTH_CAP ≥ HOLDING_TARGET(14)`。
-- **`DEPTH_CAP` 具体数值 `[TBD]`**（候选 14 / 15 / 16 / 17），Step 35D 前**不得冻结**。
+### D-35.6 Hard depth cap = `DEPTH_CAP` `[已定]`
+- 存在性：`target ≤ DEPTH_CAP`，且 `DEPTH_CAP ≥ HOLDING_TARGET(14)`。
+- **数值已由 Step 35E 冻结：`DEPTH_CAP = 14`（C1 基准参数）。**（Step 35D 实验候选 14/15/16/17 记录见 D-35D。）
 
-### D-35.7 Intake caps `[TBD]`
+### D-35.7 Intake caps `[已定]`
 - Controlled Depth Intake **不是**"`roster < target` 就一定生成"，而是"`roster < target` **且当前状态允许 intake** 时才允许生成"。
-- **必须存在**（`[已定]` 存在性）：① 每 Club 每季 intake cap；② World 每季 intake cap；③ `N ≤ 112` hard constraint。
-- **具体数值 `[TBD]`**，由 Step 35D 决定。
+- 存在性：① 每 Club 每季 intake cap；② World 每季 intake cap；③ `N ≤ 112` hard constraint。
+- **数值已由 Step 35E 冻结：`PER_CLUB_INTAKE_CAP = 1`、`WORLD_INTAKE_CAP = 4`（C1）。**
 
 ### D-35.8 No permanent supplier / buyer `[已定]`
 - **禁止**任何 Permanent Supplier Club / Permanent Buyer Club。Club market role 必须是动态状态 `SURPLUS / NEUTRAL / DEFICIT` 且可互相转换。
@@ -947,7 +947,16 @@ Step 34 实现后必须测试 **10 / 50 / 100 / 200 / 500** 赛季，至少检�
 - **新增生态指标**：population range / mean roster / roster distribution / FA distribution / transfer·SELL·RELEASE·FA-signing counts / buyer·seller distribution / **club role transition count** / max consecutive seasons with zero transfer / zero seller / zero buyer / max single-club market participation / target distribution / target transition count。
 - **不得只看平均值**：必须检查 distribution 与 **per-club persistence**（如 Club A 100 季卖 20 次、Club B 0 次，即使全局平均正常，也视为存在潜在永久身份问题）。**市场健康 = Global Metrics + Club-level Persistence。**
 
-### D-35D DDTI Implementation + Experiment（Step 35D）`[已实现；参数待 Step 35E 冻结]`
+### D-35E DDTI Final Parameter Freeze + Contract Consistency Freeze（Step 35E）`[已定]`
+> 正式冻结 Step 35D 已验证的 DDTI 基准参数 **C1**，并正式接受 AI 候选/SELL 与 Transfer Domain T9 的合同资格一致性修复。**未新增/修改任何 DDTI·Transfer·Finance·AI 机制**。
+
+- **D-35.6 / D-35.7 / D-35.5 数值冻结（`[TBD]` → `[已定]`）**：`DEPTH_CAP = 14`、`PER_CLUB_INTAKE_CAP = 1`、`WORLD_INTAKE_CAP = 4`、`HYSTERESIS_UP = 0.30`、`HYSTERESIS_DOWN = 0.15`。**C1 为正式基准参数**；`sim-config.DDTI_CONFIG` 已同步为 C1。C2/C3 仅作 Step 35D 历史实验记录，**不作为当前运行配置**。
+- **合同一致性修复正式接受（`[已定]`）**：AI transfer candidate / SELL eligibility = `activeOwned` **OR**（`generated` 且**无 contract**），与 `validateTransfer`（T9）一致。**不恢复**"必须有 active contract"旧限制。保留 `sellerKeepsStructure` / exit cap / `transferPlayer` Domain validation / fee 公式 / finance 规则 / membership 规则。**Transfer Domain 本身未修改**。
+- **DDTI 机制冻结确认（`[已定]`）**：state-driven、bounded、deterministic；无 RNG、无 OVR、无单一全队均值；六维压力（age / congestion / need / finance / recent activity / development）；Policy 仅 bounded bias（非身份）；Need 与 Depth Target 分离；**结构缺口优先于 depth intake**；**FA 优先于 generatePlayer**；`roster < 24`；`N ≤ 112`；不强制交易 / 不强制每 club=14 / 不强制人口=112 / 不制造随机 FA 洪水；**不修改 Transfer / Match / Team Strength**。
+- **Step 35D 验证结论（正式记录）**：① `96/12/0` 与 ② `112/14/0` **均不再形成长期吸收态**；③ 混合人口/阵容可长期存在；④ **无永久 supplier/buyer**；⑤ 允许阶段性低活跃，但**纯 AI 世界 500 季 `maxConsecZeroTransfer = 0`**；⑥ Population 长期在 **104–112** 动态区间；⑦ Roster 长期主要 **12–15**；⑧ FA 偶发存在（非长期 0、非爆炸）；⑨ **无随机 supply**；⑩ determinism 通过；⑪ Golden `143/143/1141` 保持；⑫ Schema = **10**；⑬ Save Format = **1**；⑭ Browser Smoke clean；⑮ Match / Team Strength 未修改。
+- **Deferred Issue（登记，Step 36 处理）**：见下方 `Deferred Issues`。
+
+### D-35D DDTI Implementation + Experiment（Step 35D）`[已实现；参数已由 Step 35E 冻结]`
 > 依 D-35.1~D-35.11 实现 **DDTI** 并做参数实验 + 长跑验证。**未冻结任何新数值**；`DEPTH_CAP` 等仍 `[TBD]`。Schema **10** / Save Format **1** 不变。
 
 - **实现**：新增 `src/core/ai/ai-depth-intake.js`（`evaluateDepthPressure` / `effectiveDepthTarget` / `evaluateDepthIntake` / `classifyMarketRole`，纯函数、无 RNG、无 OVR）；`sim-config.DDTI_CONFIG`（参数集中）；`player-lifecycle.runDepthIntake`（应用层，FA 优先 → `generatePlayer`）+ 接入 `runPlayerLifecycle`（**结构补位在前、depth intake 在后**）；`SimulationCore({ ddti })` 参数覆盖（实验用）。**未改** Transfer / Match / Team Strength / membership / contract / save。
@@ -965,6 +974,17 @@ Step 34 实现后必须测试 **10 / 50 / 100 / 200 / 500** 赛季，至少检�
 - **第一次 surplus 的定义**：系统**不需要从 0 重新制造第一批 surplus**——初始 `N=112 / R_c=14` 已提供初始 depth inventory；DDTI 主要职责是**防止 `112 → retirement → 108 → 104 → 100 → 96 → permanent lock`**，即**维持有限 depth elasticity**，而非最大化人口。
 - **三者分离**：Population Supply（谁创造新 active player）/ Squad Depth Supply（为何某 Club 有 13/14/15/16 人）/ Market Supply（为何某具体 player 成为 surplus / SELL candidate）——**不得混同**；`Population ↑ ≠ Market Supply ↑`。
 - **Schema 10 / Save Format 1 保持**；**Match / Team Strength 不修改**。
+
+---
+
+## Deferred Issues（登记；不在本步骤处理）
+
+### DF-01 Managed Club Cash Concentration / World Finance Feedback `[Deferred → Step 36]`
+- **现象**：存在 `managedClubId` 时，AI clubs 可持续购买 managed club 球员，而 managed club 不参与 AI spending；**cash 长期单向集中**到 managed club，最终使 AI clubs `cash → 0` 并**冻结市场**。（Step 35D 实测：500 季后 8000 总现金中 7961 集中于 managed club。）
+- **已确认归属**：Finance / managed-club feedback 问题。**不是** DDTI supply 问题、**不是** Transfer Domain validation 问题、**不是** SELL 资格问题、**不是** Match / Team Strength 问题。
+- **当前处理**：**DEFER 到 Step 36**（Step 36 单独进行 read-only audit + decision freeze）。
+- **本步骤（35E）不得修改**：D-33.8（cash 不再生）、finance cash regeneration、transfer fee formula、managed club AI exemption、AI club spending、league revenue、wages、transfer budget。
+- **备注**：纯 AI 世界（无 managed club）不出现该问题（Step 35D 500 季 `maxConsecZeroTransfer = 0`），进一步佐证其为 managed-club 财政反馈问题。
 
 ---
 

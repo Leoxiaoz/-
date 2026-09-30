@@ -82,25 +82,26 @@ export const WORLD_SOFT_CAP = 112;
  * 以维持有限 depth elasticity（防止 `96/12/0` 永久吸收）。**不是** population→112 目标，
  * **不是** 每 club 补到 14，**不是** 强制交易，**不**随机生成 FA。
  *
- * 所有数值均为 **Step 35D 实验参数**（D-35.6 / D-35.7 标 `[TBD]`），集中于此以便参数实验。
+ * 数值已于 **Step 35E 正式冻结为基准参数 C1**（D-35.6 / D-35.7 由 `[TBD]` → `[已定]`）。
+ * C2/C3 保留为 Step 35D 历史实验候选（见 DECISIONS D-35D），**不作为当前运行配置**。
  */
 export const DDTI_CONFIG = Object.freeze({
   /** 总开关：false 时完全跳过 DDTI（结构补位与既有语义不变）。 */
   ENABLED: true,
   /**
-   * target 硬上限（D-35.6 `DEPTH_CAP`，`[TBD]`）。实验候选 14 / 15 / 16 / 17。
+   * target 硬上限（D-35.6 `DEPTH_CAP`）——**Step 35E 冻结 = 14（C1）**。
    * 必须 ≥ `HOLDING_TARGET(14)`，且 `MIN_TARGET ≤ DEPTH_CAP ≤ WORLD_SOFT_CAP`。
    */
-  DEPTH_CAP: 16,
+  DEPTH_CAP: 14,
   /** target 硬下限（= Domain 结构生存线，D-35.3 `[已定]`）。 */
   MIN_TARGET: 12,
-  /** 每 Club 每季 DDTI intake 上限（D-35.7，`[TBD]`；实验候选 1 / 2 / 3）。 */
+  /** 每 Club 每季 DDTI intake 上限（D-35.7）——**Step 35E 冻结 = 1（C1）**。 */
   PER_CLUB_INTAKE_CAP: 1,
-  /** World 每季 DDTI intake 上限（独立于 112；D-35.7，`[TBD]`；实验候选 2 / 4 / 6 / 8）。 */
+  /** World 每季 DDTI intake 上限（独立于 112；D-35.7）——**Step 35E 冻结 = 4（C1）**。 */
   WORLD_INTAKE_CAP: 4,
-  /** Hysteresis 进入阈值：非深度状态需 `depthPressure ≥` 此值才允许 intake（D-35.5，`[TBD]`）。 */
+  /** Hysteresis 进入阈值（D-35.5）——**Step 35E 冻结 = 0.30（C1）**。 */
   HYSTERESIS_UP: 0.30,
-  /** Hysteresis 退出阈值：已处于深度状态只需 `depthPressure ≥` 此（更低）值即可维持（D-35.5，`[TBD]`）。 */
+  /** Hysteresis 退出阈值（D-35.5）——**Step 35E 冻结 = 0.15（C1）**。 */
   HYSTERESIS_DOWN: 0.15,
   /** 「近期动作」派生窗口（赛季）：冷却 + recentTransferBias；**derived，不持久化**。 */
   RECENT_WINDOW: 2,
