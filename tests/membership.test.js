@@ -150,7 +150,8 @@ test('membership 初始化确定性：同世界两次结果完全一致；推进
 // ---------- 9. v6 → v7 迁移 ----------
 test('v6 旧档（无 membership）读档后自动建立且与原始一致', () => {
   const state = leagueState(8);
-  new SimulationCore().advanceDays(state, 130); // 含退役/新生代
+  // v6 迁移语义：从静态种子重建 membership。AI Club Decision（Step 31）会合法改写 membership，此处隔离。
+  new SimulationCore({ enableAI: false }).advanceDays(state, 130); // 含退役/新生代
   const payload = JSON.parse(JSON.stringify(serializeState(state)));
   delete payload.runtime.membership; // 模拟 v6
 
@@ -288,7 +289,8 @@ for (const seasons of [10, 50, 100, 200]) {
     const state = leagueState(8);
     state.runtime.managedClubId = 'clb_001';
     state.runtime.clubs.clb_001.lineup = buildAutoLineup(state, 'clb_001', { formation: '4-4-2' });
-    new SimulationCore().advanceDays(state, seasons * 125);
+    // 本测试度量成员关系纯净度（不产生 Free Agent）；AI Club Decision（Step 31）会引入 Free Agent，此处隔离。
+    new SimulationCore({ enableAI: false }).advanceDays(state, seasons * 125);
     assertMembershipHealthy(state, `${seasons}季`);
   });
 }

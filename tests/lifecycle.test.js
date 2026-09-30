@@ -427,7 +427,8 @@ test('A. 退役不再导致下一季精确恢复：14 → 13（边界内）不�
   files.players.find((p) => p.teamId === 'clb_001' && p.position === 'FW').birthDate = '1986-06-15';
   const state = createGameState(parseWorld(files));
   assertEquals(rosterCount(state, 'clb_001'), 14);
-  new SimulationCore().advanceDays(state, 92); // 完成第 1 季并滚动
+  // 本测试度量 Population Policy 语义；AI Club Decision（Step 31）为独立子系统，隔离以避免转会干扰 roster 计数。
+  new SimulationCore({ enableAI: false }).advanceDays(state, 92); // 完成第 1 季并滚动
   assertEquals(rosterCount(state, 'clb_001'), 13, '13 仍在边界内（>= MIN_PLAYERS），不得补回 14');
   assertEquals(byPosition(state, 'clb_001', 'FW'), 2, 'FW 仍在位置最低保障内');
   assertEquals(Object.values(state.runtime.generated).filter((g) => g.teamId === 'clb_001').length, 0,

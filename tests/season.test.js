@@ -158,7 +158,8 @@ test('边界：空联赛（无赛程）永不触发，season 不变', () => {
 test('单联赛行为等价：多时点运行时指纹与改造前基线完全一致', () => {
   for (const days of [1, 91, 92, 121, 200, 400, 800]) {
     const state = leagueState(8);
-    new SimulationCore().advanceDays(state, days);
+    // 本测试度量「赛季边界改造」的行为等价；AI Club Decision（Step 31）为独立子系统，此处隔离以保持基线语义。
+    new SimulationCore({ enableAI: false }).advanceDays(state, days);
     assertEquals(fingerprint(state), BASELINE[days], `第 ${days} 天指纹应与基线一致`);
   }
 });

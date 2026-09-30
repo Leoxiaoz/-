@@ -26,15 +26,18 @@ import {
 } from './player-runtime.js';
 import { developPlayers } from './player-growth.js';
 import { runPlayerLifecycle } from './player-lifecycle.js';
+import { runSeasonAI } from './ai/ai-decide.js';
 import { tickInjuries, resolveMatchInjuries } from './player-injury.js';
 import { SCHEDULE_CONFIG, MATCH_LOAD_CONFIG } from './sim-config.js';
 
 export class SimulationCore {
-  /** @param {{logger?: object, trainingFactor?: Function}} [deps] */
+  /** @param {{logger?: object, trainingFactor?: Function, enableAI?: boolean}} [deps] */
   constructor(deps = {}) {
     this.logger = deps.logger ?? null;
     /** 训练修正预留接口（B1）；缺省由 player-growth 使用 1.0。 */
     this.trainingFactor = deps.trainingFactor ?? null;
+    /** AI Club Decision Framework v1（Step 31）：缺省启用；置 false 可在测试中隔离非 AI 子系统。 */
+    this.enableAI = deps.enableAI !== false;
   }
 
   /**
@@ -211,13 +214,15 @@ export class SimulationCore {
     state.season = maxSeason;
     // 赛季推进顺序（第 15/16/19 步；顺序不可交换）：
     //   1) 结算上一赛季成长 → 2) 退役+归档 → 3) 计算缺口并生成属于下一赛季的新生代
-    //   → 4) 修复玩家阵容 → 5) 重置本赛季统计 → 进入下一赛季。
+    //   → 4) AI Club Decision（Step 31；仅非 managed 俱乐部）→ 5) 修复玩家阵容 → 6) 重置本赛季统计。
     if (maxSeason > prevSeason) {
       developPlayers(state, {
         seasonNumber: prevSeason,
         training: this.trainingFactor ?? undefined,
       });
       runPlayerLifecycle(state, { fromSeason: prevSeason, toSeason: maxSeason });
+      // AI Club Decision Framework v1（Step 31 / D-28）：Population Health 完成后、lineup repair 前。
+      if (this.enableAI) runSeasonAI(state);
       // 退役/离队后修复玩家阵容：剔除失效引用、去重、保持容量（第 20 步）。
       repairManagedLineups(state);
       resetSeasonStats(state, maxSeason);
