@@ -766,3 +766,8 @@
 - **Club Policy（D-33.9）**：仍 3 档（Balanced/YouthFocus/Conservative），参数 `demandBias/buyBias/sellBias/reserveRatio`；deterministic、不持久化、不直接改 state。
 - **Season Boundary 顺序（D-33.15）**：`developPlayers → runPlayerLifecycle → bounded population replenishment → transferBudget regeneration → runSeasonAI → repairManagedLineups → resetSeasonStats`。
 - **不变量与验收**：见 [DECISIONS D-29](file:///workspace/docs/DECISIONS.md)（保留不变量列表 + 10/50/100/200/500 赛季验收 + 六项禁令）。**Golden Regression 143/143/1141 必须保持**；**不修改** `resolveMatchSquad` / `computeTeamStrength` / Match Engine（D-33.10）。
+- **微决策冻结（D-34.1~D-34.3，见 [DECISIONS D-34](file:///workspace/docs/DECISIONS.md)）**：
+  - **D-34.1 Population Trigger Semantics**：`96`=Hard World Floor、`112`=Soft Ecosystem Cap、`14`=AI Holding Target、`12`=Club Hard Minimum，**四者语义完全分离**；Population Generation **仅在** club 结构性缺口（`roster<12` / `GK<1` / `DF<4` / `MF<4` / `FW<2`）或 world `active < 96` 时发生；**禁止**“每季补到 112 / 低于 112 自动生成 / 每 club 自动补到 14”；Population 不制造 trading supply。
+  - **D-34.2 transferBudget Carry-over Regeneration**：`new = min(INITIAL_TRANSFER_BUDGET, current + REPLENISHMENT_AMOUNT)`；carry-over、有上限、不 reset、不改 cash；**D-27 T6 单笔语义不变**。
+  - **D-34.3 Competitive > Soft Priority / Dedup**：优先级 `HARD > COMPETITIVE > SOFT > NONE`；`COMPETITIVE` 独立档、仅在无 HARD 时考虑、reasonCode `COMPETITIVE_UPGRADE`、不使用 OVR/单一全队均值；与 SOFT `ATTRIBUTE_GAP` 同位置去重。
+  - 状态：**Schema 10 / Save Format 1 不变**；**Step 34 实现未开始**。

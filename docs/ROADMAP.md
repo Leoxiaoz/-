@@ -323,6 +323,15 @@
 - **Step 34 = Implementation（未开始）**：仅实现上文冻结范围 + 测试 + 10/50/100/200/500 long-run validation + 文档同步。
 - **本阶段禁止**：Match Engine / Team Strength / OVR / Transfer UI / Negotiation / Transfer Window / Loan / Scout / Agent / Contract Renewal / Income System / Cash regeneration / Board / Manager Personality / 随机市场活动 / Schema bump。
 
+### 2.21 微决策冻结（2026-09-30，Step 34A 审计 / Step 34B：World Economy v2 Micro Decisions）
+
+- **Step 34A = Implementation Audit（只读）**：结果 **READY / 0 BLOCKER**；确认 v2 可在当前架构最小侵入实现（无需新 Domain API / 不改 Transfer·Match·TeamStrength / 无需 Schema bump）；只读长跑确认吸收态在 200/500 季持续。
+- **Step 34B = Decision Freeze（纯文档）**：记录 **D-34.1 ~ D-34.3**（详见 [DECISIONS D-34](file:///workspace/docs/DECISIONS.md)）：
+  - **D-34.1 Population Trigger Semantics**：`96=Hard Floor / 112=Soft Cap / 14=AI Holding Target / 12=Club Hard Min` **四者分离**；Population Generation **仅在** club 结构性缺口或 world `< 96` 时发生；**禁止**“每季补到 112 / 低于 112 自动生成 / 每 club 自动补到 14”。
+  - **D-34.2 transferBudget Carry-over Regeneration**：`new = min(INITIAL_TRANSFER_BUDGET, current + REPLENISHMENT_AMOUNT)`；carry-over、有上限、不 reset、不影响 cash；**T6 不变**。
+  - **D-34.3 Competitive > Soft Priority / Dedup**：优先级 `HARD > COMPETITIVE > SOFT > NONE`；COMPETITIVE 独立档（`COMPETITIVE_UPGRADE`）且仅在无 HARD 时考虑；与 SOFT `ATTRIBUTE_GAP` 同位置去重。
+- **状态**：Schema 10 / Save Format 1 不变；D-33.1~D-33.15 未被改写。**Step 34 实现仍未开始**。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

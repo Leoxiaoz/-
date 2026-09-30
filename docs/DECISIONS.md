@@ -807,6 +807,54 @@ Step 34 实现后必须测试 **10 / 50 / 100 / 200 / 500** 赛季，至少检�
 
 ---
 
+## D-34 World Economy / Transfer Market v2 Micro Decisions（Step 34A Audit · Step 34B Decision Freeze）（对应 SIMULATION_SPEC §34、ROADMAP §2.21）
+
+> 本条使用 **Step 34 决策编号 D-34.1 ~ D-34.3**（与项目 `D-xx` 编号属不同命名空间）。
+> 性质：**纯文档 Decision Freeze**——仅记录 Step 34A 审计明确的三项**实现微决策**；**未修改**代码 / 数据 / 测试 / Schema / Save Format；**未实现**任何 Step 34 功能。
+> 依赖：Step 33B **D-29 / D-33.1 ~ D-33.15**（本步**不改写、不冲突**）；Step 34A = READY / 0 BLOCKER。
+
+### D-34.1 Population Trigger Semantics `[已定]`
+- 参数语义**四者完全分离**：
+  - `WORLD_MIN_POPULATION = 96` = **Hard World Floor**（生存底线）
+  - `WORLD_SOFT_CAP = 112` = **Soft Ecosystem Cap**（有界生态库存上限，**非自动补人口目标**）
+  - `HOLDING_TARGET = 14` = **AI Holding Target**（**非 Population Generation 的自动补满目标**）
+  - `MIN_PLAYERS = 12` = **Club Hard Minimum**
+- **Population Generation 仅在以下两种情况下发生**：
+  1. Club 出现**结构性 roster 缺口**：`roster < 12` / `GK < 1` / `DF < 4` / `MF < 4` / `FW < 2`；
+  2. World active population `< WORLD_MIN_POPULATION`。
+- 发生时：**优先使用现有 Free Agent**；FA 不足才 `generatePlayer`；**保持现有确定性 position fill 顺序**。
+- **明确禁止**（均视为违反 D-33.6）：① 不通过 generation 机械恢复到 112；② 不因 `roster=12` 自动生成到 14；③ 不因 `population<112` 自动生成到 112；④ **不得新增**“每季补到 112”“低于 112 自动生成”“每俱乐部自动补到 14”之类逻辑。
+- **Population System 不负责制造 AI trading supply**；AI surplus supply 来自**自然形成的** `roster > 14` / Competitive·squad context / AI Active SELL·RELEASE。
+
+### D-34.2 transferBudget Carry-over Regeneration `[已定]`
+- Season Boundary 每季执行 transferBudget regeneration，使用 **carry-over 语义**：
+  ```
+  newTransferBudget = min(INITIAL_TRANSFER_BUDGET, currentTransferBudget + REPLENISHMENT_AMOUNT)
+  ```
+  - `INITIAL_TRANSFER_BUDGET` = 现有配置中的初始转会预算上限；
+  - `REPLENISHMENT_AMOUNT` = **Step 34 实现阶段配置常量**（本步不重新设计数值）。
+- 必须保持：未使用的 transferBudget **可保留**；每季**可恢复一部分**；**最高不超过** `INITIAL_TRANSFER_BUDGET`；**不直接 reset** 到 `INITIAL_TRANSFER_BUDGET`；**不因卖人**增加 seller transferBudget。
+- **D-27 T6 保持不变**：单笔 Transfer 仍 `buyer transferBudget -= fee`、`seller transferBudget 不增加`。
+- 示例：`current=180,+420→600`；`current=500,+420→600`；`current=80,+420→500`。
+- **不得**通过 budget regeneration 修改 `cash`；**cash regeneration 仍然禁止**（D-33.8）。
+
+### D-34.3 Competitive > Soft Priority / Deduplication `[已定]`
+- Need 优先级冻结为：**HARD > COMPETITIVE > SOFT > NONE**。
+- **HARD**（结构性生存问题）：`GK < 1` / `DF < 4` / `MF < 4` / `FW < 2` / `roster < 12` / 无法满足当前 formation 的**可用球员**要求。
+- **COMPETITIVE**（**仅在无 HARD 时考虑**）：最低人数虽满足，但该位置**竞技质量明显不足**。优先使用：starter quality / bench quality / position-specific effective attributes / league position baseline / squad competitive context；**不得**使用单一 OVR、单一全队平均值，或**简单复制 ATTRIBUTE_GAP**。reasonCode = **`COMPETITIVE_UPGRADE`**。
+- **SOFT**（非生存、非核心竞争缺口）：`ATTRIBUTE_GAP` / `YOUTH_DEVELOPMENT` / `SQUAD_BALANCE`；**继续受 `policy.softNeedEnabled` 控制**。
+- **去重规则**：① 存在 HARD → 不产生 COMPETITIVE / SOFT 替代需求；② 无 HARD → 先检查 COMPETITIVE；③ 某位置已产生 COMPETITIVE → 同位置**不得**再因相同竞技质量缺口产生 SOFT `ATTRIBUTE_GAP`；④ SOFT 仍可在**其他维度**产生 `YOUTH_DEVELOPMENT` / `SQUAD_BALANCE`；⑤ 不允许同一原因重复命中产生两个相同 Need。
+- 最终优先级 **HARD → COMPETITIVE → SOFT → NONE**；**保持确定性**；**不得使用 RNG**；**不得使用 OVR**。
+
+### D-34 附：其余确认（与 D-33 一致，不改写）`[已定]`
+- **Holding Target 语义**：`HOLDING_TARGET=14` **只属 AI Decision Layer**；`roster ≤ 14` → AI 不主动制造 surplus exit；`roster > 14` → 可**评估** surplus player，但 `roster > 14 ≠ 必须 SELL/RELEASE`，仍须走 `Need → Candidate → Suitability → Finance → Buyer → Domain validation`。**Domain Transfer 不引入 HOLDING_TARGET**，继续使用既有 12/24 硬约束。
+- **Exit Cap**：`MAX_EXITS_PER_SEASON = 2`，**SELL + RELEASE 共享同一 exit counter**（禁止 `2 SELL + 2 RELEASE`）；BUY / FA SIGNING 沿用独立 signing cap；counter **ephemeral，不持久化**。
+- **Active SELL**：必须调用 **`transferPlayer()`**，**不得**新增第二套 Transfer Domain；流程 `Surplus Player → Buyer Search → Buyer Need → Candidate Filter → Suitability → Finance → transferPlayer()`；Buyer 须满足匹配 Need / 合法球员 / `roster < 24` / `cash` 足够 / `transferBudget` 足够 / 现有 Domain 约束；Seller 须满足 Holding Target 保护 / 不违反 GK·Domain 硬约束 / 不违反 exit cap；**同一 AI cycle 同一 player 最多 SELL 一次**，成功后加入本 cycle **moved-player set**，之后本 cycle 不得再次转手。
+- **Club Policy v2**：保持 Balanced / YouthFocus / Conservative；继续经**现有 deterministic `hashSeed` 派生**，**不得改变 hashSeed 映射**；新增 `demandBias / buyBias / sellBias / reserveRatio`，保留 `potentialWeight / softNeedEnabled`；全部 derived / non-persistent / deterministic；**不得写入 save**。
+- **Season Boundary 顺序**：`developPlayers → runPlayerLifecycle → bounded population health → transferBudget regeneration → runSeasonAI → repairManagedLineups → resetSeasonStats`；每季恰好一次；AI **不会**在 budget regeneration 前运行；无重复 regeneration / 无重复 population generation。
+
+---
+
 ## 仍属 TBD（未受影响）
 
 - GAME_DESIGN：T1、T2、T3、T4、T5、T7–T13、T15、T16、T17
