@@ -307,6 +307,22 @@
 - **验证**：新增 `tests/ai.test.js`（A–O）；累计 **303/303 通过**；黄金回归（143/143/1141）不变；10/50/100/200 赛季长跑（AI 启用）不变量稳定；Save/Load 往返一致。
 - **仍未实现（Step 32+）**：AI Manager personality / Board / Scout / Agent / Negotiation / Loan / Contract Renewal / Expiry / Transfer Window / Market Value / 多联赛 AI / **D10**。
 
+### 2.20 设计冻结（2026-09-30，Step 32A 审计 / Step 33A 审计 / Step 33B：World Economy / Transfer Market v2）
+
+- **Step 32A = Long-Term Ecosystem Audit（只读）**：确认 AI v1 长期**吸收态**（population 112→96、roster→12、FA→0、transfer≈0；`transferBudget` 单向衰减）。根因：release 下限钳制 + population 只补最低线 + budget 无再生。
+- **Step 33A = Design Audit（只读）**：给出三循环模型与候选方案（Competitive Need / Active Selling / Holding Target / 有界 Population Surplus / budget regeneration / Policy v2）。
+- **Step 33B = Decision Freeze（纯文档）**：正式冻结 **D-29 / D-33.1 ~ D-33.15**：
+  - 三循环职责分离；Need 增 **COMPETITIVE**（独立档，reasonCode `COMPETITIVE_UPGRADE`）；
+  - **AI Active Selling**（仅 `transferPlayer`，无 Listing/Window/Negotiation）；
+  - **HOLDING_TARGET = 14**；**WORLD_MIN_POPULATION = 96（不变）**、**WORLD_SOFT_CAP = 112**（有界 surplus，非机械恢复）；
+  - **transferBudget 赛季再生**（上限 `INITIAL_TRANSFER_BUDGET`，无 RNG，无收入系统）；**cash 不再生**；
+  - **SELL + RELEASE exit cap = 2**（SELL 计入 seller exit cap）；
+  - Season Boundary 顺序：`developPlayers → runPlayerLifecycle → bounded population → transferBudget regeneration → runSeasonAI → repairManagedLineups → resetSeasonStats`；
+  - **Schema 10 / Save Format 1 不变**（全部为派生）。
+  - 旧 Decision 关系：**D-16 Reopen/Extend**、**D-24 Extend**、**D-26 保持**、**D-27 Extend**、**D-28 Extend**（Original Rule + v2 Extension，不覆盖）。详见 [DECISIONS D-29](file:///workspace/docs/DECISIONS.md)。
+- **Step 34 = Implementation（未开始）**：仅实现上文冻结范围 + 测试 + 10/50/100/200/500 long-run validation + 文档同步。
+- **本阶段禁止**：Match Engine / Team Strength / OVR / Transfer UI / Negotiation / Transfer Window / Loan / Scout / Agent / Contract Renewal / Income System / Cash regeneration / Board / Manager Personality / 随机市场活动 / Schema bump。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

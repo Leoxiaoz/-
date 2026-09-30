@@ -693,6 +693,120 @@
 
 ---
 
+## D-29 World Economy / Transfer Market v2（Step 33A Audit · Step 33B Decision Freeze）（对应 SIMULATION_SPEC §34、ROADMAP §2.20）
+
+> 本条使用 **Step 33 决策编号 D-33.1 ~ D-33.15**（与项目 `D-xx` 编号属不同命名空间）。
+> Step 33A 为**只读生态审计**；Step 33B 为**纯文档 Decision Freeze**。**未修改**代码 / 数据 / 测试 / Schema / Save Format；**未实现任何 v2 功能**（实现属 **Step 34**）。
+> 依据：Step 32A 审计确认的**长期吸收态**（population 112→96、roster→12、FA→0、transfer≈0、transferBudget 单向衰减）。
+> 记录方式：**Original Rule + v2 Extension**，不删除、不覆盖旧 Decision。
+
+### D-33.1 长期生态目标 `[已定]`
+- **不接受** 50~200 季后永久 `population=96 / roster=12 / FA=0 / transfer≈0` 的吸收态。
+- 允许**某季完全没有交易**；**禁止**为制造活跃度强制每年交易；**禁止**通过降低所有阈值制造垃圾交易流。
+- 目标：当世界确实存在**真实需求 + 真实供给 + 真实资金能力**时，Transfer Cycle 能**长期重新启动**。
+
+### D-33.2 Population / Transfer / Finance 三循环 `[已定]`
+- Population Cycle：retirement / generation / world player stock；Transfer Cycle：Club↔Club transfer、Club→FA release、FA→Club signing；Finance Cycle：cash / transferBudget / transfer capacity。
+- 职责分离：**Population 不直接调用 Transfer**；**Transfer 不生成 Player**；**Finance 不直接决定 Transfer target**。
+- 三者只经**明确数据流 + 现有 Domain API** 连接。
+
+### D-33.3 Competitive Need `[已定]`
+- Need 分类冻结为 **HARD / SOFT / COMPETITIVE / NONE**；**COMPETITIVE 是独立 Need Class，不并入 SOFT**。
+  - HARD = 生存/结构问题；SOFT = 阵容改善问题；COMPETITIVE = 长期竞争力建设问题；NONE = 无合理需求。
+- Competitive Need **不代表必须交易**；完整链路保持 `Need → Candidate Filter → Suitability → Finance → Target Ranking → Domain Action`；**允许 No Action**。
+- 新增 reasonCode：**`COMPETITIVE_UPGRADE`**（并入 D-28 reasonCode 白名单）。
+- 必须**确定性计算**；**禁止 RNG**；**禁止 OVR**。
+
+### D-33.4 AI Active Selling `[已定]`
+- 允许 AI 主动产生 **SELL intent**；**不实现** Listing UI / Transfer Window / Negotiation / Agent / Scout / Transfer Market UI。
+- SELL **最终必须调用 `transferPlayer()`**；**不得**创建第二套 Club→Club Transfer。
+- SELL 必须满足：seller roster 不低于 **Holding Target**；seller 位置结构合法；不得出售**最后 GK**；不得破坏 position minimum；player 非 retired；player 非 FA；membership/contract 合法；buyer 合法；buyer roster `< MAX24`；buyer finance 合法；**transfer 原子性保持**。
+- 链路仍为 `Decision Layer → Action Layer → Domain API → Game State`；AI **不得直接写 state**。
+
+### D-33.5 Holding Target `[已定]`
+- **`HOLDING_TARGET = 14`**。语义：`12 = 生存最低线`，`14 = AI 正常持有目标`，`24 = 最大 roster`。
+- 当 `roster > 14` 且存在**结构性 surplus** 时，多余球员可进入 **SELL / RELEASE 候选池**。
+- **AI 不得为了达到 14 而强制出售**；14 是 holding target，不是强制 roster size。
+
+### D-33.6 Population 有界 Surplus（D-16 扩展）`[已定]`
+- **批准 D-16 有界 surplus 扩展**：Population 不再只有 `club < MIN → generation`，而增加**有限目标带**。
+- 世界参数：**`WORLD_MIN_POPULATION = 96`**（生存底线，**保持不变**）；**`WORLD_SOFT_CAP = 112`**（有界生态库存上限）。8 clubs 下：`MIN = 8×12 = 96`，`SOFT TARGET = 8×14 = 112`。
+- Generation 约束（1–9）：① 不低于 `WORLD_MIN_POPULATION`；② 需要时可向 club **holding target** 方向补位；③ world active population **不得超过 `WORLD_SOFT_CAP`**；④ **不得无限生成**；⑤ **不得随机生成 FA 以制造市场**；⑥ retirement 是人口减少来源之一；⑦ generation 是**有界补位**；⑧ Population **不直接执行 transfer**；⑨ FA 仍属 world active population。
+- **`WORLD_SOFT_CAP=112` 不意味每次机械恢复到 112**：它是**上限/目标带边界**；必须避免“每次退休都立即补回 112”的机械恢复行为（保持 D-16 精神，最小修改）。
+
+### D-33.7 transferBudget regeneration（D-27 T6 扩展）`[已定]`
+- **批准方案 A**：**Season Boundary 对 `transferBudget` 做确定性再生/top-up**，目标使其**不再永久单向衰减**。
+- 原则：无 RNG；**有上限**（默认上限 = `INITIAL_TRANSFER_BUDGET`）；**不引入收入系统**；**不引入 cash regeneration**；不让强队无限购买；不让弱队永久失去购买能力。
+- **保持单笔 Transfer 原语义**：buyer `transferBudget -= fee`；seller `transferBudget` **不因该笔交易增加**（**D-27 T6 继续成立**）。
+- 改变的是 **「赛季边界 budget replenishment」**，**不是**「卖球员立即增加 transferBudget」。→ **D-27 T6 标记为【扩展】，非推翻**。
+
+### D-33.8 Cash regeneration `[已定]`
+- **Cash 不再生**。保持 buyer `cash -= fee`、seller `cash += fee`；Cash 是真实余额；fee 在俱乐部之间循环。
+- 本版**不引入**：TV / Ticket / Sponsor / Prize money、Wage cash flow、Board injection。Finance Economy v2 以后单独设计。
+
+### D-33.9 Club Policy `[已定]`
+- 仍只有 **Balanced / YouthFocus / Conservative**；**不增加第四种**。
+- Policy 可影响：`demandBias` / `buyBias` / `sellBias` / `reserveRatio`（**参数语义冻结**；具体数值为最小、可解释的配置表，属 Step 34）。
+- 所有参数必须：deterministic；no RNG；**不持久化**；**不直接修改 state**；不产生无限经济优势；不造成所有球队最终完全一致。
+
+### D-33.10 AI Lineup / Match `[已定]`
+- Step 33 **不处理** AI lineup 对 Match Engine 的影响；**不得修改** `resolveMatchSquad()` / `computeTeamStrength()` / Match Engine。
+- **Golden Regression 必须继续保持**：`143` goals / `143` player goals / `1141` player appearances。
+
+### D-33.11 Schema / Save `[已定]`
+- **Schema 10**；**Save Format 1**；v2 **不增加持久化 AI 状态**。
+- 以下均为**派生**：Competitive Need、Holding Target、Policy、Suitability、AI Decision、Population target calculations、Budget replenishment calculation → **不进行 Schema bump**。
+- 仅当未来真正需要持久化**长期 AI 计划 / Market State / Budget History** 时，才另开 Decision Freeze。
+
+### D-33.12 Action Cap `[已定]`
+- 每 Club 每赛季主动**退出**动作总数：**`MAX_EXITS_PER_SEASON = 2`**，其中 **SELL + RELEASE 合计 ≤ 2**。
+- **BUY / FA SIGNING** 的购买动作上限继续独立遵循当前 AI action cap。
+- **SELL 不再视为“纯对手侧动作”**；v2 允许 AI 主动 SELL intent → **SELL 正式计入 seller Club 的 exit cap**。
+
+### D-33.13 Generated Player → Free Agent `[已定]`
+- **暂不允许**通过 Population Generation 主动把 generated player 放入 Free Agent pool；保持 **D-26**（Generation → Club membership）。
+- Free Agent 仍来自现有生命周期/释放机制；**不得为制造 Transfer Market 而随机制造 FA**。
+
+### D-33.14 WORLD_MIN_POPULATION `[已定]`
+- **`WORLD_MIN_POPULATION` 保持 96**；**不得**因为 `H=14` 而改为 112。三者职责不同：
+  - `WORLD_MIN_POPULATION = 96` = 生存底线；
+  - `WORLD_SOFT_CAP = 112` = 有界生态库存上限；
+  - `HOLDING_TARGET = 14` = 单 Club AI 持有目标。
+
+### D-33.15 Season Boundary 顺序 `[已定]`
+冻结顺序：
+```
+1. developPlayers
+2. runPlayerLifecycle
+3. Population Health / bounded population replenishment
+4. transferBudget regeneration
+5. runSeasonAI
+6. repairManagedLineups
+7. resetSeasonStats / new season state
+```
+理由：Population 必须先稳定；Finance capacity 必须在 AI 决策前更新；AI 必须基于**本赛季最新 population + finance** 决策；AI 不应看到尚未补充的 budget。
+
+### D-29 必须保留的不变量 `[已定]`
+`roster ≥ 12`；`roster ≤ 24`；GK minimum；DF/MF/FW minimum；last GK protection；no duplicate ownership；retired player has no membership；valid contracts；no NaN / Infinity；`cash ≥ 0`；`transferBudget ≥ 0`；static player data immutable；no OVR；no `Math.random`；deterministic AI；AI 只用 Domain API；**managed club 不受 AI 影响**；Schema 10；Save Format 1。
+
+### D-29 长期生态验收 `[已定]`
+Step 34 实现后必须测试 **10 / 50 / 100 / 200 / 500** 赛季，至少检查：population、FA count、roster distribution、position distribution、transfer count、release count、FA signing count、cash distribution、transferBudget distribution、age distribution、policy distribution。
+必须同时满足：① 不永久停摆；② 不强制每年交易；③ 不无限交易；④ 不无限生成人口；⑤ 不无限膨胀资金；⑥ 不收敛成完全同质化球队。“每赛季都有交易”**不是**目标，允许自然低交易年份。
+
+### D-29 旧 Decision 关系（Original Rule + v2 Extension）`[已定]`
+- **D-16**：**REOPEN / EXTEND** —— 加入 bounded population surplus（保持“非精确 112”“最小修改”精神）。
+- **D-24**：**EXTEND** —— 增加 `transferBudget` season replenishment（D6/D13 扩展；仍无收入系统、无工资现金流）。
+- **D-26**：**保持**（Generated→FA 仍不开放，见 D-33.13）。
+- **D-27**：**EXTEND** —— AI Active Selling + seasonal budget regeneration（**T6 扩展**；T11/T12/T21/T22/T23/T24 保持；**T25 重开→v2 实施**）。
+- **D-28**：**EXTEND** —— Competitive Need + Active Selling + Holding Target（D-AI-05/11/14 扩展；D-AI-16/19/20/21/22/25 保持）。
+- **不删除、不覆盖旧规则**；以 **Original Rule + v2 Extension** 方式保持历史可追踪。
+
+### D-29 Step 34 实现边界 `[已定]`
+**允许实现**：Competitive Need；Holding Target=14；Active SELL intent；SELL+RELEASE exit cap=2；bounded population surplus；`WORLD_SOFT_CAP=112`；transferBudget seasonal replenishment；Club Policy v2 参数；Season Boundary 顺序调整；相关测试；10/50/100/200/500 long-run validation；文档同步。
+**禁止**：Match Engine / Team Strength / OVR / Transfer UI / Negotiation / Transfer Window / Loan / Scout / Agent / Contract Renewal / Income System / Cash regeneration / Board / Manager Personality / Random market activity。
+
+---
+
 ## 仍属 TBD（未受影响）
 
 - GAME_DESIGN：T1、T2、T3、T4、T5、T7–T13、T15、T16、T17

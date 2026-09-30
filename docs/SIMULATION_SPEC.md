@@ -750,3 +750,19 @@
 - **架构（T28.1）**：新模块 `src/core/transfer.js`（`transferPlayer` / `validateTransfer` / `buildTransferPlan` / `commitTransferPlan` / `assertTransferInvariants`），
   单向依赖 contract / membership / finance / player-lineup / player-runtime / sim-config / game-state；**禁止反向依赖**；与 `free-agent.js` 为 sibling。
 - **不变量**：见 [DECISIONS D-27 T28.2](file:///workspace/docs/DECISIONS.md)（19 条）。
+
+---
+
+## §34 World Economy / Transfer Market v2（Step 33B 设计冻结，未实现）
+
+- **状态**：**设计已冻结（Step 33B）；运行时未实现（属 Step 34）**。依据 Step 32A 长期生态审计（确认吸收态：population 112→96、roster→12、FA→0、transfer≈0、transferBudget 单向衰减）。决策编号见 [DECISIONS D-29](file:///workspace/docs/DECISIONS.md)。**schema 保持 10 / save format 保持 1**。
+- **三循环分离（D-33.2）**：Population Cycle（retirement/generation/stock）、Transfer Cycle（Club↔Club / release / sign）、Finance Cycle（cash / transferBudget / capacity）**职责分离**；Population 不直接调用 Transfer、Transfer 不生成 Player、Finance 不直接决定 target；仅经现有 Domain API 连接。
+- **Need 扩展（D-33.3）**：分类冻结 **HARD / SOFT / COMPETITIVE / NONE**（COMPETITIVE 独立，不并入 SOFT）；新增 reasonCode **`COMPETITIVE_UPGRADE`**；仍走 `Need → Candidate Filter → Suitability → Finance → Target Ranking → Domain Action`；允许 No Action；确定性、无 RNG、无 OVR。
+- **AI Active Selling（D-33.4）**：允许 SELL intent，**仅经 `transferPlayer()`** 执行；不建 Listing / Window / Negotiation；保持全部 seller protection 与 transfer 原子性；AI 不直接写 state。
+- **Holding Target（D-33.5）**：**`HOLDING_TARGET = 14`**（12=生存线 / 14=持有目标 / 24=上限）；`roster > 14` 且有结构性 surplus 方可进入 SELL/RELEASE 候选；**不得为达到 14 而强制出售**。
+- **Population 有界 Surplus（D-33.6；D-16 扩展）**：`WORLD_MIN_POPULATION = 96`（不变）、`WORLD_SOFT_CAP = 112`（上限/目标带）；generation 为**有界补位**，**不无限生成**、**不随机生成 FA**、**不机械恢复到 112**；FA 仍属 world active population。
+- **transferBudget 再生（D-33.7；D-27 T6 扩展）**：Season Boundary **确定性 top-up**，上限 = `INITIAL_TRANSFER_BUDGET`；单笔转会仍 buyer `-= fee`、seller `不增`（T6 继续成立）；无 RNG、无收入系统。**cash 不再生（D-33.8）**。
+- **Action Cap（D-33.12）**：`MAX_EXITS_PER_SEASON = 2`（**SELL + RELEASE ≤ 2**，SELL 计入 seller exit cap）；买入/FA 签约上限独立沿用现有 AI action cap。
+- **Club Policy（D-33.9）**：仍 3 档（Balanced/YouthFocus/Conservative），参数 `demandBias/buyBias/sellBias/reserveRatio`；deterministic、不持久化、不直接改 state。
+- **Season Boundary 顺序（D-33.15）**：`developPlayers → runPlayerLifecycle → bounded population replenishment → transferBudget regeneration → runSeasonAI → repairManagedLineups → resetSeasonStats`。
+- **不变量与验收**：见 [DECISIONS D-29](file:///workspace/docs/DECISIONS.md)（保留不变量列表 + 10/50/100/200/500 赛季验收 + 六项禁令）。**Golden Regression 143/143/1141 必须保持**；**不修改** `resolveMatchSquad` / `computeTeamStrength` / Match Engine（D-33.10）。
