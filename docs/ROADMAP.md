@@ -212,6 +212,19 @@
 - **仍待定 `[TBD]`（D10）**：生成球员的合同语义（入队+初始合同 / 先自由身 / 模板继承），须与青年队 / 自由球员市场 / AI 转会一并决定。
 - **下一步（未开始）**：Contract + minimal Finance → Transfer → AI Management（依赖 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §30）。
 
+### 2.13 已交付（2026-09-29，Step 25：合同 / 财政地基）
+
+- **目标**：按 Step 23 冻结的 D1–D20 落地 **Contract Foundation + Finance Foundation**（Transfer / Free Agent 生效 / Population 政策均**不含在内**）。
+- **已实现**：新增 [contract.js](file:///workspace/src/core/contract.js)（`runtime.contracts[playerId]`、accessor、`createContract`/`terminateContract`、
+  `normalizeContracts`、`assertContractInvariants`）与 [finance.js](file:///workspace/src/core/finance.js)（`clubs[].finance`、`getSpendableCash`、
+  `normalizeFinance`、`assertFinanceInvariants`）；`game-state.js` 归一化+校验；`game-controller#load` 读档补齐+断言；
+  `player-lifecycle#archiveRetired` 保存最终合同快照并终止合同；`sim-config.js` 新增 `CONTRACT_CONFIG`/`FINANCE_CONFIG`。
+- **schema**：`GAME_STATE_SCHEMA_VERSION` **9→10**（加法式）；旧档经确定性 normalize 补齐；`SAVE_FORMAT_VERSION` 未改。
+- **确定性**：合同/财政全为确定性模板（**无新增随机源**）；整季比赛黄金指纹（143/143/1141）不变。
+- **明确未做**：Transfer、Free Agent **运行时生命周期**、release、roster bounds、Population 政策（D16）、工资现金扣除、
+  生成球员合同最终语义（**D10 仍 TBD**）、AI、UI。
+- 已交付测试：`tests/foundation.test.js` 16 项（合同/财政/迁移/不变量/确定性/长期）；累计 **238/238 通过** + 浏览器冒烟通过。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

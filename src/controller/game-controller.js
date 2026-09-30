@@ -17,6 +17,8 @@ import { createGameState, initializeClubRuntime } from '../core/game-state.js';
 import { sortTable } from '../core/standings.js';
 import { initializePlayerRuntime, getTeamPlayers, getPlayerProfile, getPlayerRuntime, getPlayerStatsView, INJURY_STATUS } from '../core/player-runtime.js';
 import { initializeMembership, assertMembershipValid, getClubLeague, getLeagueClubs } from '../core/membership.js';
+import { normalizeContracts, assertContractInvariants } from '../core/contract.js';
+import { normalizeFinance, assertFinanceInvariants } from '../core/finance.js';
 import { buildAutoLineup } from '../core/team-strength.js';
 import { cleanLineup, validateLineup, LINEUP_LIMITS } from '../core/player-lineup.js';
 import { FORMATIONS, MENTALITY, DEFAULT_FORMATION } from '../core/sim-config.js';
@@ -237,6 +239,11 @@ export class GameController {
     // 读档后显式校验运行期成员关系（G0）：致命问题必须报错，不静默继续模拟。
     initializeMembership(this.state);
     assertMembershipValid(this.state);
+    // 合同 / 财政地基（Step 25）：确定性补齐（旧 schema 9 档），并校验不变量（不静默）。
+    normalizeContracts(this.state);
+    normalizeFinance(this.state);
+    assertContractInvariants(this.state);
+    assertFinanceInvariants(this.state);
     this.logger?.info?.(`已读取存档槽 ${slot}`);
     this.#emit();
     return this.state;

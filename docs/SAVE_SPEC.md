@@ -64,6 +64,12 @@
 > **8→9**（**加法式**，向后兼容）：旧档经 `normalizeStatLine` 将缺失字段补齐为 0，加载后可继续模拟。
 > `MatchResult.involvements` 与单场 `rating` 数值为**运行期产物**，**不单独入档**（经统计线持久化）。
 > 详见 `DECISIONS.md` D-22 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §28。
+>
+> **实现更新（Step 25 · 合同 / 财政地基）**：新增 `runtime.contracts`（`playerId → {playerId,clubId,startSeason,endSeason,wage,status}`）
+> 与 `runtime.clubs[].finance`（`{cash,wageBudget,transferBudget}`）。`GAME_STATE_SCHEMA_VERSION` **9→10**（**加法式**，向后兼容）：
+> 旧档经 `normalizeContracts`（**确定性**、**不创建 free agent**）与 `normalizeFinance`（确定性模板）补齐，不再改 `SAVE_FORMAT_VERSION`；
+> 读档后执行 `assertContractInvariants` / `assertFinanceInvariants`（不静默）。退役归档新增 `retired[].contract` 快照。
+> 详见 `DECISIONS.md` D-25 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §31。
 
 ## 0. 文档定位与边界
 

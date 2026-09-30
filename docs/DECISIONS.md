@@ -400,6 +400,29 @@
 
 ---
 
+## D-25 合同 / 财政地基落地（Step 25）（对应 SIMULATION_SPEC §31、SAVE_SPEC §3）
+
+- **背景**：Step 23 冻结了 Contract / Finance / Transfer 语义（D-24）；Step 24 审计确认 Contract/Finance 可低风险独立落地，Free Agent 生效与 Population 政策拆分延后。
+- **已实现（仅 Foundation，无 Transfer / 无 Free Agent 生效）**：
+  - 新增 `src/core/contract.js`：`runtime.contracts[playerId] = { playerId, clubId, startSeason, endSeason, wage, status }`；
+    `status ∈ { active, free_agent }`；accessor `getPlayerContract / isFreeAgent / isContracted`（纯读）；
+    op `createContract / terminateContract`；`normalizeContracts`（确定性补齐、**不创建 free agent**）；`assertContractInvariants`。
+  - 新增 `src/core/finance.js`：`runtime.clubs[clubId].finance = { cash, wageBudget, transferBudget }`；
+    **仅 cash 为余额**，其余为约束；`getSpendableCash = min(cash, transferBudget)`；`normalizeFinance`；`assertFinanceInvariants`。
+  - `game-state.js`：`GAME_STATE_SCHEMA_VERSION` **9→10**（加法式）；`createGameState` 归一化 + 校验。
+  - `game-controller.js#load`：读档后 `normalizeContracts / normalizeFinance` + 不变量断言（不静默）。
+  - `player-lifecycle.js#archiveRetired`：退役时**保存最终合同快照**并 `terminateContract`（无合同安全）。
+- **确定性（D20）**：合同期限/工资、财政初值全为**确定性模板**（`CONTRACT_CONFIG` / `FINANCE_CONFIG`），**不新增随机源**，
+  不影响 match / growth / injury RNG；整季比赛黄金指纹（总进球 143 / 球员进球 143 / 总出场 1141）不变。
+- **边界保持**：`membership` 仍为归属唯一真相；contract 做合同真相；二者以 invariant 关联（active ⇔ membership.clubId === contract.clubId）。
+- **明确未做**：Transfer、Free Agent **运行时生命周期**、release、transfer window、AI 转会、roster bounds、
+  Population 政策（D16）、工资现金扣除（D13/D17）、生成球员合同最终语义（**D10 仍 TBD**）、UI。
+- 落地：[contract.js](file:///workspace/src/core/contract.js)、[finance.js](file:///workspace/src/core/finance.js)、
+  `game-state.js`、`game-controller.js`、`player-lifecycle.js`、`sim-config.js`、
+  [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §31、`tests/foundation.test.js`（16 项）。
+
+---
+
 ## 仍属 TBD（未受影响）
 
 - GAME_DESIGN：T1、T2、T3、T4、T5、T7–T13、T15、T16、T17

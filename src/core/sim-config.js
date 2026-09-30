@@ -133,6 +133,36 @@ export const MATCH_PERFORMANCE_CONFIG = Object.freeze({
 });
 
 /**
+ * 合同地基参数（Step 25；DECISIONS D-24 / SIMULATION_SPEC §31）。
+ * 说明：v1 **确定性模板**——同一 playerId 恒得同一期限/工资，**不使用任何随机**（D20）。
+ * 合同期限为**整数赛季**（D4）；工资为**每赛季工资**（D5）；v1 不自动续约。
+ */
+export const CONTRACT_CONFIG = Object.freeze({
+  /** 合同最短 / 最长赛季数（endSeason = startSeason + 区间内确定性档位）。 */
+  MIN_DURATION_SEASONS: 2,
+  MAX_DURATION_SEASONS: 4,
+  /** 每赛季工资档位基数（按位置）。 */
+  WAGE_POSITION_BASE: Object.freeze({ GK: 30, DF: 32, MF: 36, FW: 40 }),
+  /** 每点平均能力对应的每赛季工资增量。 */
+  WAGE_PER_ABILITY: 0.8,
+  /** 每赛季工资下限。 */
+  WAGE_MIN: 10,
+});
+
+/**
+ * 财政地基参数（Step 25；DECISIONS D-24 / SIMULATION_SPEC §31）。
+ * 说明：v1 **确定性模板**（同一 clubId 恒得同一初始值，**不使用随机**，D20）。
+ * - `INITIAL_CASH` = 唯一真实货币余额的初值；
+ * - `INITIAL_WAGE_BUDGET` / `INITIAL_TRANSFER_BUDGET` = **约束上限**（非额外余额）；
+ * - v1 **不从 cash 扣除工资**（D13/D17）。
+ */
+export const FINANCE_CONFIG = Object.freeze({
+  INITIAL_CASH: 1000,
+  INITIAL_WAGE_BUDGET: 400,
+  INITIAL_TRANSFER_BUDGET: 600,
+});
+
+/**
  * 球员运行时状态参数（第 15 步）。
  * 说明：此处仅为**数据结构默认值与合法量程**（非模型系数）；成长 / 伤病 / 恢复等算法
  * 仍属 `[TBD]`（SIMULATION_SPEC §7–§9、§13–§15），待制定者决策后再接入。

@@ -178,7 +178,7 @@ test('season/career：新字段累计；赛季滚动后 season 清零、career �
 
 // ---------- 8. save/load + schema 8→9 ----------
 test('save/load：新字段完整保存/读取，读取后继续模拟一致', async () => {
-  assert(GAME_STATE_SCHEMA_VERSION === 9, 'schema 应为 9');
+  assert(GAME_STATE_SCHEMA_VERSION === 10, 'schema 应为 10（Step 25 合同/财政地基）');
   const mgr = new MemorySaveManager();
   const a = leagueState(8);
   new SimulationCore().advanceDays(a, 40);

@@ -13,6 +13,8 @@ import { generateDoubleRoundRobin } from './schedule.js';
 import { createTable } from './standings.js';
 import { createPlayerRuntime, computePopulationTarget } from './player-runtime.js';
 import { createMembership, initializeMembership, getLeagueClubs } from './membership.js';
+import { normalizeContracts, assertContractInvariants } from './contract.js';
+import { normalizeFinance, assertFinanceInvariants } from './finance.js';
 import {
   DEFAULT_FORMATION,
   FORMATIONS,
@@ -35,8 +37,10 @@ import {
  *   为**加法式**变更，旧档经 `normalizeStatLine` 补齐为 0，非破坏性。
  * v9（Step 21-A）：`players[].stats.{season,career}` 统计线新增 `shots` / `shotsOnTarget` / `ratingSum`（球员比赛表现）。
  *   为**加法式**变更，旧档经 `normalizeStatLine` 补齐为 0，非破坏性。
+ * v10（Step 25）：新增 `contracts`（合同地基：playerId→合同）与 `clubs[].finance`（财政地基：cash/wageBudget/transferBudget）。
+ *   为**加法式**变更，旧档经 `normalizeContracts` / `normalizeFinance` 确定性补齐，非破坏性。
  */
-export const GAME_STATE_SCHEMA_VERSION = 9;
+export const GAME_STATE_SCHEMA_VERSION = 10;
 
 /**
  * 基于已加载的静态世界，创建一个最小运行时状态。
@@ -74,6 +78,9 @@ export function createGameState(world, options = {}) {
       retired: {},      // playerId -> 退役归档（永久保留 career/终值快照）
       nextGeneratedSeq: 0,
       populationTarget: {}, // 各队人口目标快照（成员关系建立后计算，见下）
+      // 合同地基（Step 25）：playerId -> 合同（业务真相；membership 仍为归属真相）。
+      contracts: {},
+      // 财政地基（Step 25）置于 clubs[].finance（见 initialize/normalize）。
     },
   };
 
@@ -98,6 +105,12 @@ export function createGameState(world, options = {}) {
   // 建立运行期成员关系（G0）：静态/新生代种子 → membership；随后据此计算人口目标快照。
   initializeMembership(state);
   state.runtime.populationTarget = computePopulationTarget(state);
+
+  // 合同 / 财政地基（Step 25）：确定性补齐（无随机），并校验不变量（不静默）。
+  normalizeContracts(state);
+  normalizeFinance(state);
+  assertContractInvariants(state);
+  assertFinanceInvariants(state);
 
   // 初始化各联赛赛程与积分（决策 A1：赛程由规则生成、结果归运行时）。
   for (const league of world.leagues) {

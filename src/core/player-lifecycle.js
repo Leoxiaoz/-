@@ -36,6 +36,7 @@ import {
   createPlayerRuntime,
 } from './player-runtime.js';
 import { addPlayerMembership, removePlayerMembership } from './membership.js';
+import { getPlayerContract, terminateContract } from './contract.js';
 import { recordEvent } from './game-state.js';
 
 const POSITIONS = ['GK', 'DF', 'MF', 'FW'];
@@ -80,6 +81,8 @@ function pickAttributes(entity) {
 function archiveRetired(state, player, season) {
   const rt = getPlayerRuntime(state, player.id);
   const age = player.birthDate ? ageOn(player.birthDate, state.currentDate) : null;
+  // 合同地基（Step 25 / D11）：先取终值快照（**复制**，不与活动合同共享引用），再终止合同。
+  const contract = getPlayerContract(state, player.id);
   state.runtime.retired[player.id] = {
     playerId: player.id,
     retiredSeason: season,
@@ -95,7 +98,11 @@ function archiveRetired(state, player, season) {
     },
     career: rt ? { ...rt.stats.career } : { appearances: 0, minutes: 0, goals: 0, assists: 0 },
     finalDeltas: rt ? { ...rt.ability.deltas } : {},
+    // 最终合同快照（无合同时为 null；退役者不得再持有 active contract）。
+    contract: contract ? { ...contract } : null,
   };
+  // 退役者不得持有任何合同（不存在合同时安全返回 null，不抛异常）。
+  terminateContract(state, player.id);
   delete state.runtime.players[player.id];
   if (state.runtime.generated[player.id]) delete state.runtime.generated[player.id];
   // 退役者移出运行期成员关系（active membership 不得含退役球员；G0）。

@@ -647,3 +647,29 @@
 - **RNG（D20）** `[已定]`：Contract/Finance/Transfer v1 **不新增随机源**；不得影响既有比赛/成长/伤病 RNG 序列。
 - **未决（D10）** `[TBD]`：生成球员的合同语义（入队+初始合同 / 先自由身 / 模板继承）留待与青年队 / 自由球员市场 / AI 转会一并决定。
 - **本阶段未实现**：Contract、Finance、Transfer、AI Transfer、Free Agent 市场、UI、schema 变更。
+
+---
+
+## §31 合同 / 财政地基（Contract / Finance Foundation，Step 25 已实现）
+
+- **状态**：已实现（**仅 Foundation**）。Transfer、Free Agent 运行时生命周期、Population 政策、AI 均**未实现**。
+- **模块**：[contract.js](file:///workspace/src/core/contract.js)、[finance.js](file:///workspace/src/core/finance.js)、
+  [game-state.js](file:///workspace/src/core/game-state.js)、[game-controller.js](file:///workspace/src/controller/game-controller.js)、
+  [player-lifecycle.js](file:///workspace/src/core/player-lifecycle.js)。
+- **Contract（D2/D4/D5）**：`runtime.contracts[playerId] = { playerId, clubId, startSeason, endSeason, wage, status }`；
+  `status ∈ { 'active', 'free_agent' }`；期限为**整数赛季**；`wage` 为**每赛季工资**；v1 **不自动续约**。
+  accessor：`getPlayerContract / isFreeAgent / isContracted`（纯读）；op：`createContract / terminateContract`。
+- **Free Agent（D3）** `[结构已就绪，运行时未启用]`：`status='free_agent'` ⇒ `clubId=null` 且 membership 无归属；
+  **migration 不创建 free agent**（Free Agent 生效属 Step 27）。**未引入第三套业务真相**（membership=归属真相，contract=合同真相）。
+- **Finance（D6/D13/D17）**：`runtime.clubs[clubId].finance = { cash, wageBudget, transferBudget }`；
+  **仅 cash 为余额**，其余为约束；`getSpendableCash = min(cash, transferBudget)`；v1 **不从 cash 扣工资**。
+- **确定性（D20）**：`CONTRACT_CONFIG` / `FINANCE_CONFIG` 为确定性模板；`stableHash` 为**纯算术**（非 RNG）；
+  不新增随机源，不影响 match/growth/injury RNG。
+- **Retirement（D11）**：`archiveRetired` 保存**最终合同快照**（`retired[id].contract`，复制值）并 `terminateContract`；退役者不得持有合同。
+- **归一化与不变量**：`normalizeContracts`（幂等、确定性、不覆盖已有、不创建 free agent）、`normalizeFinance`（幂等、修正非法值、保留合法值）；
+  `assertContractInvariants` / `assertFinanceInvariants` 在 `createGameState` 与 `controller.load` 后执行（不静默）。
+- **存档（D12）**：`GAME_STATE_SCHEMA_VERSION` **9→10**（加法式）；旧档经 normalize 确定性补齐；沿用 idempotent initialize/normalize 模式，**未改 `SAVE_FORMAT_VERSION`**。
+- **明确未实现**：Transfer / release / transfer window / AI 转会 / roster bounds / Population 政策（D16）/ 工资现金扣除 /
+  生成球员合同最终语义（**D10 仍 TBD**）/ UI。
+- **测试**：`tests/foundation.test.js`（16 项）——合同创建/终止/归一化/不变量、free_agent 结构、退役清理、
+  财政初始化/归一化/spendable、schema 9→10 迁移、save/load continuation、比赛黄金指纹不变、10/50/100 长期。
