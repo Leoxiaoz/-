@@ -352,6 +352,54 @@
 
 ---
 
+## D-24 合同 / 财政 / 转会 语义地基（Step 23 冻结）（对应 SIMULATION_SPEC §30）
+
+> 本条使用 **Step 23 决策编号 D1–D20**（与项目 `D-xx` 编号属不同命名空间）。均为**设计冻结**：
+> 不落地代码、不改 schema（**仍为 9**），供后续 Contract / Finance / Transfer 实施阶段遵循。
+
+- **D1 Membership Truth** `[已定]`：`runtime.membership` 继续作为 player→club 的**唯一业务真相**；
+  `static.teamId` / `generated.teamId` 仅作**镜像 / 初始化来源**，不作为运行时转会后的权威状态。
+- **D2 Contract Model** `[已定]`：`runtime.contracts[playerId]` 为合同业务真相；v1 每人**至多一个 active contract**；暂不建完整合同历史系统。
+- **D3 Free Agent** `[已定]`：v1 **允许 active free agent**；自由球员不属于任何 club，membership 不记 clubId，以 `contract.status='free_agent'` 表示。
+  **不得**出现 membership / contracts / freeAgents **三套并列业务真相**；如需阻止 `initializeMembership` 重播种，可加**内部辅助机制**，但不得构成第三套权威状态。
+- **D4 Contract Duration** `[已定]`：期限用**整数赛季**；v1 **不做自动续约**。
+- **D5 Wage Unit** `[已定]`：工资以**每赛季工资**记录，且属**合同属性**。
+- **D6 Finance** `[已定]`：`club.finance = { cash, wageBudget, transferBudget }`；**只有 cash 是实际货币余额**，
+  wageBudget / transferBudget 为**约束**，**不作为额外现金余额**。
+- **D7 Squad Size** `[已定]`：引入俱乐部阵容人数 **lower/upper bound**；转会 / 释放 / 生成球员均须遵守；
+  **不允许**人口补充系统因一次转会/释放就立即恢复到固定 112。
+- **D8 Transfer Fee** `[已定]`：v1 使用**确定性转会费模板**（依能力/年龄/位置等已有数据）；暂不建独立 player value / market value 系统；**不新增随机数源**。
+- **D9 Transfer Window** `[已定]`：v1 **转会窗口永久开放**；暂不实现夏窗/冬窗限制。
+- **D10 Generated Player Contract** `[TBD]`：**暂不锁定**（原因见下）。
+- **D11 Retirement** `[已定]`：退役必须**移除 active contract** + **移出 active membership**；retired archive 保存**最终合同快照**等必要历史；
+  退役者不得再出现在转会市场或 active contract 中。
+- **D12 Save Migration** `[已定]`：Contract/Finance 真正落地时再做 **schema 9→10** 迁移；旧档现有 112 名 active 球员须获得**确定性初始合同**；
+  迁移**不得**破坏旧档既有比赛/球员属性/成长/伤病/退役等状态。
+- **D13 Money Model** `[已定]`：v1 不建复杂收入系统；俱乐部间转会费可转移 **cash**；**不周期性从 cash 扣工资**——
+  即 **v1 工资不形成 cash 的持续消耗**，以避免"只有支出、没有收入"导致长期经济必然崩溃。
+- **D14 Domain Transaction Layer** `[已定]`：Transfer / Contract / Finance 必须经**统一领域操作层**完成；UI 与未来 AI 调用**相同** domain operations；
+  禁止直接改 `membership` / `contracts` / `finance` 底层状态；流程 `plan → validate → commit → assert invariants`（先验证、后一次性提交）。
+- **D15 AI Dependency** `[已定]`：AI 未来必须使用与玩家**相同**的 domain operations；Step 23 **不实现 AI 转会**；AI 转会依赖 Contract + Finance + Transfer domain layer 完成后再做。
+- **D16 Population Policy** `[已定]`：**废弃**"每赛季精确恢复到初始 112 人"的长期人口政策；
+  **世界人口保护**与**俱乐部阵容保护**必须**分离**：world population 用 **minimum / health boundary**（非 exact target），club roster 用 **lower / upper bounds**；
+  转会 / 释放 / 自由球员**不得被下一赛季自动补充立即抵消**；新球员生成只用于**真正的人口健康/阵容缺口**，不用于机械恢复到 112。
+- **D17 Economic Closure** `[已定]`：**v1 不扣除工资现金**；wage 仅作合同属性与 wageBudget 约束；
+  若未来要让工资真正影响 cash，**必须同时**设计收入/奖金/运营收入等**完整经济闭环**；闭环建立前**不得**擅自增加工资现金流。
+- **D18 Injury + Transfer** `[已定]`：**允许受伤球员转会**；injury 状态**不**作为转会禁止条件；转会后**保持**其 injury runtime 状态，**不重置伤病**。
+- **D19 Load-time Invariants** `[已定]`：存档加载后必须检查并（确定性）修复/拒绝明显非法状态，包括但不限于：
+  active player 的 membership 与 active `contract.clubId` 一致；retired 不得拥有 active contract；不得存在重复 active contract；
+  不得出现无效 clubId / playerId；finance 数值合法；roster / membership 不得有重复或悬空引用。修复策略须**确定性**、**不得引入随机数**。
+- **D20 RNG** `[已定]`：Contract / Finance / Transfer v1 **不新增随机数源**；相同输入必须得到相同结果；
+  转会费、工资模板、合同迁移等**全部使用确定性规则**；**不得**影响现有比赛 / 成长 / 伤病 RNG 的结果序列。
+
+**D10 为何仍保持 `[TBD]`**：生成球员的合同语义与"青年队 / 自由球员市场 / AI 转会"强耦合
+（直接入队并附初始合同？先入自由身？继承模板合同？）。一旦定错会**反噬** D7（阵容上下限）与 D16（人口政策），
+故留待与这些系统一并决定，本步骤不替其拍板。
+
+**验证**：本条目为**纯文档冻结**——未修改代码 / `.fdb` / 测试 / UI；**schema 仍为 9**；未实现 Contract/Finance/Transfer/Free Agent/AI。
+
+---
+
 ## 仍属 TBD（未受影响）
 
 - GAME_DESIGN：T1、T2、T3、T4、T5、T7–T13、T15、T16、T17

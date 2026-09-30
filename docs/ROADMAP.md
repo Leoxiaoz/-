@@ -200,6 +200,18 @@
 - 已交付测试：`tests/consumption.test.js` 10 项（season/career 读取、averageRating 与 `appearances=0`、ratingSum 不外泄、
   `shots>=shotsOnTarget`、旧字段 normalize、快照与 runtime 无引用共享、非管理球队不展示、lineup/injury 不受影响）；累计 **222/222 通过** + 浏览器冒烟通过。
 
+### 2.12 设计冻结（2026-09-29，Step 23：Contract / Finance / Transfer 语义地基）
+
+- **性质**：**纯设计冻结，无代码 / 无 schema / 无数据 / 无测试变更**（schema 仍为 **9**）。决策编号 **D1–D20**，详见
+  [DECISIONS D-24](file:///workspace/docs/DECISIONS.md) 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §30。
+- **已冻结 `[已定]`（D1–D9、D11–D20）**：membership 为唯一业务真相；`runtime.contracts[playerId]`（单 active、整数赛季、每赛季工资、不自动续约）；
+  允许 active free agent（**不得**形成三套并列真相）；`club.finance={cash,wageBudget,transferBudget}`（**仅 cash 为余额**）；
+  俱乐部阵容上下限；确定性转会费模板；转会窗口永久开放；退役清合同；schema 9→10 迁移方案；
+  **v1 工资不从 cash 扣除**；统一 domain operation 层；AI 复用同一 domain ops；**人口政策与世界/俱乐部保护分离**（废弃精确恢复 112）；
+  读档不变量校验；**不新增随机源**。
+- **仍待定 `[TBD]`（D10）**：生成球员的合同语义（入队+初始合同 / 先自由身 / 模板继承），须与青年队 / 自由球员市场 / AI 转会一并决定。
+- **下一步（未开始）**：Contract + minimal Finance → Transfer → AI Management（依赖 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §30）。
+
 ---
 
 ## 3. 第三阶段：完整足球世界
@@ -212,7 +224,9 @@
   - 新闻与事件（可解释的信息输出）。
   - 杯赛、多层级 / 多国联赛（视 T7 决策）。
   - 多赛季世界模拟与稳定性收敛。
-- 依赖：`SIMULATION_SPEC` §14、§15 的模型决策（T12、T14）。
+- 依赖：`SIMULATION_SPEC` §14、§15 的模型决策（T12、T14）；**Contract / Finance / Transfer 语义地基见 §30（D-24，Step 23 冻结）**。
+- **下一实施阶段（未开始）**：`Contract + minimal Finance → Transfer → AI Management`；其中 **D10（生成球员合同语义）须先确认**，
+  且须遵循 D7/D16 的「世界人口健康边界 ⊥ 俱乐部阵容上下限」分离策略。
 - 交付物：世界模拟引擎 + 长期模拟测试。
 - 验收（项目规则第 17 条）：跨 1 / 5 / 10 / 50 赛季稳定（保留 100+ 能力）；无空阵容、无不可能年龄、无指数通胀、无腐坏。
 - `[已定]` R3（A8）：稳定时长 = **50 赛季基础，保留更高**；世界规模仍待定（见 T7）。

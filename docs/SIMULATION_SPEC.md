@@ -614,3 +614,36 @@
   UI 直读 state、schema 升级；21-A 的 RNG/评分公式/比分模型**未改动**。
 - **测试**：`tests/consumption.test.js`（10 项）——season/career 读取、averageRating 派生与 `appearances=0`、ratingSum 不外泄、
   `shots>=shotsOnTarget`、旧字段安全 normalize、快照与 runtime 无引用共享、非管理球队不被展示、lineup/injury/人口不受影响。
+
+---
+
+## §30 合同 / 财政 / 转会 语义地基（Step 23 冻结，未实现）
+
+> **状态：设计冻结。** 本章**仅记录已确认语义**，**不改变 schema（仍为 9）、不落地任何代码**。
+> 决策编号 D1–D20 见 [DECISIONS D-24](file:///workspace/docs/DECISIONS.md)。`[已定]` = 已冻结；`[TBD]` = 待定。
+
+- **边界（D1/D2/D6/D14）**：
+  - `membership` = 当前注册/所属俱乐部（**唯一业务真相**）；
+  - `contract` = 球员与俱乐部的合同关系（`runtime.contracts[playerId]`，v1 每球员至多一个 active）；
+  - `finance` = 俱乐部经济状态；
+  - `transfer` = 改变上述三者的 **domain operation**（`plan → validate → commit → assert invariants`）。
+- **Contract（D2/D4/D5）** `[已定]`：结构 `{ playerId, clubId, startSeason, endSeason, wage, status }`；
+  **整数赛季**起止；`startSeason/endSeason` 以 `state.season` 为锚；**每赛季工资**（合同属性）；v1 **不自动续约**；不建合同历史。
+- **Free Agent（D3）** `[已定]`：v1 允许 **active free agent**；不属任何 club（membership 不记 clubId），以 `contract.status='free_agent'` 表示；
+  **禁止** membership / contracts / freeAgents **三套并列业务真相**（允许内部辅助机制，但不得成为第三套权威）。
+- **Finance（D6/D13/D17）** `[已定]`：`club.finance = { cash, wageBudget, transferBudget }`；**仅 cash 为余额**，其余为约束；
+  v1 **不建复杂收入**；**工资不从 cash 扣除**（wage 仅作合同属性 + wageBudget 约束）。
+- **Transfer（D8/D9/D18）** `[已定]`：**永久开放**（无窗口）；费用用**确定性模板**（能力/年龄/位置），不建独立 value 系统；
+  **允许伤病球员转会**且**不重置伤病**；**不新增随机源**。
+- **Squad / Population（D7/D16）** `[已定]`：引入俱乐部阵容 **lower/upper bound**；
+  **废弃**"精确恢复到 112"——**世界人口健康边界**与**俱乐部阵容上下限**分离；转会/释放/自由身**不被下季自动补充立即抵消**。
+- **Retirement（D11）** `[已定]`：退役移除 active contract + 移出 membership，归档保存最终合同快照；退役者不进转会市场/active contract。
+- **Season Boundary 集成（预留，D4/D16）** `[建议]`：合同过期判定置于 rollover 内、`processRetirements` 之后、补位之前；
+  **不得**改变现有顺序 `developPlayers → lifecycle → repairManagedLineups → resetSeasonStats` 的既有部分。
+- **Invariants（D19）** `[已定]`：读档后校验（确定性、无随机）— membership↔`contract.clubId` 一致、retired 无 active contract、
+  无重复 active contract、无无效 clubId/playerId、finance 数值合法、roster/membership 无重复或悬空。
+- **Save / Migration（D12）** `[已定]`：Contract/Finance 落地时再做 **schema 9→10**（加法式）；旧档 112 名 active 球员补**确定性初始合同**；
+  迁移不破坏既有比赛/属性/成长/伤病/退役状态。
+- **RNG（D20）** `[已定]`：Contract/Finance/Transfer v1 **不新增随机源**；不得影响既有比赛/成长/伤病 RNG 序列。
+- **未决（D10）** `[TBD]`：生成球员的合同语义（入队+初始合同 / 先自由身 / 模板继承）留待与青年队 / 自由球员市场 / AI 转会一并决定。
+- **本阶段未实现**：Contract、Finance、Transfer、AI Transfer、Free Agent 市场、UI、schema 变更。
