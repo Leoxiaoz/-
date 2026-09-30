@@ -641,6 +641,58 @@
 
 ---
 
+## D-28 AI Club Decision Framework v1（Step 30 设计冻结 · Step 31 已实现）（对应 SIMULATION_SPEC §33 之后、ROADMAP §2.19）
+
+> 本条使用 **Step 30 决策编号 D-AI-01 ~ D-AI-25**（与项目 `D-xx` 编号属不同命名空间）。
+> Step 30 为**纯设计冻结**；Step 31 **已实现**。**未修改** Schema（仍 **10**）、`SAVE_FORMAT_VERSION`（仍 **1**）、Transfer v1、Free Agent v1、Population Policy、Player Growth / Injury、Match Engine、Team Strength 语义、UI、Controller、HTML、CSS。
+> **未新增 RNG**；**未持久化 AI 状态**；**未引入 OVR**；**未引入复杂 Manager Personality**。
+
+### D-AI-01 ~ D-AI-06 架构与范围 `[已定]`
+- 分层：`AI Decision Layer → AI Action Layer → Existing Domain APIs → Game State`。
+- Decision Layer **纯函数**（只读 state，输出 ephemeral Intent，绝不写 state）；Action Layer 只把 Intent 映射到现有 Domain API；**禁止** AI → Controller → Domain；**禁止** AI → Game State 直接写入。
+- AI 与玩家共享同一 Domain 执行层；`Transfer v1 / Free Agent v1` 为执行基础，**不新增第二套规则**。
+- v1 决策范围（5 类）：Squad Need（纯分析）/ Sign Free Agent / Buy Player / Sell（买方驱动转会的卖方侧）/ Release / Squad Lineup。
+- 实现文件：`src/core/ai/{ai-config,ai-club-policy,ai-need,ai-candidate,ai-suitability,ai-decide,ai-action}.js`。
+
+### D-AI-06 ~ D-AI-10 Need / Candidate / Suitability / Potential / Age `[已定]`
+- Squad Need 区分 **Hard（GK<1 / DF<4 / MF<4 / FW<2 / roster<12 / 可用球员不足以排阵）** 与 **Soft（能力缺口 / 青年储备 / 年龄结构）**；Hard 优先。
+- Candidate Filter：9 步短路顺序；**只筛不排**；输出 **playerId 升序**。
+- Suitability：使用完整 effective attribute vector + position profile；**内部 score 仅当前决策排序**，不持久化、不写入 player、不替代 effective attributes、不改变 transfer fee / team strength / match engine；**无 OVR**。
+- Potential = `potential[attr] - effective[attr]`；Age 仅作 modifier（分档 U21/21–24/25–28/29–32/33+）；不新增结构、不改 Growth。
+
+### D-AI-11 ~ D-AI-14 Finance / FA / Transfer / Sell-Release `[已定]`
+- 财政：必须同时满足 `fee ≤ cash` **且** `fee ≤ availableTransferBudget`；`availableTransferBudget = max(0, transferBudget - max(RESERVE_ABS, RESERVE_RATIO × transferBudget))`（**保留安全储备**）。唯一变更入口为 `transferPlayer / signFreeAgent / releasePlayerToFreeAgent`。
+- Free Agent **优先**：存在满足需求且零成本的 FA → 优先 FA，无合适 FA 才付费转会。
+- Transfer 目标排序：需求相关 → suitability → 年龄/潜力上下文 → **playerId 升序**（确定性 tie-break，禁用 `Math.random()`）。
+- Sell 无独立挂牌/listing/intent/market；仅作为买方驱动转会的卖方侧。Release 约束：**不释放最后 GK**、释放后 **roster ≥ 12**、**DF/MF/FW 最低线保持**、仅冗余（低 suitability / 高龄）。
+- 每俱乐部每赛季：**买入 ≤ 2**（含 FA 签约）、**卖出 + Release ≤ 2**。
+
+### D-AI-15 ~ D-AI-19 Decision / Determinism / Timing / Ordering / Explainability `[已定]`
+- Decision Object：`{decisionId, clubId, season, date, type, playerId, targetClubId, position, reasonCode, priority, estimatedCost, confidence, context}`；**ephemeral**，不持久化；`decisionId` 确定性（非 UUID）。
+- **不使用 RNG**（v1 deterministic-first）；保留未来独立命名空间 `worldId|ai|...`。
+- Trigger：**仅 Season Boundary**，冻结顺序 `developPlayers → runPlayerLifecycle → AI → repairManagedLineups → resetSeasonStats`；**仅非 managed 俱乐部**执行。
+- Action Ordering：每俱乐部 `Need → Release → FA → Buy → Lineup`；**每步后重读最新 state**；俱乐部按 `clubId` 升序。
+- Explainability：`recordEvent(state,'ai_decision',{clubId,season,date,type,playerId,targetClubId,position,reasonCode,estimatedCost})`；reasonCode 白名单 8 项；无自然语言推理。
+
+### D-AI-20 ~ D-AI-25 Personality / Persistence / Stability / Anti-Convergence / OVR `[已定]`
+- 最小 Club Policy（≤3 档：Balanced / YouthFocus / Conservative），由 `hashSeed(clubId|'ai-policy') % 3` **派生**，**不持久化、不给 clubs 增加字段**；**禁止**复杂人格系统。
+- **v1 完全派生，不持久化 AI 状态**；唯一持久痕迹为 `runtime.events` 中的 `ai_decision`。
+- Schema **保持 10**；`SAVE_FORMAT_VERSION` **保持 1**；**无 migration**；**无新容器**。
+- 长期稳定：10/50/100/200 赛季不变量 + 黄金回归（`143/143/1141`）必须保持。
+- 反趋同：顺序执行 + 每步重读 + 差异化需求 + 动作上限 + 预算储备 + 最小 Policy + 确定性 tie-break。
+- **禁止单一 OVR**；内部 score 仅为上下文 Suitability Score。
+
+### D-28 实现验证（Step 31）`[已实现]`
+- `SimulationCore` 新增 `enableAI` 构造选项（**缺省启用**）；接入 `#rollFinishedSeasons`（Population Health 之后、lineup repair 之前），**仅非 managed 俱乐部**。
+- 新增 `tests/ai.test.js`（A–O）并接入 `tests/run.js`；累计 **303/303 通过**。
+- 4 个既有测试（`season` 指纹基线 / `lifecycle` A / `membership` v6 与长跑成员纯净）显式 `{enableAI:false}` 以隔离非 AI 子系统——其原有断言与基线**未做任何数值调整**。
+- 黄金回归 `totalGoals=143 / playerGoals=143 / playerApp=1141` **不变**。
+- 长跑（AI 启用）：population 稳定于边界区间 [96,112]，无 NaN / 负值 / 超员 / 最后 GK 破坏 / membership 致命问题。
+
+**仍 Deferred（不属 v1）**：AI Manager personality / reputation / Board / Club Vision、Scout、Agent、Negotiation、Loan、Contract Renewal / Expiry、Wage negotiation、Transfer Window、Multi-league / Cup / International AI、AI tactical deep simulation、AI coaching / training planning、AI youth academy planning、Market Value、**D10**。
+
+---
+
 ## 仍属 TBD（未受影响）
 
 - GAME_DESIGN：T1、T2、T3、T4、T5、T7–T13、T15、T16、T17

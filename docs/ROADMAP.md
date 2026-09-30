@@ -298,6 +298,15 @@
 - **仍未实现（Step 29+）**：Transfer UI / AI Transfer / Contract Expiry / Renewal / Loan / Window / Negotiation / Market Value / Transfer History / 收入系统 / **D10**。
 - 详见 [DECISIONS D-27](file:///workspace/docs/DECISIONS.md) 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §33。
 
+### 2.19 设计冻结 + 实现（2026-09-30，Step 30 / Step 31：AI Club Decision Framework v1）
+
+- **Step 30 = Design Frozen**：冻结 **D-AI-01 ~ D-AI-25**（架构 Decision→Action→Domain→State；5 类决策；Hard/Soft Need；9 步 Candidate Filter；Suitability 非 OVR；FA 优先；确定性排序；仅 Season Boundary 触发；每步重读；ai_decision 事件；最小 Club Policy；不持久化；schema 10 / save 1；黄金回归不变）。详见 [DECISIONS D-28](file:///workspace/docs/DECISIONS.md)。
+- **Step 31 = Implementation（已实现）**：新增 [src/core/ai/](file:///workspace/src/core/ai)（`ai-config` / `ai-club-policy` / `ai-need` / `ai-candidate` / `ai-suitability` / `ai-decide` / `ai-action`）；
+  [simulation.js](file:///workspace/src/core/simulation.js) 新增 `enableAI`（缺省启用）并接入 `#rollFinishedSeasons`（Population Health 后、lineup repair 前，仅非 managed 俱乐部）。
+- **执行层**：仅经 `transferPlayer` / `signFreeAgent` / `releasePlayerToFreeAgent` 与合法 lineup 能力；不直接改 membership / contract / finance / generated。
+- **验证**：新增 `tests/ai.test.js`（A–O）；累计 **303/303 通过**；黄金回归（143/143/1141）不变；10/50/100/200 赛季长跑（AI 启用）不变量稳定；Save/Load 往返一致。
+- **仍未实现（Step 32+）**：AI Manager personality / Board / Scout / Agent / Negotiation / Loan / Contract Renewal / Expiry / Transfer Window / Market Value / 多联赛 AI / **D10**。
+
 ---
 
 ## 3. 第三阶段：完整足球世界
