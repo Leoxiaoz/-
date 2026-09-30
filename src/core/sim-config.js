@@ -39,6 +39,35 @@ export const LINEUP_CONFIG = Object.freeze({
 });
 
 /**
+ * 俱乐部阵容边界（Step 26B；DECISIONS D-24 的 D7 / D16）。
+ * 语义：**边界（boundary）而非精确目标**——只判定「是否低于下限 / 高于上限」，不追求恢复到固定人数。
+ * - `MIN_PLAYERS`：阵容人数下限。低于即 roster deficit（应视为真实缺口）。
+ * - `MAX_PLAYERS`：阵容人数上限。**超过仅作诊断（over-cap），绝不自动裁员**。
+ * - `PREFERRED_PLAYERS`：**软偏好点**，仅供解释/展示，**不是硬目标**
+ *   （禁止 `current < 14 → 补到 14`，禁止 `15 → 裁到 14`；合法区间为 [MIN, MAX]）。
+ * - 位置最低保障：`MIN_GK` 单列（GK 不重复计入 `MIN_BY_POSITION`）；
+ *   结构最低 = GK 1 + DF 4 + MF 4 + FW 2 = 11，而 `MIN_PLAYERS = 12` 额外保留 1 名阵容缓冲。
+ * 说明：位置最低线为**可排阵/可运行**的结构性保障（不随阵型变化），供人口评估使用。
+ */
+export const ROSTER_CONFIG = Object.freeze({
+  MIN_PLAYERS: 12,
+  MAX_PLAYERS: 24,
+  PREFERRED_PLAYERS: 14,
+  MIN_GK: 1,
+  MIN_BY_POSITION: Object.freeze({ DF: 4, MF: 4, FW: 2 }),
+});
+
+/**
+ * 世界人口最低边界（Step 26B；DECISIONS D-24 的 D16）。
+ * 语义：世界人口的**防坍缩安全线**（boundary，非 exact target）。
+ * - 只回答「整个世界是否缺人（active world population < 本值）」，**不指定位置、不恢复某队到固定人数、不裁人、不建自由球员**。
+ * - MVP 标准世界取 `8 队 × ROSTER_CONFIG.MIN_PLAYERS(12) = 96`；**禁止设为 112**（会重造 exact-112 隐性语义）。
+ * - 有效世界下限另按「实际俱乐部数 × MIN_PLAYERS」派生并与本值取较小者（见 player-lifecycle：小规模自定义世界不被强制膨胀）。
+ * - 正常生命周期中，俱乐部层补位后世界人口恒 ≥ Σ俱乐部下限，故本安全网通常**不会独立触发**，仅作兜底。
+ */
+export const WORLD_MIN_POPULATION = 96;
+
+/**
  * 各线评分参考属性（MVP 最小集，DECISIONS D-11）。
  * 供 `team-strength`（选阵/实力/比赛修复）与 `player-lineup`（赛季自愈回填）共用，避免重复定义。
  */

@@ -408,19 +408,21 @@
 - **新生代**：每赛季批次；年龄 17–19；同位置**静态模板 + 三路独立有界抖动**（base ±3 / headroom ±2 / personality ±3）；
   `base ≤ potential ≤ 99`；默认 vitals（100/50/50）、健康、空伤病史；ID `ply_g_<seq>`（序号入档、永不回退）。
 - **首次成长时机**：`growth.lastEvaluatedSeason = 生成时 prevSeason`（**非 0**）→ 生成当次不成长，**完整下一赛季结束后**首次成长。
-- **人口补位**：`target(club) = 世界创建时该队初始人数`（`runtime.populationTarget` 快照，含按位置明细）；
-  生效目标 `max(初始位置数, 阵型最低需求)` 且 **GK ≥ 1/队**；只生成不删除；不设自由球员池；不无控增长；小型世界按自身规模自适应。
+- **人口补位（Step 26B 更新；落地 DECISIONS D-24 的 D16）**：**边界语义（boundary），不再是精确目标**。
+  - **World**：`WORLD_MIN_POPULATION`（防坍缩最低线；MVP = 8 × `ROSTER_CONFIG.MIN_PLAYERS` = 96，且不高于「实际俱乐部数 × 阵容下限」，使小规模世界不被强制膨胀）。只回答「世界是否缺人」。
+  - **Club**：`ROSTER_CONFIG` —— `MIN_PLAYERS` 12 / `MAX_PLAYERS` 24 / `PREFERRED_PLAYERS` 14（**软偏好，非硬目标**）/ `MIN_GK` 1 / `MIN_BY_POSITION` DF4·MF4·FW2（结构最低 11 + 1 缓冲 = 12）。位置缺口优先于人数缺口且驱动生成位置。
+  - **绝不超过 MAX 自动裁员**（仅作 over-cap 诊断）；只生成不删除；**不设自由球员池**；生成**绝不创建无归属 active 球员**（World 安全网亦只在现有 Club 中确定性选承接目标）。
+  - `runtime.populationTarget` **退出人口业务逻辑**（仅作 legacy 快照保留，`GAME_STATE_SCHEMA_VERSION` 仍为 10）。
 - **赛季滚动顺序**（`simulation.js`）：结算上一赛季成长 → 退役+归档 → 计算缺口并生成（属下一赛季）→ 重置本赛季统计 → 进入下一赛季。
 - **确定性**：退役/生成均为项目 deterministic RNG；同（库+档+种子）完全可复现。
 - **开关**：`RETIREMENT_CONFIG.ENABLED`（默认 true）；false 时跳过退役与新生代，结构不变、行为回到 §22。
 - **运行时常量**：`generated` / `retired` / `nextGeneratedSeq` / `populationTarget`；`GAME_STATE_SCHEMA_VERSION` 4→5（加法式，旧档兜底）。
-- **长期护栏（实测，MVP 世界 8 队；1/10/50/100/200 赛季）**：总人口恒 112、GK 恒 8、无重复 ID；
-  年龄均值 22.3/25.3/23.9/25.2/26.6；base 均值 54.2/54.2/54.6/53.8/54.1；
-  potential 均值 62.2/62.2/62.5/61.9/62.1（**不坍缩、不膨胀**）；退役≈新生（108/108、221/221、454/454）。
+- **长期护栏（实测，MVP 世界 8 队；10/50/100/200 赛季；Step 26B 边界语义后）**：人口稳定于 **96**（= 8 × `MIN_PLAYERS`，**非 exact-112**）、
+  俱乐部 12–13 人、GK 恒 8、无重复 ID、**不坍缩也不膨胀**；`populationTarget` legacy 快照仍随档往返。
 - **明确未实现**：自由球员池、转会、合同、青训梯队、预备队、名人堂 UI、财政、教练、多联赛、完整伤病史、
   fixture 级 `recordAppearance` 防重、历史存档裁剪（均属后续步骤）。
-- **测试**：`tests/lifecycle.test.js`（19 项）——退役概率/曲线/硬上限/确定性/归档、
-  新生代字段/首次成长时机、人口（GK≥1/不超目标/不增长）、小型世界、访问器、退出/进入系统联动、
+- **测试**：`tests/lifecycle.test.js`——退役概率/曲线/硬上限/确定性/归档、
+  新生代字段/首次成长时机、人口边界（World/Club 分离，含 Step 26B 行为测试 A–I）、小型世界、访问器、退出/进入系统联动、
   v4→v5 迁移、序号防回退、存档往返、ID 唯一不复用、10/50/100/200 赛季稳定。
 
 ---

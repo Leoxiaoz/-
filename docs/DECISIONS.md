@@ -186,8 +186,10 @@
     fitness 100 / form 50 / morale 50 / 健康 / injuryHistory 归零；**首个完整赛季后可正常参与 growth/injury/match**。
   - **首次成长时机**：新生代 `growth.lastEvaluatedSeason = 生成时的 prevSeason`（= 所属新赛季号 − 1，**不使用 0**），
     故生成当次不成长，首次成长发生在**完整下一赛季结束**的那次 rollover。
-  - **人口**：`target(club) = 世界创建时该队初始球员数`（快照于 `runtime.populationTarget`，含按位置明细）；
-    生效目标 = `max(初始位置数, 阵型最低需求)`，且 **GK ≥ 1/队**；只生成不删除；**不引入自由球员池**；不无控增长。
+  - **人口（Step 26B 更新，落地 D-24 的 D16）**：**废弃**"每赛季精确恢复到初始人数"的旧政策；
+    改为**边界语义**——World 用 `WORLD_MIN_POPULATION`（防坍缩最低线，非 exact target），Club 用 `ROSTER_CONFIG`
+    （`MIN_PLAYERS`/`MAX_PLAYERS` + 位置最低保障，`PREFERRED_PLAYERS` 仅为软偏好）；`runtime.populationTarget` **退出人口业务逻辑**
+    （仅作 legacy 快照保留）；只生成不删除；超过上限**仅诊断不裁员**；**不引入自由球员池**；不无控增长。
   - **架构**：保持 `static.players` 只读；新生代落 `runtime.generated`（含 `teamId`）；退役落 `runtime.retired`（保留 career/终值快照）；
     引入**统一世界球员访问器**（`getWorldPlayers` / `getTeamPlayers` / `getPlayerProfile` / `isRetired`），
     既有 4 模块 9 处直读 `state.static.players` 全部迁移到访问器。
@@ -195,8 +197,8 @@
   - **开关**：`RETIREMENT_CONFIG.ENABLED`（默认 true）；false 时完全跳过退役与新生代，**结构不变**，行为回到第 18 步。
 - **运行时新增字段**：`generated`、`retired`、`nextGeneratedSeq`、`populationTarget`；`GAME_STATE_SCHEMA_VERSION` 4→5（加法式）。
 - **接线**：`simulation.js` 赛季滚动顺序 = 结算成长 → 退役+归档 → 计算缺口并生成 → 重置赛季统计 → 进入下一赛季。
-- **实测（MVP 世界 8 队，10/50/100/200 赛季）**：总人口恒 112、GK 恒 8、无重复 ID、年龄均值 22–27、
-  base 均值 54.2→54.6/53.8/54.1、potential 均值 62.2→62.5/61.9/62.1（**不坍缩、不膨胀**）、退役≈新生（108/108、221/221、454/454）。
+- **实测（MVP 世界 8 队，10/50/100/200 赛季；Step 26B 边界语义后）**：人口稳定于 **96**（= 8 × `ROSTER_CONFIG.MIN_PLAYERS`，**非 exact-112**）、
+  俱乐部 12–13 人、GK 恒 8、无重复 ID、**不坍缩也不膨胀**（每队均满足位置最低保障）。
 - 落地：[player-lifecycle.js](file:///workspace/src/core/player-lifecycle.js)、`player-runtime.js`、`game-state.js`、`sim-config.js`、
   [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §23、`tests/lifecycle.test.js`（19 项）。
 
@@ -383,6 +385,8 @@
 - **D16 Population Policy** `[已定]`：**废弃**"每赛季精确恢复到初始 112 人"的长期人口政策；
   **世界人口保护**与**俱乐部阵容保护**必须**分离**：world population 用 **minimum / health boundary**（非 exact target），club roster 用 **lower / upper bounds**；
   转会 / 释放 / 自由球员**不得被下一赛季自动补充立即抵消**；新球员生成只用于**真正的人口健康/阵容缺口**，不用于机械恢复到 112。
+  - **已落地（Step 26B）**：`WORLD_MIN_POPULATION`（World 最低边界）+ `ROSTER_CONFIG`（Club 阵容边界 + 位置最低保障）；
+    `runtime.populationTarget` 退出人口业务逻辑（legacy 快照）；`replenishPopulation` 改为边界驱动；生成由缺口位置驱动、确定性、不创建无归属 active player。
 - **D17 Economic Closure** `[已定]`：**v1 不扣除工资现金**；wage 仅作合同属性与 wageBudget 约束；
   若未来要让工资真正影响 cash，**必须同时**设计收入/奖金/运营收入等**完整经济闭环**；闭环建立前**不得**擅自增加工资现金流。
 - **D18 Injury + Transfer** `[已定]`：**允许受伤球员转会**；injury 状态**不**作为转会禁止条件；转会后**保持**其 injury runtime 状态，**不重置伤病**。

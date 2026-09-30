@@ -16,7 +16,7 @@ import { resolveMatchSquad, computeTeamStrength } from '../src/core/team-strengt
 import {
   getEffectiveAttributes, getPlayerRuntime, getWorldPlayers, initializePlayerRuntime, recordAppearance,
 } from '../src/core/player-runtime.js';
-import { MATCH_PERFORMANCE_CONFIG } from '../src/core/sim-config.js';
+import { MATCH_PERFORMANCE_CONFIG, ROSTER_CONFIG } from '../src/core/sim-config.js';
 import { serializeState, deserializeState, MemorySaveManager } from '../src/save/save-manager.js';
 import { makeLeagueWorldFiles } from './fixtures.js';
 
@@ -260,8 +260,11 @@ test('长期 10/50/100 赛季：人口/GK/数值/评分/统计无异常漂移', 
     const state = leagueState(8);
     new SimulationCore().advanceDays(state, seasons * 125);
     const world = getWorldPlayers(state);
-    assertEquals(world.length, 112, `${seasons} 季后活跃人口应为 112`);
-    assertEquals(world.filter((p) => p.position === 'GK').length, 8, `${seasons} 季后 GK 应为 8`);
+    // Step 26B：人口为边界语义，允许在 [Σ俱乐部下限, 初始人口] 区间波动（不再精确恢复 112）。
+    assert(world.length >= 8 * ROSTER_CONFIG.MIN_PLAYERS && world.length <= 112,
+      `${seasons} 季后活跃人口应在边界区间内（实际 ${world.length}）`);
+    assert(world.filter((p) => p.position === 'GK').length >= 8,
+      `${seasons} 季后 GK 应不少于每队 1（实际 ${world.filter((p) => p.position === 'GK').length}）`);
     for (const p of world) {
       const rt = getPlayerRuntime(state, p.id);
       assert(rt, `应有 ${p.id} 运行时`);

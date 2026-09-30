@@ -10,6 +10,7 @@ import { parseWorld } from '../src/data/data-loader.js';
 import { SimulationCore } from '../src/core/simulation.js';
 import { getSeasonCalendar, isSeasonBoundaryReached } from '../src/core/season.js';
 import { initializePlayerRuntime } from '../src/core/player-runtime.js';
+import { ROSTER_CONFIG } from '../src/core/sim-config.js';
 import { MemorySaveManager, deserializeState } from '../src/save/save-manager.js';
 import { makeLeagueWorldFiles } from './fixtures.js';
 
@@ -229,12 +230,16 @@ test('10/50/100 赛季：人口/统计/成员关系稳定，season 与 comp.seas
     assertEquals(state.season, comp.season, `${seasons}季 state.season 应与 comp.season 同步`);
     assertEquals(getSeasonCalendar(state).season, comp.season);
     const active = Object.values(state.runtime.players).length;
-    assertEquals(active, 112, `${seasons}季后活跃人口应为 112`);
+    // Step 26B：人口改为**边界语义**——允许在 [Σ俱乐部下限, 初始人口] 区间自然波动，
+    // 不再机械恢复到 112（exact-112 已退出业务逻辑）。
+    assert(active >= 8 * ROSTER_CONFIG.MIN_PLAYERS,
+      `${seasons}季后活跃人口应不低于俱乐部下限总和（实际 ${active}）`);
+    assert(active <= 112, `${seasons}季后活跃人口不应超过初始规模（实际 ${active}）`);
     for (const [id, rt] of Object.entries(state.runtime.players)) {
       assert(Number.isFinite(rt.fitness) && rt.fitness >= 0 && rt.fitness <= 100, `${id} fitness 非法`);
       assert(Number.isFinite(rt.stats.career.appearances), `${id} 统计非法`);
     }
-    // populationTarget 不被破坏
+    // populationTarget 仅作 legacy 快照保留（不再参与人口业务逻辑，仍随世界初始化建立）。
     assertEquals(Object.keys(state.runtime.populationTarget).length, 8);
   }
 });

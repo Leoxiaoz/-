@@ -19,6 +19,7 @@ import {
   getClubFinance, getSpendableCash, normalizeFinance, assertFinanceInvariants, financeTemplate,
 } from '../src/core/finance.js';
 import { getWorldPlayers, initializePlayerRuntime } from '../src/core/player-runtime.js';
+import { ROSTER_CONFIG } from '../src/core/sim-config.js';
 import { getPlayerClub, removePlayerMembership, validateMembership } from '../src/core/membership.js';
 import { GAME_STATE_SCHEMA_VERSION as SCHEMA } from '../src/core/game-state.js';
 import { makeLeagueWorldFiles } from './fixtures.js';
@@ -306,8 +307,12 @@ test('长期 10/50/100 赛季：合同/财政不变量稳定，无 NaN，退役�
     new SimulationCore().advanceDays(state, seasons * 125);
     assertContractInvariants(state);
     assertFinanceInvariants(state);
-    assertEquals(getWorldPlayers(state).length, 112, `${seasons} 季后人口应为 112`);
-    assertEquals(getWorldPlayers(state).filter((p) => p.position === 'GK').length, 8, `${seasons} 季后 GK 应为 8`);
+    // Step 26B：人口为边界语义，允许在 [Σ俱乐部下限, 初始人口] 区间波动（不再精确恢复 112）。
+    const world = getWorldPlayers(state);
+    assert(world.length >= 8 * ROSTER_CONFIG.MIN_PLAYERS && world.length <= 112,
+      `${seasons} 季后人口应在边界区间内（实际 ${world.length}）`);
+    assert(world.filter((p) => p.position === 'GK').length >= 8,
+      `${seasons} 季后 GK 应不少于每队 1（实际 ${world.filter((p) => p.position === 'GK').length}）`);
     for (const [clubId, club] of Object.entries(state.runtime.clubs)) {
       for (const k of ['cash', 'wageBudget', 'transferBudget']) {
         assert(Number.isFinite(club.finance[k]) && club.finance[k] >= 0, `${clubId}.${k} 非法`);

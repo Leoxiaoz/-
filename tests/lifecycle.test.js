@@ -19,11 +19,12 @@ import {
   initializePlayerRuntime,
   INJURY_STATUS,
 } from '../src/core/player-runtime.js';
-import { retireProbability } from '../src/core/player-lifecycle.js';
+import { retireProbability, evaluatePopulationHealth, replenishPopulation, generatePlayer } from '../src/core/player-lifecycle.js';
 import { developPlayers } from '../src/core/player-growth.js';
 import { computeTeamStrength } from '../src/core/team-strength.js';
+import { addPlayerMembership, validateMembership, getPlayerClub } from '../src/core/membership.js';
 import { serializeState, deserializeState, MemorySaveManager } from '../src/save/save-manager.js';
-import { RETIREMENT_CONFIG, GENERATION_CONFIG } from '../src/core/sim-config.js';
+import { RETIREMENT_CONFIG, GENERATION_CONFIG, ROSTER_CONFIG, WORLD_MIN_POPULATION } from '../src/core/sim-config.js';
 import { makeLeagueWorldFiles } from './fixtures.js';
 
 const ATTRS = ['pace', 'technique', 'passing', 'defending', 'finishing', 'goalkeeping'];
@@ -179,36 +180,46 @@ test('新生代不在生成当次 rollover 成长；下一赛季结束后才首�
   assertEquals(getPlayerRuntime(state, genId).growth.lastEvaluatedSeason >= 2, true, '第 2 季结束后应已成长');
 });
 
-// ---------- 人口：GK 不真空、不无限增长、位置不真空 ----------
-test('人口补位：每队 GK≥1、人数不超过目标、不无限增长', () => {
+// ---------- 人口（Step 26B：Boundary 语义，非 exact target）----------
+test('人口补位：每队满足阵容边界与位置最低保障，且不无限增长', () => {
   const state = agedState(8, ['FW', 'GK', 'DF']);
   new SimulationCore().advanceDays(state, 8 * 125);
   for (const clubId of Object.keys(state.runtime.clubs)) {
     const roster = getTeamPlayers(state, clubId);
-    const gk = roster.filter((p) => p.position === 'GK').length;
-    assert(gk >= 1, `${clubId} 出现 GK 真空`);
-    const target = state.runtime.populationTarget[clubId];
-    assert(roster.length <= target.total, `${clubId} 超过目标人口 ${roster.length}>${target.total}`);
-    for (const pos of POSITIONS) {
-      assert(roster.some((p) => p.position === pos), `${clubId} 位置 ${pos} 真空`);
-    }
+    const count = roster.length;
+    const byPos = (p) => roster.filter((x) => x.position === p).length;
+    assert(byPos('GK') >= ROSTER_CONFIG.MIN_GK, `${clubId} GK 低于最低保障`);
+    assert(count >= ROSTER_CONFIG.MIN_PLAYERS, `${clubId} 低于人数下限（${count}）`);
+    assert(count <= ROSTER_CONFIG.MAX_PLAYERS, `${clubId} 超过人数上限（${count}）`);
+    assert(byPos('DF') >= ROSTER_CONFIG.MIN_BY_POSITION.DF, `${clubId} DF 低于最低保障`);
+    assert(byPos('MF') >= ROSTER_CONFIG.MIN_BY_POSITION.MF, `${clubId} MF 低于最低保障`);
+    assert(byPos('FW') >= ROSTER_CONFIG.MIN_BY_POSITION.FW, `${clubId} FW 低于最低保障`);
   }
 });
 
-test('长期人口稳定：总人数恒定在目标附近，不随赛季无限增长', () => {
+test('长期人口稳定：人口在 [Σ俱乐部下限, 初始] 内波动，不机械恢复初始规模', () => {
   const state = agedState(8, ['FW']);
-  const totalTarget = Object.values(state.runtime.populationTarget).reduce((s, t) => s + t.total, 0);
+  const clubCount = Object.keys(state.runtime.clubs).length;
+  const initialTotal = activePlayers(state).length; // 112
   new SimulationCore().advanceDays(state, 30 * 125);
-  assertEquals(activePlayers(state).length, totalTarget, '总活跃人数应回到目标规模');
+  const total = activePlayers(state).length;
+  assert(total >= clubCount * ROSTER_CONFIG.MIN_PLAYERS,
+    `总活跃人数应不低于俱乐部下限总和（实际 ${total}）`);
+  assert(total <= initialTotal, `总活跃人数不应超过初始规模（实际 ${total}>${initialTotal}）`);
+  // 强制老龄化后人口应随退休自然下降——exact-112 恢复已被废弃。
+  assert(total < initialTotal, `人口应随退休下降而非机械恢复初始规模（实际 ${total}）`);
 });
 
 // ---------- 小型世界 ----------
-test('小型世界：补位有限（不按大库规模造人），人口稳定不爆炸', () => {
+test('小型世界：按俱乐部边界补位（不按大库规模造人），人口稳定不爆炸', () => {
   const state = createGameState(parseWorld(smallWorldFiles()));
   new SimulationCore().advanceDays(state, 20 * 125);
   const perClub = Object.keys(state.runtime.clubs).map((c) => getTeamPlayers(state, c).length);
-  // 每队被补到"阵型最低需求"（GK1+DF4+MF4+FW2=11），不会无限增长。
-  for (const n of perClub) assert(n <= 11, `小型世界补位应受阵型最低需求约束，实际 ${n}`);
+  // 每队被补到阵容下限（GK1+DF4+MF4+FW2=11 结构 + 1 缓冲 = MIN_PLAYERS=12），不会无限增长。
+  for (const n of perClub) {
+    assert(n >= ROSTER_CONFIG.MIN_PLAYERS && n <= ROSTER_CONFIG.MAX_PLAYERS,
+      `小型世界阵容应在边界内，实际 ${n}`);
+  }
   const after = activePlayers(state).length;
   new SimulationCore().advanceDays(state, 10 * 125);
   assertEquals(activePlayers(state).length, after, '小型世界人口应稳定');
@@ -363,7 +374,8 @@ test('50 赛季：人口稳定、年龄结构合理、能力不坍缩不膨胀',
   new SimulationCore().advanceDays(state, 50 * 125);
   assertWorldStable(state, '50季');
   const s50 = stats(state);
-  assertEquals(s50.total, s0.total, '50 赛季后总人口应稳定');
+  assert(s50.total >= 8 * ROSTER_CONFIG.MIN_PLAYERS && s50.total <= s0.total,
+    `50 赛季后总人口应在边界区间内（${s50.total}）`);
   assert(s50.avgAge > 20 && s50.avgAge < 33, `年龄均值应合理（${s50.avgAge.toFixed(1)}）`);
   assert(s50.baseMean >= s0.baseMean * 0.6 && s50.baseMean <= s0.baseMean * 1.4,
     `基础能力均值应稳定（${s0.baseMean.toFixed(2)}→${s50.baseMean.toFixed(2)}）`);
@@ -377,7 +389,8 @@ test('100 赛季：人口稳定、无坍缩（均值不低于初始 60%）', () 
   new SimulationCore().advanceDays(state, 100 * 125);
   assertWorldStable(state, '100季');
   const s100 = stats(state);
-  assertEquals(s100.total, s0.total, '100 赛季后总人口应稳定');
+  assert(s100.total >= 8 * ROSTER_CONFIG.MIN_PLAYERS && s100.total <= s0.total,
+    `100 赛季后总人口应在边界区间内（${s100.total}）`);
   assert(s100.baseMean >= s0.baseMean * 0.6, `能力不应坍缩（${s0.baseMean.toFixed(2)}→${s100.baseMean.toFixed(2)}）`);
 });
 
@@ -387,8 +400,154 @@ test('200 赛季：人口稳定、无坍缩/膨胀、无重复 ID、GK 不真空
   new SimulationCore().advanceDays(state, 200 * 125);
   assertWorldStable(state, '200季');
   const s200 = stats(state);
-  assertEquals(s200.total, s0.total, '200 赛季后总人口应稳定');
+  assert(s200.total >= 8 * ROSTER_CONFIG.MIN_PLAYERS && s200.total <= s0.total,
+    `200 赛季后总人口应在边界区间内（${s200.total}）`);
   assert(s200.baseMean >= s0.baseMean * 0.6 && s200.baseMean <= s0.baseMean * 1.4,
     `200 赛季基础能力均值应稳定（${s0.baseMean.toFixed(2)}→${s200.baseMean.toFixed(2)}）`);
   assert(s200.potMean <= s0.potMean * 1.2 + 1, `potential 均值不应持续膨胀（${s0.potMean.toFixed(2)}→${s200.potMean.toFixed(2)}）`);
+});
+
+// ========== Step 26B：Population Policy（World / Club 分离）行为测试 ==========
+
+/** 把 src 队的前 count 名指定位置球员转入 dst 队（模拟 roster 变动，使用归属 API）。 */
+function transferPlayers(state, srcClub, dstClub, position, count) {
+  const ids = getTeamPlayers(state, srcClub).filter((p) => p.position === position).map((p) => p.id);
+  for (let i = 0; i < count; i += 1) addPlayerMembership(state, ids[i], dstClub);
+}
+function rosterCount(state, clubId) {
+  return getTeamPlayers(state, clubId).length;
+}
+function byPosition(state, clubId, position) {
+  return getTeamPlayers(state, clubId).filter((p) => p.position === position).length;
+}
+
+test('A. 退役不再导致下一季精确恢复：14 → 13（边界内）不补人', () => {
+  const files = makeLeagueWorldFiles(8);
+  // 仅让 clb_001 的一名 FW 超龄退役（其余球员年龄 17–28，不达退役软区间）。
+  files.players.find((p) => p.teamId === 'clb_001' && p.position === 'FW').birthDate = '1986-06-15';
+  const state = createGameState(parseWorld(files));
+  assertEquals(rosterCount(state, 'clb_001'), 14);
+  new SimulationCore().advanceDays(state, 92); // 完成第 1 季并滚动
+  assertEquals(rosterCount(state, 'clb_001'), 13, '13 仍在边界内（>= MIN_PLAYERS），不得补回 14');
+  assertEquals(byPosition(state, 'clb_001', 'FW'), 2, 'FW 仍在位置最低保障内');
+  assertEquals(Object.values(state.runtime.generated).filter((g) => g.teamId === 'clb_001').length, 0,
+    '边界内不得因人口政策生成');
+});
+
+test('B. 转会兼容：卖方 13（>= MIN）不补人；买方 15（<= MAX）不裁员；跌破下限才补', () => {
+  const state = leagueState(8);
+  transferPlayers(state, 'clb_001', 'clb_002', 'MF', 1); // A:14→13，B:14→15
+  assertEquals(rosterCount(state, 'clb_001'), 13);
+  assertEquals(rosterCount(state, 'clb_002'), 15);
+  const gen = replenishPopulation(state, { fromSeason: 1, toSeason: 2 });
+  assertEquals(gen.length, 0, '边界内的 roster 变动不得触发人口生成');
+  assertEquals(rosterCount(state, 'clb_001'), 13, '卖方不补回 14');
+  assertEquals(rosterCount(state, 'clb_002'), 15, '买方不裁员');
+
+  // 卖方跌破下限（11）才进入缺口并补位到下限。
+  transferPlayers(state, 'clb_001', 'clb_002', 'DF', 2); // A:13→11
+  assertEquals(rosterCount(state, 'clb_001'), 11);
+  const gen2 = replenishPopulation(state, { fromSeason: 2, toSeason: 3 });
+  assertEquals(gen2.length, 1, '跌破下限应补位');
+  assertEquals(rosterCount(state, 'clb_001'), ROSTER_CONFIG.MIN_PLAYERS, '补到人数下限（非 preferred）');
+});
+
+test('C. 俱乐部位置缺口（0 GK）触发 GK 生成（非随机位置）', () => {
+  const state = leagueState(8);
+  transferPlayers(state, 'clb_001', 'clb_002', 'GK', 1); // A GK 1→0
+  assertEquals(byPosition(state, 'clb_001', 'GK'), 0);
+  const gen = replenishPopulation(state, { fromSeason: 1, toSeason: 2 });
+  assertEquals(gen.length, 1, '应恰好生成 1 名 GK');
+  const g = state.runtime.generated[gen[0]];
+  assertEquals(g.position, 'GK', '生成位置应为缺失位置 GK');
+  assertEquals(g.teamId, 'clb_001', '应生成给缺口俱乐部');
+  assertEquals(byPosition(state, 'clb_001', 'GK'), 1);
+});
+
+test('D. 俱乐部总人数缺口（11，结构合法）触发人数补位', () => {
+  const state = leagueState(8);
+  transferPlayers(state, 'clb_001', 'clb_002', 'DF', 1);
+  transferPlayers(state, 'clb_001', 'clb_002', 'MF', 1);
+  transferPlayers(state, 'clb_001', 'clb_002', 'FW', 1);
+  assertEquals(rosterCount(state, 'clb_001'), 11);
+  // 结构仍合法（GK1 / DF4 / MF4 / FW2）。
+  assert(byPosition(state, 'clb_001', 'GK') >= 1 && byPosition(state, 'clb_001', 'DF') >= 4
+    && byPosition(state, 'clb_001', 'MF') >= 4 && byPosition(state, 'clb_001', 'FW') >= 2);
+  const gen = replenishPopulation(state, { fromSeason: 1, toSeason: 2 });
+  assertEquals(gen.length, 1, '总人数低于下限应补 1 人');
+  assertEquals(rosterCount(state, 'clb_001'), ROSTER_CONFIG.MIN_PLAYERS);
+});
+
+test('E. 超员（> MAX）仅诊断，绝不自动裁员', () => {
+  const state = leagueState(8);
+  for (let i = 0; i < 11; i += 1) {
+    generatePlayer(state, { position: 'MF', teamId: 'clb_001', season: 1, fromSeason: 0 });
+  }
+  assertEquals(rosterCount(state, 'clb_001'), 25);
+  const health = evaluatePopulationHealth(state);
+  assertEquals(health.clubs.clb_001.overCap, true, '25 > MAX 应产生 over-cap 诊断');
+  assertEquals(health.clubs.clb_001.deficit, false, '超额不应视为缺口');
+  const gen = replenishPopulation(state, { fromSeason: 1, toSeason: 2 });
+  assertEquals(gen.length, 0, '超额不触发生成');
+  assertEquals(rosterCount(state, 'clb_001'), 25, '绝不自动裁员');
+});
+
+test('F. PREFERRED_PLAYERS 不是硬目标：13 不因 preferred=14 而生成', () => {
+  const state = leagueState(8);
+  transferPlayers(state, 'clb_001', 'clb_002', 'MF', 1); // 13
+  const gen = replenishPopulation(state, { fromSeason: 1, toSeason: 2 });
+  assertEquals(gen.length, 0, '不得因 preferred 触发生成');
+  assertEquals(rosterCount(state, 'clb_001'), 13, '不得补到 preferred(14)');
+});
+
+test('G. populationTarget 为 legacy：删除后人口评估与生成结果不变', () => {
+  const withTarget = leagueState(8);
+  const withoutTarget = leagueState(8);
+  delete withoutTarget.runtime.populationTarget;
+  for (const s of [withTarget, withoutTarget]) {
+    transferPlayers(s, 'clb_001', 'clb_002', 'DF', 1);
+    transferPlayers(s, 'clb_001', 'clb_002', 'MF', 1);
+    transferPlayers(s, 'clb_001', 'clb_002', 'FW', 1);
+  }
+  assertEquals(
+    JSON.stringify(evaluatePopulationHealth(withTarget).clubs.clb_001.needs),
+    JSON.stringify(evaluatePopulationHealth(withoutTarget).clubs.clb_001.needs),
+    '人口评估不得依赖 populationTarget',
+  );
+  const g1 = replenishPopulation(withTarget, { fromSeason: 1, toSeason: 2 });
+  const g2 = replenishPopulation(withoutTarget, { fromSeason: 1, toSeason: 2 });
+  assertEquals(g2.length, g1.length, '生成数量不得依赖 populationTarget');
+  assert(g2.length >= 1, '缺失 legacy 字段仍应按缺口生成');
+});
+
+test('H. 人口补位后 membership invariant 成立：无无归属 active player', () => {
+  const state = leagueState(8);
+  transferPlayers(state, 'clb_001', 'clb_002', 'GK', 1);
+  transferPlayers(state, 'clb_001', 'clb_002', 'DF', 2);
+  replenishPopulation(state, { fromSeason: 1, toSeason: 2 });
+  assertEquals(validateMembership(state).fatal, [], '不得产生致命 membership 问题');
+  for (const p of getWorldPlayers(state)) {
+    assert(getPlayerClub(state, p.id) != null, `${p.id} 必须归属某 club（不得生成无归属 active player）`);
+  }
+});
+
+test('I. 人口评估与生成确定性：相同输入两次结果完全一致（不新增 RNG）', () => {
+  const build = () => {
+    const s = leagueState(8);
+    transferPlayers(s, 'clb_001', 'clb_002', 'GK', 1);
+    transferPlayers(s, 'clb_002', 'clb_003', 'MF', 2);
+    return s;
+  };
+  const a = build();
+  const b = build();
+  assertEquals(
+    JSON.stringify(evaluatePopulationHealth(a)),
+    JSON.stringify(evaluatePopulationHealth(b)),
+    '人口评估应确定性',
+  );
+  const ga = replenishPopulation(a, { fromSeason: 1, toSeason: 2 });
+  const gb = replenishPopulation(b, { fromSeason: 1, toSeason: 2 });
+  assertEquals(ga, gb, '生成序列应确定性');
+  assertEquals(JSON.stringify(a.runtime.generated), JSON.stringify(b.runtime.generated));
+  assertEquals(JSON.stringify(a.runtime.membership), JSON.stringify(b.runtime.membership));
 });

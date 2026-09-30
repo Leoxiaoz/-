@@ -7,7 +7,7 @@
  *   1) 退役判定（年龄软区间线性概率 + 硬上限强制；RNG 可复现）
  *   2) 退役归档（写入 `runtime.retired`，保留职业统计与终值快照）
  *   3) 新生代生成（同位置静态模板 + 三路独立有界抖动；ID 独立命名空间）
- *   4) 人口补位（GK≥1 + 阵型最低需求 + 补足人口目标）
+ *   4) 人口补位（Step 26B：World 最低边界 + Club 阵容边界/位置最低保障；不再恢复到固定人数）
  *
  * 红线：
  * - **不改 `state.static`**（静态库只读）；新生代落于 `runtime.generated`。
@@ -19,8 +19,8 @@
 import {
   RETIREMENT_CONFIG,
   GENERATION_CONFIG,
-  FORMATIONS,
-  DEFAULT_FORMATION,
+  ROSTER_CONFIG,
+  WORLD_MIN_POPULATION,
 } from './sim-config.js';
 import { createRng, hashSeed } from './rng.js';
 import { ageOn } from './date-utils.js';
@@ -39,7 +39,6 @@ import { addPlayerMembership, removePlayerMembership } from './membership.js';
 import { getPlayerContract, terminateContract } from './contract.js';
 import { recordEvent } from './game-state.js';
 
-const POSITIONS = ['GK', 'DF', 'MF', 'FW'];
 const C = RETIREMENT_CONFIG;
 const G = GENERATION_CONFIG;
 
@@ -64,10 +63,65 @@ export function retireProbability(age, curve) {
   return Math.min(1, (age - curve.softStart + 1) / span);
 }
 
-/** 阵型最低位置需求（GK 恒 1）。 */
-function formationMinimum(formation) {
-  const f = FORMATIONS[formation] ?? FORMATIONS[DEFAULT_FORMATION];
-  return { GK: 1, DF: f.DF, MF: f.MF, FW: f.FW };
+/** 阵容缓冲球员的位置补充顺序（确定性；仅用于「位置保障已满足但人数仍低于下限」时）。 */
+const EXTRA_POSITION_ORDER = ['DF', 'MF', 'FW', 'GK'];
+
+/** 统计某俱乐部的活跃球员位置分布。 */
+function clubPositionCounts(state, clubId) {
+  const counts = { GK: 0, DF: 0, MF: 0, FW: 0 };
+  for (const player of getTeamPlayers(state, clubId)) {
+    if (counts[player.position] != null) counts[player.position] += 1;
+  }
+  return counts;
+}
+
+/** 某俱乐部「位置最低保障」缺口（确定性顺序：GK → DF → MF → FW）。 */
+function positionMinimumNeeds(counts) {
+  const needs = [];
+  const gkNeed = Math.max(0, ROSTER_CONFIG.MIN_GK - counts.GK);
+  for (let i = 0; i < gkNeed; i += 1) needs.push('GK');
+  for (const position of ['DF', 'MF', 'FW']) {
+    const min = ROSTER_CONFIG.MIN_BY_POSITION[position] ?? 0;
+    const need = Math.max(0, min - counts[position]);
+    for (let i = 0; i < need; i += 1) needs.push(position);
+  }
+  return needs;
+}
+
+/**
+ * 评估整个世界的人口健康（**只读**、确定性、无随机）。
+ * 职责分离（Step 26B / D16）：
+ * - **World Population**：回答「整个世界是否缺人」——`worldActive < 有效世界下限`；
+ * - **Club Roster**：回答「某俱乐部是否低于阵容边界或位置最低保障」。
+ * 说明：**不再读取 `runtime.populationTarget`**（其已退出人口业务逻辑，仅作 legacy 快照）。
+ * @returns {{worldActive:number, worldMin:number, worldDeficit:number,
+ *            clubs:Record<string,{count:number,byPosition:object,needs:string[],
+ *                             deficit:boolean,overCap:boolean}>}}
+ */
+export function evaluatePopulationHealth(state) {
+  const clubs = {};
+  for (const clubId of Object.keys(state.runtime.clubs)) {
+    const counts = clubPositionCounts(state, clubId);
+    const total = counts.GK + counts.DF + counts.MF + counts.FW;
+    const needs = positionMinimumNeeds(counts);
+    // 位置保障满足后仍低于人数下限 → 追加阵容缓冲球员（确定性顺序；不恢复固定人数）。
+    const buffer = Math.max(0, ROSTER_CONFIG.MIN_PLAYERS - (total + needs.length));
+    for (let i = 0; i < buffer; i += 1) {
+      needs.push(EXTRA_POSITION_ORDER[i % EXTRA_POSITION_ORDER.length]);
+    }
+    clubs[clubId] = {
+      count: total,
+      byPosition: { ...counts },
+      needs,
+      deficit: needs.length > 0,
+      overCap: total > ROSTER_CONFIG.MAX_PLAYERS,
+    };
+  }
+  const worldActive = getWorldPlayers(state).length;
+  const clubCount = Object.keys(state.runtime.clubs).length;
+  // 有效世界下限 = min(MVP 基线, 实际俱乐部数 × 阵容下限)，避免小规模自定义世界被强制膨胀到 MVP 规模。
+  const worldMin = Math.min(WORLD_MIN_POPULATION, clubCount * ROSTER_CONFIG.MIN_PLAYERS);
+  return { worldActive, worldMin, worldDeficit: Math.max(0, worldMin - worldActive), clubs };
 }
 
 /** 取球员基础属性向量。 */
@@ -214,33 +268,46 @@ export function generatePlayer(state, ctx) {
 }
 
 /**
- * 人口补位：按「GK≥1 → 阵型最低需求 → 补足人口目标」的优先级生成新生代。
- * 只生成、不删除；不引入自由球员池；不无控增长。
+ * 人口补位（Step 26B 重写）：**边界驱动、确定性、只生成不删除**。
+ * 流程（职责分离）：
+ *   1) `Population Policy` 评估 World/Club 健康（`evaluatePopulationHealth`）——决定「是否需要生成 / 缺什么 / 给哪个 Club」；
+ *   2) 对存在缺口（位置最低保障或人数下限）的俱乐部，按**缺失位置**生成；
+ *   3) World 安全网：俱乐部补位后**重新评估**，若世界仍低于有效下限，**确定性**选一个未达上限的俱乐部承接
+ *      （**绝不创建无归属 active 球员 / 自由球员**；Free Agent 生命周期属 Step 27）。
+ * 明确：不再按 `populationTarget` 补足固定人数；退休不直接触发生成（统一在此评估）；超过 MAX 不裁员（仅诊断）。
  */
 export function replenishPopulation(state, { fromSeason, toSeason }) {
   const generated = [];
-  const target = state.runtime.populationTarget ?? {};
-  for (const clubId of Object.keys(state.runtime.clubs)) {
-    const formation = state.runtime.clubs[clubId]?.tactics?.formation ?? DEFAULT_FORMATION;
-    const min = formationMinimum(formation);
-    const t = target[clubId] ?? { total: 0, byPosition: {} };
-    const current = { GK: 0, DF: 0, MF: 0, FW: 0 };
-    for (const player of getTeamPlayers(state, clubId)) {
-      if (current[player.position] != null) current[player.position] += 1;
-    }
-    for (const position of POSITIONS) {
-      const effectiveTarget = Math.max(t.byPosition?.[position] ?? 0, min[position]);
-      const need = Math.max(0, effectiveTarget - current[position]);
-      for (let i = 0; i < need; i += 1) {
-        generated.push(generatePlayer(state, {
-          position,
-          teamId: clubId,
-          season: toSeason,
-          fromSeason,
-        }));
-      }
+
+  // 1) 俱乐部缺口（位置优先驱动；顺序 = clubs 插入序，确定性）。
+  const health = evaluatePopulationHealth(state);
+  for (const clubId of Object.keys(health.clubs)) {
+    for (const position of health.clubs[clubId].needs) {
+      generated.push(generatePlayer(state, {
+        position,
+        teamId: clubId,
+        season: toSeason,
+        fromSeason,
+      }));
     }
   }
+
+  // 2) World 安全网（俱乐部补位后重新评估，避免重复计数；正常生命周期通常不触发）。
+  const after = evaluatePopulationHealth(state);
+  if (after.worldDeficit > 0) {
+    const order = Object.keys(after.clubs)
+      .filter((clubId) => after.clubs[clubId].count < ROSTER_CONFIG.MAX_PLAYERS)
+      .sort((a, b) => after.clubs[a].count - after.clubs[b].count || a.localeCompare(b));
+    for (let k = 0; k < after.worldDeficit && order.length > 0; k += 1) {
+      generated.push(generatePlayer(state, {
+        position: EXTRA_POSITION_ORDER[k % EXTRA_POSITION_ORDER.length],
+        teamId: order[k % order.length],
+        season: toSeason,
+        fromSeason,
+      }));
+    }
+  }
+
   return generated;
 }
 
