@@ -141,6 +141,7 @@ export class AppView {
     appendKV(dl, '赛季', String(snapshot.season));
     appendKV(dl, '球队数', String(snapshot.teamsCount));
     appendKV(dl, '球员数', String(snapshot.playersCount));
+    if (snapshot.freeAgentsCount != null) appendKV(dl, '自由球员', String(snapshot.freeAgentsCount));
     appendKV(dl, '事件数', String(snapshot.eventsCount));
     card.appendChild(dl);
     this.root.appendChild(card);

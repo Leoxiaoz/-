@@ -19,6 +19,11 @@ import { initializePlayerRuntime, getTeamPlayers, getPlayerProfile, getPlayerRun
 import { initializeMembership, assertMembershipValid, getClubLeague, getLeagueClubs } from '../core/membership.js';
 import { normalizeContracts, assertContractInvariants } from '../core/contract.js';
 import { normalizeFinance, assertFinanceInvariants } from '../core/finance.js';
+import {
+  assertFreeAgentInvariants, getFreeAgentCount,
+  releasePlayerToFreeAgent as releasePlayerToFreeAgentOp,
+  signFreeAgent as signFreeAgentOp,
+} from '../core/free-agent.js';
 import { buildAutoLineup } from '../core/team-strength.js';
 import { cleanLineup, validateLineup, LINEUP_LIMITS } from '../core/player-lineup.js';
 import { FORMATIONS, MENTALITY, DEFAULT_FORMATION } from '../core/sim-config.js';
@@ -77,6 +82,7 @@ export class GameController {
       season: this.state.season,
       teamsCount: world.teams.length,
       playersCount: world.players.length,
+      freeAgentsCount: getFreeAgentCount(this.state),
       eventsCount: runtime.events.length,
       // 玩家阵容 / 战术（第 20 步）
       managedClubId: runtime.managedClubId ?? null,
@@ -244,6 +250,8 @@ export class GameController {
     normalizeFinance(this.state);
     assertContractInvariants(this.state);
     assertFinanceInvariants(this.state);
+    // Free Agent 不变量（Step 27B / D-26）：free agent 不得在 club roster / lineup；不静默。
+    assertFreeAgentInvariants(this.state);
     this.logger?.info?.(`已读取存档槽 ${slot}`);
     this.#emit();
     return this.state;
@@ -365,6 +373,35 @@ export class GameController {
     const club = this.state.runtime.clubs[clubId];
     const lineup = buildAutoLineup(this.state, clubId, club?.tactics ?? {});
     return this.setLineup(clubId, lineup);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Free Agent（Step 27B）：Controller 仅**转发**到 domain operation，不直接改写
+  // membership / contracts / lineup。失败返回 {success:false, code, issues}（不抛，沿用现有 UI 风格）。
+  // ---------------------------------------------------------------------------
+
+  /** 把球员释放为 Free Agent（Club → Free Agent）。 */
+  releasePlayer(playerId) {
+    this.#requireRunning();
+    try {
+      const r = releasePlayerToFreeAgentOp(this.state, playerId);
+      this.#emit();
+      return { success: true, playerId: r.playerId, fromClubId: r.fromClubId };
+    } catch (err) {
+      return { success: false, code: err?.code, issues: [err?.describe?.() ?? String(err)] };
+    }
+  }
+
+  /** 签约 Free Agent 到指定俱乐部（Free Agent → Club）。 */
+  signFreeAgent(playerId, clubId, terms) {
+    this.#requireRunning();
+    try {
+      const r = signFreeAgentOp(this.state, playerId, clubId, terms ? { terms } : {});
+      this.#emit();
+      return { success: true, playerId: r.playerId, clubId: r.clubId };
+    } catch (err) {
+      return { success: false, code: err?.code, issues: [err?.describe?.() ?? String(err)] };
+    }
   }
 
   #requireRunning() {

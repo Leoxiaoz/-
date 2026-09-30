@@ -249,6 +249,21 @@
 - **Deferred（非 Step 27 blocker）**：**D10**（生成球员合同语义）——`generatePlayer()` 维持「直接入 club、暂可能无 contract」，本阶段不冻结。
 - **下一步（未开始）**：**Step 27 Implementation** —— `releasePlayerToFreeAgent()` / `signFreeAgent()`（未实现）；再进入 **Step 28 Transfer**。
 
+### 2.16 已交付（2026-09-30，Step 27B：Free Agent + Membership Integration）
+
+- **目标**：落地 D-26——实现 Free Agent 运行时（release / signing），保持 membership / contract / population / lifecycle / lineup / save-load 职责边界清晰。
+- **已实现**：新增 [free-agent.js](file:///workspace/src/core/free-agent.js)（`releasePlayerToFreeAgent` / `signFreeAgent` / `getFreeAgents` /
+  `selectFreeAgentForPosition` / `assertFreeAgentInvariants`）；[membership.js](file:///workspace/src/core/membership.js) 允许显式 `null`
+  （`setFreeAgentMembership` / `isFreeAgentMembership`，`initializeMembership` 对已有 key 不重播种）；[contract.js](file:///workspace/src/core/contract.js)
+  新增 `updateContract` / 导出 `validateContractShape` 并补 FA-INV-13/14；[player-lifecycle.js](file:///workspace/src/core/player-lifecycle.js)
+  补位**优先复用现有 Free Agent**，不足才 generation；`controller.load` 追加 `assertFreeAgentInvariants`；快照/UI 增 `freeAgentsCount`。
+- **Free Agent 表达**：`contract{status:'free_agent', clubId:null, wage:0, startSeason=endSeason=当前赛季}` + `membership.players[id]=null`（**无第三套容器**）。
+- **语义**：Free Agent **计入 world population**、**不计入** club roster / team strength / lineup / match；继续参与 lifecycle；**release 不立即生成**。
+- **schema**：**保持 10**；`SAVE_FORMAT_VERSION` 保持 1；未新增 RNG；比赛黄金指纹（143/143/1141）不变。
+- **验证**：`tests/free-agent.test.js`（A–Z + 不变量 + Controller）；累计 **270/270 通过**；10/50/100/200 赛季长跑不变量全通过；Save/Load + 浏览器冒烟通过。
+- **仍未实现（Step 28+）**：Transfer / 转会费 / Contract Expiry / 续约 / AI 转会 / 签约费 / 工资现金流 / **D10（Deferred）** / Free Agent 市场 UI。
+- 详见 [DECISIONS D-26](file:///workspace/docs/DECISIONS.md) 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §32。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

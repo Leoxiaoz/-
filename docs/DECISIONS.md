@@ -428,10 +428,10 @@
 
 ---
 
-## D-26 Free Agent + Membership Integration（Step 27A 设计冻结）（对应 SIMULATION_SPEC §32、SAVE_SPEC §3）
+## D-26 Free Agent + Membership Integration（Step 27A 设计冻结 · Step 27B 已实现）（对应 SIMULATION_SPEC §32、SAVE_SPEC §3）
 
-- **性质**：**纯设计冻结**——本步骤**只修改设计文档**；未改代码 / 测试 / `.fdb` / schema / `SAVE_FORMAT_VERSION` / `sim-config`；
-  **未实现** Free Agent / Release / Signing / Transfer / Contract Expiry；**未新增 RNG**。Free Agent 运行时生命周期仍**未实现**。
+- **性质**：Step 27A 为**纯设计冻结**；**Step 27B 已实现**。schema 仍为 **10**、`SAVE_FORMAT_VERSION` 仍为 **1**；**未新增 RNG**。
+  **仍未实现**：Transfer / 转会费 / Contract Expiry / 续约 / AI 转会 / 签约费 / 工资现金流 / **D10（Deferred）**。
 - **背景**：Step 25 落地 Contract / Finance Foundation（D-25），Step 26B 落地 Population Health + Club Roster Bounds（D16 落地）。
   Step 27 只读审计确认唯一硬阻塞是 `initializeMembership` 的**重播种**行为。本决策即冻结 Free Agent 语义，供 Step 27 Implementation 遵循。
 
@@ -524,9 +524,17 @@
 - `initializeMembership()` **不得**把 `null` membership 的 Free Agent 依 `static.teamId` 拉回原俱乐部（依赖 D-26.2 的「key 存在」表示法）。
 - 本步**不升级** `GAME_STATE_SCHEMA_VERSION` / `SAVE_FORMAT_VERSION`。
 
-### D-26.15 状态 `[未实现]`
-- 本决策为**设计冻结**：**Free Agent / Release / Signing / Transfer / Contract Expiry 均未实现**；Implementation 尚未开始。
-- **Step 27 仍待实现的决策外事项**：补位候选选择、位置匹配、确定性排序、签约条款模板（属 Step 27 Implementation，不再作为设计阻塞项）。
+### D-26.15 状态 `[已实现（Step 27B）]`
+- **已实现落地**（[free-agent.js](file:///workspace/src/core/free-agent.js)）：`getFreeAgents` / `getFreeAgentCount` / `selectFreeAgentForPosition` /
+  `releasePlayerToFreeAgent` / `signFreeAgent` / `assertFreeAgentInvariants`；
+  membership 新增 `setFreeAgentMembership` / `isFreeAgentMembership`（[membership.js](file:///workspace/src/core/membership.js)），
+  `validateMembership` 允许显式 `null`；contract 新增 `updateContract` / 导出 `validateContractShape`
+  并补 FA-INV-13/14（[contract.js](file:///workspace/src/core/contract.js)）。
+- **Population 集成**：`replenishPopulation` 俱乐部缺口**优先复用现有 Free Agent**（`selectFreeAgentForPosition` → `signFreeAgent`），
+  无可用 Free Agent 才 `generatePlayer`（[player-lifecycle.js](file:///workspace/src/core/player-lifecycle.js)）。
+- **读档不变量**：`controller.load` 追加 `assertFreeAgentInvariants`（不静默）。
+- **仍未实现**：Transfer、Contract Expiry、续约、AI 转会、签约费、工资现金流、**D10（Deferred）**、Free Agent 市场 UI。
+- 落地测试：`tests/free-agent.test.js`（A–Z + 不变量 + Controller）。
 
 ---
 

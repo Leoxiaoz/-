@@ -12,8 +12,8 @@
  * 红线：
  * - **不产生随机**（D20）：期限/工资全为确定性模板，同输入恒同结果。
  * - **不改 `state.static`**；不写 membership（归属由 membership 负责，二者以 invariant 关联）。
- * - Step 25 **不启用 free agent 运行时生命周期**：本模块只提供 `free_agent` 的**数据结构与校验**，
- *   migration 阶段**不创建** free agent（Free Agent 生效属 Step 27）。
+ * - `free_agent` 的**数据结构与校验**在本模块；Free Agent 的**运行时生命周期（release / sign）**由 domain operation
+ *   `src/core/free-agent.js` 编排（Step 27B / D-26）；`normalizeContracts` 仍**不创建** free agent。
  */
 
 import { SimulationError } from '../shared/errors.js';
@@ -111,9 +111,12 @@ export function defaultContractTemplate(state, player, clubId) {
   };
 }
 
-/** 校验合同数值字段（抛 SimulationError）。 */
-function assertValidFields(contract) {
-  const { playerId, clubId, startSeason, endSeason, wage, status } = contract;
+/**
+ * 校验合同**数值/结构**字段（纯函数，抛 SimulationError）。Step 27B 起对外导出，供 domain operation 复用。
+ * 注意：本函数**不校验**与 membership / club 的一致性（那属 `createContract` / `updateContract`）。
+ */
+export function validateContractShape(contract) {
+  const { playerId, clubId, startSeason, endSeason, wage, status } = contract || {};
   if (typeof playerId !== 'string' || playerId.length === 0) {
     throw new SimulationError('合同需要非空 playerId', { context: { playerId } });
   }
@@ -137,6 +140,48 @@ function assertValidFields(contract) {
 }
 
 /**
+ * 原子更新一份**已存在**合同的字段（Step 27B 内部接口；由 domain operation 编排 release/sign）。
+ * 校验先行（结构 + 与 membership/club 一致性），全部通过后才**一次性覆盖**；失败不产生任何变更。
+ * 本函数不触碰 lineup / finance / runtime——那是调用方（domain operation）的职责。
+ * @param {object} state
+ * @param {string} playerId
+ * @param {{status?: string, clubId?: string|null, startSeason?: number, endSeason?: number, wage?: number}} patch
+ * @returns {object|null} 更新后合同副本（不存在返回 null）
+ */
+export function updateContract(state, playerId, patch = {}) {
+  const existing = getPlayerContract(state, playerId);
+  if (!existing) return null;
+  const next = {
+    playerId,
+    clubId: patch.clubId !== undefined ? patch.clubId : existing.clubId,
+    startSeason: patch.startSeason !== undefined ? patch.startSeason : existing.startSeason,
+    endSeason: patch.endSeason !== undefined ? patch.endSeason : existing.endSeason,
+    wage: patch.wage !== undefined ? patch.wage : existing.wage,
+    status: patch.status !== undefined ? patch.status : existing.status,
+  };
+  // 1) 结构校验（先验）。
+  validateContractShape(next);
+  // 2) 一致性校验（先验，全部通过才 commit）。
+  if (next.status === CONTRACT_STATUS.ACTIVE) {
+    if (typeof next.clubId !== 'string' || !state.runtime.clubs?.[next.clubId]) {
+      throw new SimulationError('active 合同需要有效 clubId', { context: { playerId, clubId: next.clubId } });
+    }
+    if (getPlayerClub(state, playerId) !== next.clubId) {
+      throw new SimulationError('active 合同必须与 membership 归属一致', {
+        context: { playerId, contractClub: next.clubId, membershipClub: getPlayerClub(state, playerId) },
+      });
+    }
+  } else if (getPlayerClub(state, playerId) != null) {
+    throw new SimulationError('free_agent 合同不得与 membership 归属并存', {
+      context: { playerId, membershipClub: getPlayerClub(state, playerId) },
+    });
+  }
+  // 3) 一次性提交。
+  state.runtime.contracts[playerId] = next;
+  return { ...state.runtime.contracts[playerId] };
+}
+
+/**
  * 创建一份合同（Foundation operation；**不实现 transfer/sign/release**）。
  * - active：clubId 必须为有效 club，且 `membership.players[playerId] === clubId`（一致性）；退役者禁止。
  * - free_agent：clubId=null，且 membership 不得有 club 归属（Step 25 不主动创建，仅校验结构）。
@@ -147,7 +192,7 @@ export function createContract(state, contract) {
     throw new SimulationError('createContract 需要包含 runtime 的状态');
   }
   state.runtime.contracts ??= {};
-  assertValidFields(contract);
+  validateContractShape(contract);
   const { playerId, clubId, status } = contract;
 
   if (getPlayerContract(state, playerId)) {
@@ -250,6 +295,9 @@ export function assertContractInvariants(state) {
     } else {
       if (c.clubId !== null) fatal.push(`free_agent 合同 ${key} clubId 必须为 null`);
       if (getPlayerClub(state, key) != null) fatal.push(`free_agent ${key} 不得有 membership 归属`);
+      // FA-INV-13 / FA-INV-14（Step 27B / D-26.4）：Free Agent 无有效工资合同；赛季锚点为单季。
+      if (c.wage !== 0) fatal.push(`free_agent 合同 ${key} wage 必须为 0`);
+      if (c.startSeason !== c.endSeason) fatal.push(`free_agent 合同 ${key} startSeason 必须等于 endSeason`);
     }
   }
   if (fatal.length > 0) {

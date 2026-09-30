@@ -78,6 +78,13 @@
 > **不新增任何 runtime 容器**（无 `freeAgents` / `playersWithoutClub` / `marketPlayers`），**不升级 `GAME_STATE_SCHEMA_VERSION`（仍 10）**、
 > **不改 `SAVE_FORMAT_VERSION`（仍 1）**。旧档（无 Free Agent）继续正常加载；新档 Free Agent 必须 save → load 状态完全一致。
 > 详见 `DECISIONS.md` D-26 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §32。
+>
+> **实现更新（Step 27B · Free Agent + Membership Integration，2026-09-30）**：Free Agent 运行时**已实现**（release / signing）。
+> 存档语义不变：Free Agent = `runtime.contracts[playerId]`（`status='free_agent'`、`clubId=null`、`wage=0`、
+> `startSeason=endSeason=进入自由身的赛季`）**且** `runtime.membership.players[playerId]=null`（key 保留、值显式 null）。
+> **无新增 runtime 容器**；`GAME_STATE_SCHEMA_VERSION` **保持 10**、`SAVE_FORMAT_VERSION` **保持 1**；
+> `initializeMembership` 对已存在的 key（含 `null`）**不重播种**；`controller.load` 追加 `assertFreeAgentInvariants`。
+> 旧档（无 Free Agent）继续正常加载。详见 `DECISIONS.md` D-26.15。
 
 ## 0. 文档定位与边界
 

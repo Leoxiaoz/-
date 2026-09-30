@@ -101,7 +101,7 @@ test('合同：free_agent 结构合法且不变量通过；与 membership/clubId
   removePlayerMembership(state, id);
 
   const c = createContract(state, {
-    playerId: id, clubId: null, startSeason: 1, endSeason: 2, wage: 0, status: 'free_agent',
+    playerId: id, clubId: null, startSeason: 1, endSeason: 1, wage: 0, status: 'free_agent',
   });
   assertEquals(c.clubId, null);
   assert(isFreeAgent(state, id));
@@ -113,7 +113,7 @@ test('合同：free_agent 结构合法且不变量通过；与 membership/clubId
   terminateContract(state, id2);
   removePlayerMembership(state, id2);
   assertThrows(() => createContract(state, {
-    playerId: id2, clubId: 'clb_001', startSeason: 1, endSeason: 2, wage: 0, status: 'free_agent',
+    playerId: id2, clubId: 'clb_001', startSeason: 1, endSeason: 1, wage: 0, status: 'free_agent',
   }), 'SimulationError');
 });
 

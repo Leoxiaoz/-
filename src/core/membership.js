@@ -10,7 +10,8 @@
  *   }
  * - 运行期**任何**归属判断只经本模块；静态字段（static.players[].teamId / static.teams[].leagueId）与
  *   runtime.generated[].teamId 仅作为**初始化种子 / 兼容镜像**，运行期不得据此判断归属。
- * - active 球员**必须**属于一个 club（本阶段不实现自由球员）。
+ * - active 球员归属为 **string clubId（属于某 club）或显式 null（Free Agent，Step 27B / D-26.2）**；两者均为合法。
+ *   key 存在即「已有归属」，即使 value 为 null 也不得由静态/新生代种子重播种。
  * - 退役球员一律移出 active membership。
  * - 全部初始化/迁移/修复**确定性**（无随机、无时间戳）。
  *
@@ -64,7 +65,8 @@ function activePlayerIds(state) {
 /**
  * 建立/补齐成员关系（幂等、确定性）。
  * - 已有且有效的归属**保留**（存档值优先，不用静态种子覆盖）；
- * - 缺失的 club→league 用静态种子补齐；缺失的 active player→club 用静态/新生代种子补齐；
+ *   **key 存在即视为已有归属**：`value===null`（Free Agent）也必须保留、**不得重播种**（Step 27B / D-26.2）；
+ * - 缺失的 club→league 用静态种子补齐；缺失 key 的 active player→club 用静态/新生代种子补齐；
  * - 退役球员一律移出 active membership；
  * - 否则不删除已有条目（未知条目交由 `validateMembership` 诊断）。
  * @returns {object} state（原地）
@@ -72,17 +74,18 @@ function activePlayerIds(state) {
 export function initializeMembership(state) {
   const m = ensureContainer(state);
   if (!m) return state;
+  const hasKey = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 
   // club → league：从静态种子补齐缺失项。
   for (const team of state.static?.teams ?? []) {
-    if (team && typeof team.id === 'string' && !(team.id in m.clubs)) {
+    if (team && typeof team.id === 'string' && !hasKey(m.clubs, team.id)) {
       m.clubs[team.id] = typeof team.leagueId === 'string' ? team.leagueId : null;
     }
   }
-  // active player → club：静态球员。
+  // active player → club：静态球员（仅缺失 key 才播种；显式 null = Free Agent，保留不重播种）。
   for (const p of state.static?.players ?? []) {
     if (isRetiredLocal(state, p.id)) continue;
-    if (!(p.id in m.players) && typeof p.teamId === 'string') {
+    if (!hasKey(m.players, p.id) && typeof p.teamId === 'string') {
       m.players[p.id] = p.teamId;
     }
   }
@@ -90,7 +93,7 @@ export function initializeMembership(state) {
   for (const g of Object.values(state.runtime?.generated ?? {})) {
     if (!g || typeof g.playerId !== 'string') continue;
     if (isRetiredLocal(state, g.playerId)) continue;
-    if (!(g.playerId in m.players) && typeof g.teamId === 'string') {
+    if (!hasKey(m.players, g.playerId) && typeof g.teamId === 'string') {
       m.players[g.playerId] = g.teamId;
     }
   }
@@ -176,9 +179,37 @@ export function removePlayerMembership(state, playerId) {
 }
 
 /**
+ * 标记为「无俱乐部」（Free Agent，Step 27B / D-26.2）：`players[playerId] = null`。
+ * **key 必须保留**（value 显式 null）——若用 delete 删 key，`initializeMembership` 会依静态/新生代种子重播种回原俱乐部。
+ * @returns {object} state（原地）
+ */
+export function setFreeAgentMembership(state, playerId) {
+  const m = ensureContainer(state);
+  if (!m) {
+    throw new SimulationError('setFreeAgentMembership 需要包含 runtime 的状态', { context: { playerId } });
+  }
+  if (typeof playerId !== 'string' || playerId.length === 0) {
+    throw new SimulationError('setFreeAgentMembership 需要非空字符串 playerId', { context: { playerId } });
+  }
+  m.players[playerId] = null;
+  return state;
+}
+
+/** 是否为显式「无俱乐部」成员（key 存在且值 === null）。 */
+export function isFreeAgentMembership(state, playerId) {
+  const players = state?.runtime?.membership?.players;
+  return Boolean(players)
+    && Object.prototype.hasOwnProperty.call(players, playerId)
+    && players[playerId] === null;
+}
+
+/**
  * 校验成员关系（不修改任何状态）。区分致命问题与可诊断问题。
- * 致命：active 球员缺归属 / 归属无效 club；club 缺归属 / 归属无效 league；退役者仍在 active membership。
+ * active 球员的归属值合法为：**string clubId**（属于某俱乐部）或**显式 null**（Free Agent，Step 27B / D-26.2）。
+ * 致命：active 球员**缺失归属记录** / 归属值非法（非 string 且非 null）/ 归属无效 club；
+ *       club 缺归属 / 归属无效 league；退役者仍在 active membership。
  * 诊断：membership 含未知 player / 未知 club。
+ * 说明：本模块**不依赖 contract**——Free Agent 与合同状态的一致性由更高层 invariant 负责。
  * @returns {{fatal: string[], warnings: string[], stats: object}}
  */
 export function validateMembership(state) {
@@ -191,11 +222,14 @@ export function validateMembership(state) {
   const validLeagueIds = new Set((state.static?.leagues ?? []).map((l) => l.id));
   const actives = activePlayerIds(state);
   const activeSet = new Set(actives);
+  const hasKey = (key) => Object.prototype.hasOwnProperty.call(m.players, key);
 
   for (const id of actives) {
+    if (!hasKey(id)) { fatal.push(`active player ${id} 缺少归属记录`); continue; }
     const clubId = m.players[id];
-    if (clubId == null) fatal.push(`active player ${id} 缺少 club 归属`);
-    else if (!validClubIds.has(clubId)) fatal.push(`player ${id} 归属无效 club ${clubId}`);
+    if (clubId === null) continue; // Free Agent：合法（无俱乐部）
+    if (typeof clubId !== 'string') { fatal.push(`active player ${id} membership 值非法：${JSON.stringify(clubId)}`); continue; }
+    if (!validClubIds.has(clubId)) fatal.push(`player ${id} 归属无效 club ${clubId}`);
   }
   for (const [id, clubId] of Object.entries(m.players)) {
     if (isRetiredLocal(state, id)) {
@@ -203,8 +237,9 @@ export function validateMembership(state) {
       continue;
     }
     if (!activeSet.has(id)) warnings.push(`membership 含未知/已移除 player ${id}`);
-    if (clubId == null) fatal.push(`player ${id} 归属为空 club`);
-    else if (!validClubIds.has(clubId)) fatal.push(`player ${id} 归属无效 club ${clubId}`);
+    if (clubId === null) continue; // Free Agent：合法
+    if (typeof clubId !== 'string') { fatal.push(`player ${id} membership 值非法：${JSON.stringify(clubId)}`); continue; }
+    if (!validClubIds.has(clubId)) fatal.push(`player ${id} 归属无效 club ${clubId}`);
   }
   for (const [clubId, leagueId] of Object.entries(m.clubs)) {
     if (!validClubIds.has(clubId)) {

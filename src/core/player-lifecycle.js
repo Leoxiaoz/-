@@ -37,6 +37,7 @@ import {
 } from './player-runtime.js';
 import { addPlayerMembership, removePlayerMembership } from './membership.js';
 import { getPlayerContract, terminateContract } from './contract.js';
+import { selectFreeAgentForPosition, signFreeAgent } from './free-agent.js';
 import { recordEvent } from './game-state.js';
 
 const C = RETIREMENT_CONFIG;
@@ -268,21 +269,29 @@ export function generatePlayer(state, ctx) {
 }
 
 /**
- * 人口补位（Step 26B 重写）：**边界驱动、确定性、只生成不删除**。
+ * 人口补位（Step 26B 边界驱动 + Step 27B Free Agent 优先）：**确定性、只生成不删除**。
  * 流程（职责分离）：
  *   1) `Population Policy` 评估 World/Club 健康（`evaluatePopulationHealth`）——决定「是否需要生成 / 缺什么 / 给哪个 Club」；
- *   2) 对存在缺口（位置最低保障或人数下限）的俱乐部，按**缺失位置**生成；
+ *   2) 对存在缺口（位置最低保障或人数下限）的俱乐部，按**缺失位置**补位：
+ *      **第一优先** 复用现有 Free Agent（`selectFreeAgentForPosition` → `signFreeAgent`）；
+ *      **第二优先** 才 `generatePlayer` 生成新生代；
  *   3) World 安全网：俱乐部补位后**重新评估**，若世界仍低于有效下限，**确定性**选一个未达上限的俱乐部承接
- *      （**绝不创建无归属 active 球员 / 自由球员**；Free Agent 生命周期属 Step 27）。
- * 明确：不再按 `populationTarget` 补足固定人数；退休不直接触发生成（统一在此评估）；超过 MAX 不裁员（仅诊断）。
+ *      （**绝不创建无归属 active 球员 / 自由球员**；release / sign 见 `free-agent.js`）。
+ * 明确：不再按 `populationTarget` 补足固定人数；退休/释放不直接触发生成（统一在此评估）；超过 MAX 不裁员（仅诊断）。
  */
 export function replenishPopulation(state, { fromSeason, toSeason }) {
   const generated = [];
 
-  // 1) 俱乐部缺口（位置优先驱动；顺序 = clubs 插入序，确定性）。
+  // 1) 俱乐部缺口（位置优先；顺序 = clubs 插入序，确定性）。
+  //    位置缺口优先复用现有 Free Agent（Step 27B / D-26.7）：有合适的 Free Agent 则签约，否则才生成新生代。
   const health = evaluatePopulationHealth(state);
   for (const clubId of Object.keys(health.clubs)) {
     for (const position of health.clubs[clubId].needs) {
+      const freeAgentId = selectFreeAgentForPosition(state, position);
+      if (freeAgentId) {
+        signFreeAgent(state, freeAgentId, clubId);
+        continue;
+      }
       generated.push(generatePlayer(state, {
         position,
         teamId: clubId,

@@ -678,10 +678,14 @@
 
 ---
 
-## §32 Free Agent + Membership Integration（Step 27A 设计冻结，未实现）
+## §32 Free Agent + Membership Integration（Step 27A 设计冻结 · Step 27B 已实现）
 
-- **状态**：**设计已冻结（Step 27A）；Implementation 尚未开始**。Free Agent / Release / Signing / Transfer / Contract Expiry **均未实现**；
-  schema 仍为 **10**，`SAVE_FORMAT_VERSION` 仍为 **1**。决策编号见 [DECISIONS D-26](file:///workspace/docs/DECISIONS.md)。
+- **状态**：**设计已冻结（Step 27A）；运行时已实现（Step 27B）**。**仍未实现**：Transfer、Contract Expiry、续约、AI 转会、签约费、工资现金流、**D10（Deferred）**、Free Agent 市场 UI。
+  schema 仍为 **10**，`SAVE_FORMAT_VERSION` 仍为 **1**，未新增 RNG。决策编号见 [DECISIONS D-26](file:///workspace/docs/DECISIONS.md)。
+- **模块**：domain operation 层 [free-agent.js](file:///workspace/src/core/free-agent.js)（`releasePlayerToFreeAgent` / `signFreeAgent` /
+  `getFreeAgents` / `getFreeAgentCount` / `selectFreeAgentForPosition` / `assertFreeAgentInvariants`）；
+  归属层 [membership.js](file:///workspace/src/core/membership.js)（`setFreeAgentMembership` / `isFreeAgentMembership`，`validateMembership` 允许 `null`）；
+  合同层 [contract.js](file:///workspace/src/core/contract.js)（`updateContract` / `validateContractShape`）与人口层 [player-lifecycle.js](file:///workspace/src/core/player-lifecycle.js)。
 - **Contract 是 Free Agent 真相**：`runtime.contracts[playerId] = { playerId, clubId:null, startSeason, endSeason, wage:0, status:'free_agent' }`。
   **不新增** `runtime.freeAgents` / `playersWithoutClub` / `marketPlayers`（不引入第三套业务真相）。
   Free Agent 的 `startSeason = endSeason = 进入自由身的当前赛季`；**不沿用旧合同结束赛季、不保留旧工资**。
@@ -707,4 +711,7 @@
 - **Domain Operations（Step 27 MVP）**：`releasePlayerToFreeAgent()` / `signFreeAgent()`（及 Free Agent 查询 accessor），统一 `plan → validate → commit → assert invariants`；
   UI / AI 不得直接写 membership / contract / finance。`transferPlayer()` 属 Step 28。
 - **Finance**：Free Agent signing v1 **无 transfer fee、无复杂 signing fee、不从 cash 扣工资**（延续 D13/D17）。
-- **不变量**：FA-INV-01 … FA-INV-12（见 [DECISIONS D-26.13](file:///workspace/docs/DECISIONS.md)）。
+- **不变量**：FA-INV-01 … FA-INV-12（见 [DECISIONS D-26.13](file:///workspace/docs/DECISIONS.md)）；实现补 FA-INV-13/14（free_agent `wage=0`、`startSeason=endSeason`）。
+- **实现验证（Step 27B）**：`tests/free-agent.test.js`（release/sign 原子性、membership null、重播种防护、lineup 清理、
+  team strength / match squad 排除、Population 优先复用 Free Agent、退休、save/load、确定性、无 RNG、失败不半提交、Controller）；
+  10/50/100/200 赛季长跑不变量全通过；比赛黄金指纹（143/143/1141）不变；浏览器冒烟 0 error / 0 warning。
