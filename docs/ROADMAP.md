@@ -366,6 +366,19 @@
 - **推荐候选（[建议]）**：① Dynamic Depth Target Intake（现有 Domain / schema 不变 / 需受控重开 D-34.1）；② Bounded Intake Pool（新 Domain / 建议 DEFER）。
 - **待 Step 35C 决策（6 项）**：(1) 是否受控重开 rule 4（生成超出结构缺口）；(2) 是否采用动态 depth target 且是否限定 `[12,16]`；(3) 目标是否必须由状态（age/congestion/need/finance/recent transfer/development）共同决定；(4) 是否引入有界 intake（每季上限 + `N≤112`）；(5) 是否引入 youth/reserve Domain（默认 DEFER）；(6) 如何保证反永久身份与无新吸收态（`96/12/0` 与 `112/14/0` 均不可）。
 
+### 2.25 Supply Mechanism Decision Freeze（2026-09-30，Step 35C：DOCS-ONLY 冻结）
+
+- **性质**：纯文档冻结；**未改代码 / 数据 / 测试 / Schema / Save Format / 配置**；**未跑实现测试 / 长跑 / Browser Smoke**。详见 [DECISIONS D-35.1 ~ D-35.11](file:///workspace/docs/DECISIONS.md)。
+- **路线 α 冻结**：Dynamic Depth Target Intake（**DDTI**），现有 Domain 内实现，**不引入新 Domain**。
+- **路线 β DEFER**：Bounded Intake Pool / Youth·Reserve Pool（新 Domain / schema 风险）。
+- **D-34.1 受控重开**：保留 A（结构缺口）+ B（`world<96`），**新增 C = Controlled Depth Intake**（状态驱动 / 有界 / 确定性 / 非机械 / 不同步 / 不保证 14·16·112 / 不制造交易 / `N≤112`）。
+- **DDTI 语义**：`effectiveDepthTarget_c` = 状态驱动、可逆的 intake target；必须考虑 age / congestion / need / finance / recent transfer / development；禁止 OVR / 单一均值 / 随机 target。
+- **Policy = bias, not identity**；**Target 必须有 hysteresis**；**必须存在硬上下限**（`≥12`、`≤DEPTH_CAP`）。
+- **`112/14/0` 不得成为长期吸收态**（target 异质 / 状态驱动 / 可逆）；**禁止永久 supplier / buyer**。
+- **Generation→FA DEFER**；**Transfer Domain / Match / Team Strength 不修改**；**Schema 10 / Save 1 保持**。
+- **全部具体数值 `[TBD]`**：`DEPTH_CAP`（候选 14/15/16/17）、target function、hysteresis 阈值、per-club / world intake cap —— 留待 **Step 35D 参数实验**。
+- **Step 35D 验收**：10/50/100/200/500 季；`N∈[96,112]`、`R_c∈[12,24]`、`FA≥0`、`cash/transferBudget≥0`、无 NaN/Infinity/负值/`>24`、deterministic、Golden `143/143/1141` 不变；新增生态指标 + **club role transition** + **per-club persistence**（不得只看均值）。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

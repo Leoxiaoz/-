@@ -884,6 +884,79 @@ Step 34 实现后必须测试 **10 / 50 / 100 / 200 / 500** 赛季，至少检�
 
 ---
 
+## D-35 World Economy v2 Supply Mechanism Decision Freeze（Step 35C）（对应 SIMULATION_SPEC §34、ROADMAP §2.25）
+
+> 本条使用 **Step 35 决策编号 D-35.1 ~ D-35.11**（与项目 `D-xx` 编号属不同命名空间）。
+> 性质：**纯文档 Decision Freeze**——**未修改**代码 / 数据 / 测试 / Schema / Save Format / 运行时配置；**未运行**实现测试 / 长跑 / Browser Smoke。
+> 依赖：Step 35A（只读审计）与 Step 35B（只读方案审计）；不重写、不冲突 D-29 / D-33 / D-34。**所有未经模拟验证的具体数值一律 `[TBD]`，留待 Step 35D。**
+
+### D-35.1 Supply Route = α / DDTI `[已定]`
+- **冻结选择路线 α：Dynamic Depth Target Intake（DDTI）**。在现有 Domain 内实现，**不引入新 Domain**。
+- **路线 β（Bounded Intake Pool / Youth·Reserve Pool）本阶段 DEFER**。理由：当前系统仅有 Club Membership / Free Agent / First-team roster，**无** Youth / Reserve / Development Pool；BIP 会引入 active-but-not-first-team 语义，很可能需要新 state / membership 语义 / schema·save migration。当前问题可在不引入新 Domain 的前提下由受控 Population Intake 解决。Youth/Reserve Pool 应作为未来 Youth Academy / Reserve Squad 的**独立架构扩展**，**不作为 Transfer Market v2 的必要依赖**。
+
+### D-35.2 D-34.1 受控重开：Controlled Depth Intake `[已定]`
+- **正式承认数学前提（`[已定]` 事实）**：原规则下 `Gen` 仅在 (A) club structural deficit 或 (B) `N<96` 时发生且不超缺口 ⇒ `Gen ≤ Ret` ⇒ `ΔN = Gen − Ret ≤ 0` ⇒ `N→96` ⇒ `96/12/0` 固定点。**打破该固定点必须允许 `Gen > Ret`**（生成可在"结构缺口之外"产生有限 surplus）；这是本系统**必须接受的数学前提**，非实现细节。
+- **D-34.1 受控扩展**：**保留** A（structural deficit generation）与 B（`world < 96` generation）；**新增** C（**Controlled Depth Intake**）。
+- **C 必须同时满足**：① 状态驱动；② 有界；③ 确定性；④ 非机械；⑤ 非全俱乐部同步；⑥ 非固定年度补人；⑦ 不保证达到 14；⑧ 不保证达到 16；⑨ 不保证达到 112；⑩ 不制造强制交易；⑪ 不改变 Transfer Domain；⑫ 不改变 Match / Team Strength；⑬ 不产生随机 FA flood；⑭ **不允许 `N > 112`**。
+
+### D-35.3 State-driven effectiveDepthTarget `[已定]`
+- **定义**：`effectiveDepthTarget_c` = "当前赛季、当前状态下，该俱乐部合理希望维持的第一队阵容深度"。
+- **它不是**：固定 Club Policy / 固定人口配额 / 固定生成数量 / 固定卖人数量 / 市场身份 / 永久 supplier·buyer 标签。
+- **它是**：状态变量驱动的、**可逆的** AI Population Intake Target。
+- **必须至少考虑（`[已定]`）**：① squad age structure；② positional congestion；③ HARD / COMPETITIVE / SOFT need；④ finance / reserve pressure；⑤ recent transfer activity；⑥ player development context。**允许未来扩展更多状态变量。**
+- **禁止**：单一 OVR；单一 squad average；固定 Policy → 固定 target；**随机 target**；每季随机改变 target。
+- **上下限（`[已定]` 存在性；`[TBD]` 具体值）**：target **必须**存在硬上下限——最低 `target ≥ CLUB_MIN = 12`，最高 `target ≤ DEPTH_CAP`。**DEPTH_CAP 具体值不在本步冻结**（候选 14 / 15 / 16 / 17），留待 **Step 35D 参数实验**。
+
+### D-35.4 Policy is bias, not identity `[已定]`
+- Club Policy（`demandBias / buyBias / sellBias / reserveRatio` 等）**只允许作为 target 的偏置因素**。
+- Policy **不得**直接决定"该俱乐部永远是卖家/买家"。同一 Club 必须能随状态经历 `deficit → neutral → surplus → neutral → deficit`。
+- **Policy 是 bias，不是 identity。**
+
+### D-35.5 Target hysteresis `[已定]`
+- target **必须具备 hysteresis / hysteresis window**，避免 `12 → 13 → 12 → 13` 每季抖动。
+- 概念上区分**进入**条件（`target_up_condition`）与**退出**条件（`target_down_condition`），且退出条件应更严格/不同。
+- **具体阈值与公式 `[TBD]`**，由 Step 35D 参数实验决定。
+
+### D-35.6 Hard depth cap = `DEPTH_CAP` `[TBD]`
+- **只冻结存在性**：`target ≤ DEPTH_CAP`，且 `DEPTH_CAP ≥ HOLDING_TARGET(14)`。
+- **`DEPTH_CAP` 具体数值 `[TBD]`**（候选 14 / 15 / 16 / 17），Step 35D 前**不得冻结**。
+
+### D-35.7 Intake caps `[TBD]`
+- Controlled Depth Intake **不是**"`roster < target` 就一定生成"，而是"`roster < target` **且当前状态允许 intake** 时才允许生成"。
+- **必须存在**（`[已定]` 存在性）：① 每 Club 每季 intake cap；② World 每季 intake cap；③ `N ≤ 112` hard constraint。
+- **具体数值 `[TBD]`**，由 Step 35D 决定。
+
+### D-35.8 No permanent supplier / buyer `[已定]`
+- **禁止**任何 Permanent Supplier Club / Permanent Buyer Club。Club market role 必须是动态状态 `SURPLUS / NEUTRAL / DEFICIT` 且可互相转换。
+- Policy **不得**直接生成永久身份。
+- **`112/14/0` 不得成为长期吸收态**：必须满足 target 异质、状态驱动、可逆、不由 Policy 固定决定、不保证所有 Club 同时达到 14、Controlled Intake 不同步对所有 Club 运行，且系统必须存在 `target < 14` 与 `target > 14` 的状态。
+- **注意**：本步**不**直接冻结 `Σtarget < 112`，而是冻结**结果要求**——"`112/14/0` 不得成为长期吸收态"；**具体实现方式 `[TBD]`**，交由 Step 35D 模拟验证。
+
+### D-35.9 BIP / Youth / Reserve deferred `[已定]`
+- **DEFER**。未来若增加 Youth Squad / Reserve Squad / Academy / Development Pool，**必须重新设计**：membership semantics、active population accounting、promotion / demotion、retirement、injury、save format、schema migration、AI decision layer、transfer eligibility。**本阶段不实现。**
+
+### D-35.10 Generation → Free Agent deferred `[已定]`
+- **不作为当前主供给机制**。理由：Generation → FA 主要增加 **FA liquidity**，**不能直接创造 Club → Club seller supply**。当前 **DEFER**。
+- 如未来需要，**独立设计 bounded FA pool**；**不得通过随机生成 FA 解决 Club seller shortage**。
+
+### D-35.11 Step 35D validation gate `[已定]`
+- Step 35D 才负责**参数实验 + 长期模拟验证**（**路线 α 已冻结，不重新讨论路线**）。
+- **重点验证**：① `DEPTH_CAP`；② target function；③ hysteresis；④ per-club intake cap；⑤ world intake cap；⑥ `N=112` behavior；⑦ target heterogeneity；⑧ club role transition；⑨ seller diversity；⑩ buyer diversity；⑪ transfer activity；⑫ release activity；⑬ FA stability；⑭ population stability。
+- **必须验证的固定点**：`S-A (96/12/0)` 与 `S-B (112/14/0)` **均不得成为长期吸收态**；`S-C (96~112 / mixed roster / mixed FA)` 允许为动态状态但**不得证明为"固定不动"**；`S-D / S-E` **不得形成永久 supplier / buyer 分裂**；`S-F` 允许**短期/阶段性** 0 transfer（若无真实 Need），但**不得因机制错误长期冻结市场**。
+- **验收边界**：运行 **10 / 50 / 100 / 200 / 500** season；检查 `N ∈ [96,112]`、`R_c ∈ [12,24]`、`FA ≥ 0`、`transferBudget ≥ 0`、`cash ≥ 0`、无 NaN / Infinity / 负 roster / `>24`；**deterministic**；**Golden Regression `143 / 143 / 1141` 必须不变**。
+- **新增生态指标**：population range / mean roster / roster distribution / FA distribution / transfer·SELL·RELEASE·FA-signing counts / buyer·seller distribution / **club role transition count** / max consecutive seasons with zero transfer / zero seller / zero buyer / max single-club market participation / target distribution / target transition count。
+- **不得只看平均值**：必须检查 distribution 与 **per-club persistence**（如 Club A 100 季卖 20 次、Club B 0 次，即使全局平均正常，也视为存在潜在永久身份问题）。**市场健康 = Global Metrics + Club-level Persistence。**
+
+### D-35 附：保持不变（不改写）`[已定]`
+- **Transfer Domain 不修改**：仍 `Club A → Club B`，经 `transferPlayer()`；buyer `cash -= fee` 且 `transferBudget -= fee`；seller `cash += fee`，seller `transferBudget` **不自动增加**；Population Supply **不得强迫 Transfer**。
+- **AI 链不变**：`Need → Candidate → Suitability → Finance → Action`；`HARD > COMPETITIVE > SOFT > NONE`。
+- **HOLDING_TARGET = 14 保持**：14 仍是 AI squad holding / surplus 判断参考线，**不是 generation target**；`R=15` 或 `R=16` **不代表必须卖人**；SELL 仍须满足 surplus context / candidate suitability / buyer exists / finance valid / seller structure valid / exit cap / Domain transfer validity。
+- **第一次 surplus 的定义**：系统**不需要从 0 重新制造第一批 surplus**——初始 `N=112 / R_c=14` 已提供初始 depth inventory；DDTI 主要职责是**防止 `112 → retirement → 108 → 104 → 100 → 96 → permanent lock`**，即**维持有限 depth elasticity**，而非最大化人口。
+- **三者分离**：Population Supply（谁创造新 active player）/ Squad Depth Supply（为何某 Club 有 13/14/15/16 人）/ Market Supply（为何某具体 player 成为 surplus / SELL candidate）——**不得混同**；`Population ↑ ≠ Market Supply ↑`。
+- **Schema 10 / Save Format 1 保持**；**Match / Team Strength 不修改**。
+
+---
+
 ## 仍属 TBD（未受影响）
 
 - GAME_DESIGN：T1、T2、T3、T4、T5、T7–T13、T15、T16、T17
