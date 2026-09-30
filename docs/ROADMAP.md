@@ -358,6 +358,14 @@
   8. Step 35 可实现范围 vs 延期（youth Domain 预计延期）？
 - **原则（[建议]）**：仅改阈值/触发器不足；核心是引入一个**高于 Domain Min 的向上深度/供给机制**，并使其**状态相关 + 有界 + 确定性**。
 
+### 2.24 Supply Mechanism Decision Audit（2026-09-30，Step 35B：只读方案审计）
+
+- **性质**：只读；未改代码 / 数据 / 测试 / Schema / Save Format / 配置；**未冻结规则**。结论见 [DECISIONS D-35B](file:///workspace/docs/DECISIONS.md)。
+- **数学结论**：`ΔN = Gen − Ret ≤ 0`（冻结 rule 4 + rule 8）⇒ N 单调收敛 96 ⇒ `96/12/0` 唯一不动点；**全部冻结规则不变时无可行供给机制**。
+- **方案 A–G 审查**：A 固定14 → `112/14/0`；B 非均匀 → 可产 seller（需轮换）；C Policy 动态深度 → 同 B；D 纯状态 → 无注入源；E 生成→FA → 仅 FA 流动性、非 club seller；F Youth/Reserve Domain → 需新 Domain，DEFER；G 组合 → 最有希望、最复杂。
+- **推荐候选（[建议]）**：① Dynamic Depth Target Intake（现有 Domain / schema 不变 / 需受控重开 D-34.1）；② Bounded Intake Pool（新 Domain / 建议 DEFER）。
+- **待 Step 35C 决策（6 项）**：(1) 是否受控重开 rule 4（生成超出结构缺口）；(2) 是否采用动态 depth target 且是否限定 `[12,16]`；(3) 目标是否必须由状态（age/congestion/need/finance/recent transfer/development）共同决定；(4) 是否引入有界 intake（每季上限 + `N≤112`）；(5) 是否引入 youth/reserve Domain（默认 DEFER）；(6) 如何保证反永久身份与无新吸收态（`96/12/0` 与 `112/14/0` 均不可）。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

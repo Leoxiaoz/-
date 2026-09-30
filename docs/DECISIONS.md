@@ -871,6 +871,17 @@ Step 34 实现后必须测试 **10 / 50 / 100 / 200 / 500** 赛季，至少检�
 - **禁止解法**：随机生成 FA 供货；按目标笔数强制交易（违背 deterministic-first 与因果）。
 - **核心待裁问题**：是否让 `Population Floor > ClubCount × ClubMin`（解耦）或保留 floor 另加 Market Supply 机制。**Decision Questions 见 [ROADMAP 2.23](file:///workspace/docs/ROADMAP.md)**。
 
+### D-35B Supply Mechanism Decision Audit（Step 35B）`[审计；不冻结规则]`
+> 只读；未修改代码 / 数据 / 测试 / Schema / Save Format / 运行时配置。以下**全部 `[TBD]`**，供 **Step 35C** 裁定。
+
+- **数学结论（事实）**：在 rule 4（生成仅补结构缺口 / `world<96`）与 rule 8（AI 卖人不使 `roster<12`，由 `sellerKeepsStructure` 强制）不变时，`ΔN = Gen − Ret ≤ 0`（超出 12 的缓冲吸收退役，不触发生成）⇒ **N 单调非增、收敛到 96** ⇒ `96/12/0` 是**唯一**不动点。**在全部冻结规则不变的前提下，不存在可持续供给机制。**
+- **解法必要性**：要产生可持续 surplus，必须容许 `Gen > Ret`（生成**超出**结构缺口）**或**新增注入 Domain。前者需**受控重开 D-34.1**。
+- **方案审查（A–G）**：A 补到14 → 新不动点 `112/14/0`（无 seller）；B 非均匀深度 → 可产 seller（需确定性轮换）；C Policy 动态深度 → 同 B（policy 仅偏好、非身份）；D 纯状态驱动 → **无注入源、不能自举**；E 生成→FA → 仅解决 FA 流动性、**不解决 club↔club seller supply**，需上限；F Youth/Reserve Domain → 可解耦 `N` 与 `ΣR`，但属新 Domain（schema 风险），**建议 DEFER**；G 组合（B/C + D + 保留）→ 最有希望，复杂度最高。
+- **推荐候选（`[建议]`，未冻结）**：① **Dynamic Depth Target Intake（DDTI）**——现有 Domain、schema 不变、需受控重开 D-34.1；② **Bounded Intake Pool（BIP）**——独立池，新 Domain，**建议 DEFER**。
+- **三概念分离**：Population Supply（注入通道）／Squad Depth Supply（某 club 为何 >12）／Market Supply（某球员为何可卖）——**不可混同**；"人口增加 ≠ market supply 增加"。
+- **反永久身份**：任何方案必须使 club 随自身状态在 `surplus→neutral→deficit` 之间迁移；**Policy 仅是偏好，不是永久市场身份**。
+- **待 Step 35C 决策**：见 [ROADMAP 2.24](file:///workspace/docs/ROADMAP.md)。
+
 ---
 
 ## 仍属 TBD（未受影响）
