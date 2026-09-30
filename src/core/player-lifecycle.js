@@ -21,6 +21,7 @@ import {
   GENERATION_CONFIG,
   ROSTER_CONFIG,
   WORLD_MIN_POPULATION,
+  WORLD_SOFT_CAP,
 } from './sim-config.js';
 import { createRng, hashSeed } from './rng.js';
 import { ageOn } from './date-utils.js';
@@ -281,6 +282,9 @@ export function generatePlayer(state, ctx) {
  */
 export function replenishPopulation(state, { fromSeason, toSeason }) {
   const generated = [];
+  // World Soft Cap（Step 34 / D-33.6、D-34.1）：**上限保护**，不是自动补人口目标。
+  // 允许补到 112（世界初始存量即 112），仅阻止**超过** 112 的生成；绝不“低于 112 就补到 112”。
+  const atSoftCap = () => getWorldPlayers(state).length > WORLD_SOFT_CAP;
 
   // 1) 俱乐部缺口（位置优先；顺序 = clubs 插入序，确定性）。
   //    位置缺口优先复用现有 Free Agent（Step 27B / D-26.7）：有合适的 Free Agent 则签约，否则才生成新生代。
@@ -292,6 +296,7 @@ export function replenishPopulation(state, { fromSeason, toSeason }) {
         signFreeAgent(state, freeAgentId, clubId);
         continue;
       }
+      if (atSoftCap()) continue; // 已达生态库存上限：不再生成（FA 复用不受限）
       generated.push(generatePlayer(state, {
         position,
         teamId: clubId,
@@ -308,6 +313,7 @@ export function replenishPopulation(state, { fromSeason, toSeason }) {
       .filter((clubId) => after.clubs[clubId].count < ROSTER_CONFIG.MAX_PLAYERS)
       .sort((a, b) => after.clubs[a].count - after.clubs[b].count || a.localeCompare(b));
     for (let k = 0; k < after.worldDeficit && order.length > 0; k += 1) {
+      if (atSoftCap()) break; // 上限保护
       generated.push(generatePlayer(state, {
         position: EXTRA_POSITION_ORDER[k % EXTRA_POSITION_ORDER.length],
         teamId: order[k % order.length],

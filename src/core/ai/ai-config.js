@@ -34,6 +34,23 @@ export const AI_CONFIG = Object.freeze({
   /** 单次目标排序参与计算的最大候选数（性能护栏，仅截断不影响确定性）。 */
   MAX_CANDIDATES: 8,
 
+  /**
+   * AI Holding Target（Step 34 / D-33.5、D-34：HOLDING_TARGET = 14）。
+   * **仅 AI Decision Layer 使用**：`roster > HOLDING_TARGET` 才允许评估 surplus（RELEASE / SELL）；
+   * `roster <= 14` 时 AI 不主动制造 surplus exit。**不改 Domain**（Domain 仍用 12/24）。
+   */
+  HOLDING_TARGET: 14,
+
+  /** Competitive Need 判定（Step 34 / D-33.3、D-34.3）：位置主力质量相对联赛基线的允许差距。 */
+  COMPETITIVE_UPGRADE_MARGIN: 5,
+  /** Competitive Need 绝对下限：位置主力评分低于此值即视为竞技质量明显不足。 */
+  COMPETITIVE_ABSOLUTE_FLOOR: 52,
+  /** Competitive Need：首发-替补质量断层阈值。 */
+  COMPETITIVE_BENCH_GAP: 12,
+
+  /** AI 主动出售（D-33.4 / D-34）最小可接受 fee：低于此值不值得占用 exit cap（保留 0 = 不设限）。 */
+  SELL_MIN_FEE: 0,
+
   /** 年龄分档（仅消费 age；不复制成长曲线；D-AI-10）。 */
   AGE_BANDS: Object.freeze([
     Object.freeze({ name: 'U21', min: 0, max: 20 }),
@@ -74,15 +91,17 @@ export const AI_CONFIG = Object.freeze({
     'FINANCE_LIMIT',
     'SURPLUS_SQUAD',
     'FREE_AGENT_VALUE',
+    'COMPETITIVE_UPGRADE', // Step 34 / D-33.3：Competitive Need 专属
   ]),
 
   /**
-   * 最小 Club Policy（≤3 档；由 clubId 派生，不持久化；D-AI-20）。
-   * 仅影响少量参数（potential 权重、预算储备比例、是否启用 Soft Need），非人格系统。
+   * 最小 Club Policy（≤3 档；由 clubId 派生，不持久化；D-AI-20、D-33.9）。
+   * 参数：potentialWeight / reserveRatio / softNeedEnabled + demandBias / buyBias / sellBias（Step 34）。
+   * 数值为最小、可解释的配置；全部 derived / deterministic / non-persistent，仅改阈值与权重，不绕过 Domain invariant。
    */
   POLICIES: Object.freeze([
-    Object.freeze({ id: 'Balanced', potentialWeight: 0.35, reserveRatio: 0.25, softNeedEnabled: true }),
-    Object.freeze({ id: 'YouthFocus', potentialWeight: 0.55, reserveRatio: 0.25, softNeedEnabled: true }),
-    Object.freeze({ id: 'Conservative', potentialWeight: 0.35, reserveRatio: 0.40, softNeedEnabled: false }),
+    Object.freeze({ id: 'Balanced', potentialWeight: 0.35, reserveRatio: 0.25, softNeedEnabled: true, demandBias: 1.0, buyBias: 1.0, sellBias: 1.0 }),
+    Object.freeze({ id: 'YouthFocus', potentialWeight: 0.55, reserveRatio: 0.25, softNeedEnabled: true, demandBias: 1.1, buyBias: 1.0, sellBias: 0.9 }),
+    Object.freeze({ id: 'Conservative', potentialWeight: 0.35, reserveRatio: 0.40, softNeedEnabled: false, demandBias: 0.8, buyBias: 0.8, sellBias: 1.1 }),
   ]),
 });

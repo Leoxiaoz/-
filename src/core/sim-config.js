@@ -68,6 +68,13 @@ export const ROSTER_CONFIG = Object.freeze({
 export const WORLD_MIN_POPULATION = 96;
 
 /**
+ * 世界人口「有界生态库存上限」（Step 34 / D-33.6、D-34.1）。
+ * 语义：**上限保护**，非自动补人口目标 —— 任何 `generatePlayer` 前必须满足 `worldActive < WORLD_SOFT_CAP`；
+ * 严禁“低于 112 自动生成到 112”“每季补到 112”。与 `WORLD_MIN_POPULATION`（生存底线）职责分离。
+ */
+export const WORLD_SOFT_CAP = 112;
+
+/**
  * 各线评分参考属性（MVP 最小集，DECISIONS D-11）。
  * 供 `team-strength`（选阵/实力/比赛修复）与 `player-lineup`（赛季自愈回填）共用，避免重复定义。
  */
@@ -189,6 +196,12 @@ export const FINANCE_CONFIG = Object.freeze({
   INITIAL_CASH: 1000,
   INITIAL_WAGE_BUDGET: 400,
   INITIAL_TRANSFER_BUDGET: 600,
+  /**
+   * 赛季边界 transferBudget 再生量（Step 34 / D-33.7、D-34.2）。
+   * carry-over 语义：`new = min(INITIAL_TRANSFER_BUDGET, current + REPLENISHMENT_AMOUNT)`；
+   * 无 RNG、有上限、不 reset、不改 cash。
+   */
+  TRANSFER_BUDGET_REPLENISHMENT: 420,
 });
 
 /**

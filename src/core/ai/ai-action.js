@@ -2,6 +2,7 @@
  * AI Action Layer —— Step 31 / D-AI-03、D-AI-04、D-AI-18、D-AI-22。
  * 层级归属：Simulation Core / AI。**不重新实现任何 Domain 规则**：只把 Decision Object 映射到
  * 现有 Domain API（transferPlayer / signFreeAgent / releasePlayerToFreeAgent / 合法 lineup 能力）。
+ * `SELL_PLAYER`（AI 主动出售，D-33.4）同样只经 `transferPlayer()`。
  *
  * 约束：
  * - 绝不直接改 membership / contract / finance / generated registry。
@@ -53,6 +54,13 @@ export function executeAIAction(state, decision) {
         // 以 Domain 权威结果回填事件中的成本（Intent 中的 estimatedCost 仅占位）。
         recordAIDecision(state, { ...decision, estimatedCost: r.transferFee });
         return { ok: true, playerId: r.playerId, clubId: r.clubId, transferFee: r.transferFee };
+      }
+      case 'SELL_PLAYER': {
+        // AI 主动出售（D-33.4 / D-34）：`clubId` 为 seller（AI 行动方），`targetClubId` 为 buyer。
+        // 仍只经现有 Domain `transferPlayer()`，不创建第二套 Transfer。
+        const r = transferPlayer(state, decision.playerId, decision.targetClubId);
+        recordAIDecision(state, { ...decision, estimatedCost: r.transferFee });
+        return { ok: true, playerId: r.playerId, clubId: r.buyerClubId, transferFee: r.transferFee };
       }
       case 'RELEASE_PLAYER': {
         const r = releasePlayerToFreeAgent(state, decision.playerId);

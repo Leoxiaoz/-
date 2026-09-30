@@ -753,9 +753,10 @@
 
 ---
 
-## §34 World Economy / Transfer Market v2（Step 33B 设计冻结，未实现）
+## §34 World Economy / Transfer Market v2（Step 33B 设计冻结；Step 34 已实现）
 
-- **状态**：**设计已冻结（Step 33B）；运行时未实现（属 Step 34）**。依据 Step 32A 长期生态审计（确认吸收态：population 112→96、roster→12、FA→0、transfer≈0、transferBudget 单向衰减）。决策编号见 [DECISIONS D-29](file:///workspace/docs/DECISIONS.md)。**schema 保持 10 / save format 保持 1**。
+- **状态**：**设计已冻结（Step 33B）；运行时实现完成（Step 34）**。依据 Step 32A 长期生态审计（确认吸收态：population 112→96、roster→12、FA→0、transfer≈0、transferBudget 单向衰减）。决策编号见 [DECISIONS D-29](file:///workspace/docs/DECISIONS.md)。**schema 保持 10 / save format 保持 1**。
+- **Step 34 实现落地**：新增 `WORLD_SOFT_CAP=112` / `FINANCE_CONFIG.TRANSFER_BUDGET_REPLENISHMENT=420` / `AI_CONFIG.HOLDING_TARGET=14` 等配置；`player-lifecycle.replenishPopulation` 增加软上限保护；`finance.replenishTransferBudget` + Season Boundary 接入；`ai-need` COMPETITIVE 分支与去重；`ai-decide.decideSell` + `ai-action` SELL_PLAYER（经 `transferPlayer`）；`ai-candidate.sellerKeepsStructure` 保持 12 不变量。均为 derived / ephemeral，无 schema / save 变更。**已知目标级 BLOCKER**：在 8 队固定世界下，`WORLD_MIN_POPULATION(96) = 队数 × MIN_PLAYERS(12)`，长跑仍在 ~S27 收敛到 `population=96 / roster=12 / FA=0 / transfer=0`（供给侧无 surplus）。详见 [DECISIONS D-29 实现状态](file:///workspace/docs/DECISIONS.md)。
 - **三循环分离（D-33.2）**：Population Cycle（retirement/generation/stock）、Transfer Cycle（Club↔Club / release / sign）、Finance Cycle（cash / transferBudget / capacity）**职责分离**；Population 不直接调用 Transfer、Transfer 不生成 Player、Finance 不直接决定 target；仅经现有 Domain API 连接。
 - **Need 扩展（D-33.3）**：分类冻结 **HARD / SOFT / COMPETITIVE / NONE**（COMPETITIVE 独立，不并入 SOFT）；新增 reasonCode **`COMPETITIVE_UPGRADE`**；仍走 `Need → Candidate Filter → Suitability → Finance → Target Ranking → Domain Action`；允许 No Action；确定性、无 RNG、无 OVR。
 - **AI Active Selling（D-33.4）**：允许 SELL intent，**仅经 `transferPlayer()`** 执行；不建 Listing / Window / Negotiation；保持全部 seller protection 与 transfer 原子性；AI 不直接写 state。
@@ -770,4 +771,4 @@
   - **D-34.1 Population Trigger Semantics**：`96`=Hard World Floor、`112`=Soft Ecosystem Cap、`14`=AI Holding Target、`12`=Club Hard Minimum，**四者语义完全分离**；Population Generation **仅在** club 结构性缺口（`roster<12` / `GK<1` / `DF<4` / `MF<4` / `FW<2`）或 world `active < 96` 时发生；**禁止**“每季补到 112 / 低于 112 自动生成 / 每 club 自动补到 14”；Population 不制造 trading supply。
   - **D-34.2 transferBudget Carry-over Regeneration**：`new = min(INITIAL_TRANSFER_BUDGET, current + REPLENISHMENT_AMOUNT)`；carry-over、有上限、不 reset、不改 cash；**D-27 T6 单笔语义不变**。
   - **D-34.3 Competitive > Soft Priority / Dedup**：优先级 `HARD > COMPETITIVE > SOFT > NONE`；`COMPETITIVE` 独立档、仅在无 HARD 时考虑、reasonCode `COMPETITIVE_UPGRADE`、不使用 OVR/单一全队均值；与 SOFT `ATTRIBUTE_GAP` 同位置去重。
-  - 状态：**Schema 10 / Save Format 1 不变**；**Step 34 实现未开始**。
+  - 状态：**Schema 10 / Save Format 1 不变**；**Step 34 实现完成**（测试 312 通过，Golden 143/143/1141 保持；长跑吸收态未破除，属目标级 BLOCKER，待后续决策供给侧机制）。

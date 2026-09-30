@@ -853,6 +853,13 @@ Step 34 实现后必须测试 **10 / 50 / 100 / 200 / 500** 赛季，至少检�
 - **Club Policy v2**：保持 Balanced / YouthFocus / Conservative；继续经**现有 deterministic `hashSeed` 派生**，**不得改变 hashSeed 映射**；新增 `demandBias / buyBias / sellBias / reserveRatio`，保留 `potentialWeight / softNeedEnabled`；全部 derived / non-persistent / deterministic；**不得写入 save**。
 - **Season Boundary 顺序**：`developPlayers → runPlayerLifecycle → bounded population health → transferBudget regeneration → runSeasonAI → repairManagedLineups → resetSeasonStats`；每季恰好一次；AI **不会**在 budget regeneration 前运行；无重复 regeneration / 无重复 population generation。
 
+### D-29 / D-34 Step 34 实现状态 `[已实现；目标级 BLOCKED]`
+- **已实现**：Competitive Need（`COMPETITIVE_UPGRADE`，独立档 + 去重）；`HOLDING_TARGET=14`（仅 AI 层，Domain 仍 12/24）；Active SELL（`SELL_PLAYER` → `transferPlayer()`，moved-set 防重复）；`SELL + RELEASE` 共享 exit cap（≤2）；`WORLD_SOFT_CAP=112` 上限保护；transferBudget **carry-over** 再生（`replenishTransferBudget`，上限 `INITIAL_TRANSFER_BUDGET`，不改 cash）；Club Policy v2 参数（`demandBias/buyBias/sellBias` 等）；Season Boundary 顺序（regeneration 在 `runSeasonAI` 之前）。**Schema 10 / Save Format 1 不变**（全部派生）。
+- **验证**：测试 **312/312 通过**；黄金回归 `143/143/1141` 不变；浏览器冒烟通过；10/50/100/200/500 长跑不变量（membership/contract/finance）全部通过。
+- **未达成 D-33.1（长期生态目标）**：长跑 **50/100/200/500** 季仍收敛到 `population=96 / roster=12 / FA=0 / transfer=0`（与实现前一致）→ **吸收态未被打破**。
+- **根因（bottleneck = Supply）**：`D-34.1` 的 generation 触发条件（仅 club 结构性缺口 / `world<96`）**不会提升 world stock**；retirement 使 world 单调降到 96；`Σ=96 ∧ 每 club ≥ 12 ⇒ 每 club 恰为 12` ⇒ 卖方 surplus 恒为 0 ⇒ 无候选。`Competitive Need`（demand）与 `transferBudget 再生`（capacity）均**不能**产生供给。
+- **Decision 冲突登记**：**D-33.1（不接受吸收态）与 D-34.1（generation 仅补缺口）在当前参数下互斥**；D-33.6 ②"可向 holding target 补位" 与 D-34.1 措辞亦冲突。**待后续 Decision Freeze（Step 35 候选）裁定**：是否允许“有界 population 维持 / 向 holding target 补位”，或引入其它供给侧机制。**本步未擅自修改任何冻结规则**。
+
 ---
 
 ## 仍属 TBD（未受影响）

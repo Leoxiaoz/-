@@ -10,12 +10,15 @@
  */
 
 import { AI_CONFIG } from './ai-config.js';
+import { getAIClubPolicy } from './ai-club-policy.js';
 import { evaluateSquadNeed } from './ai-need.js';
-import { filterCandidates, CANDIDATE_SOURCE } from './ai-candidate.js';
+import { filterCandidates, CANDIDATE_SOURCE, sellerKeepsStructure } from './ai-candidate.js';
 import { evaluatePlayerSuitability, potentialHeadroom } from './ai-suitability.js';
 import { ROSTER_CONFIG } from '../sim-config.js';
 import { getPlayerClub, getClubPlayers } from '../membership.js';
 import { getPlayerContract, CONTRACT_STATUS } from '../contract.js';
+import { getClubFinance } from '../finance.js';
+import { computeTransferFee } from '../transfer.js';
 import { getPlayerProfile } from '../player-runtime.js';
 import { ageOn } from '../date-utils.js';
 import { buildAutoLineup } from '../team-strength.js';
@@ -47,10 +50,10 @@ function makeDecision(clubId, state, type, extra) {
   };
 }
 
-/** 释放后本俱乐部是否仍满足结构约束（GK≥1、DF/MF/FW 最低、roster≥MIN）。 */
+/** 释放后本俱乐部是否仍满足 AI Holding Target 与结构约束（GK≥1、DF/MF/FW 最低、roster≥HOLDING_TARGET）。 */
 function releaseKeepsStructure(state, clubId, playerId) {
   const ids = getClubPlayers(state, clubId);
-  if (ids.length - 1 < ROSTER_CONFIG.MIN_PLAYERS) return false;
+  if (ids.length - 1 < C.HOLDING_TARGET) return false;
   const counts = { GK: 0, DF: 0, MF: 0, FW: 0 };
   for (const id of ids) {
     if (id === playerId) continue;
@@ -65,7 +68,7 @@ function releaseKeepsStructure(state, clubId, playerId) {
 }
 
 /**
- * 冗余释放决策（D-AI-14）。仅在无 Hard Need、roster > MIN、且球员为「无买家价值」时释放。
+ * 冗余释放决策（D-AI-14、D-33.5）。仅在无 Hard Need、**roster > HOLDING_TARGET**、且球员为「无买家价值」时释放。
  * 排序：高年龄 → 低 suitability → 低潜力 → playerId 升序。
  * @returns {object|null}
  */
@@ -73,7 +76,7 @@ export function decideRelease(state, clubId) {
   const need = evaluateSquadNeed(state, clubId);
   if (need.needs.some((n) => n.needClass === 'HARD')) return null;
   const ids = getClubPlayers(state, clubId);
-  if (ids.length <= ROSTER_CONFIG.MIN_PLAYERS) return null;
+  if (ids.length <= C.HOLDING_TARGET) return null;
 
   const candidates = [];
   for (const playerId of ids) {
@@ -175,6 +178,76 @@ export function decideTransfer(state, clubId) {
   return null;
 }
 
+/**
+ * buyer 搜索（确定性）：clubId 升序；buyer 需匹配位置需求、roster<MAX、finance 允许（cash 与可用预算）。
+ * 排除 seller 自身与 managed 俱乐部（玩家球队不受 AI 操作）。
+ * @returns {{buyerClubId: string, fee: number}|null}
+ */
+function findBuyerFor(state, sellerClubId, profile) {
+  const managed = state?.runtime?.managedClubId ?? null;
+  const fee = computeTransferFee(state, profile);
+  if (!Number.isFinite(fee)) return null;
+  for (const buyerClubId of Object.keys(state.runtime.clubs).sort()) {
+    if (buyerClubId === sellerClubId || buyerClubId === managed) continue;
+    if (getClubPlayers(state, buyerClubId).length >= ROSTER_CONFIG.MAX_PLAYERS) continue;
+    const need = evaluateSquadNeed(state, buyerClubId);
+    if (!need.needs.some((n) => n.position === profile.position)) continue;
+    const fin = getClubFinance(state, buyerClubId);
+    if (!fin) continue;
+    const policy = getAIClubPolicy(buyerClubId);
+    const reserve = Math.max(C.RESERVE_ABS, (policy.reserveRatio ?? C.RESERVE_RATIO) * fin.transferBudget);
+    const availableBudget = Math.max(0, fin.transferBudget - reserve);
+    if (fee > fin.cash) continue;
+    if (fee > availableBudget) continue;
+    return { buyerClubId, fee };
+  }
+  return null;
+}
+
+/**
+ * AI 主动出售决策（D-33.4、D-34）。仅当 `roster > HOLDING_TARGET` 且存在**真实 surplus**，
+ * 且能找到满足需求 / 财政 / roster 空间的 buyer 时产出；执行必须经 `transferPlayer()`。
+ * `movedSet`：本 AI cycle 已易手球员（同一 player 每 cycle 最多一次）。
+ * @returns {object|null}
+ */
+export function decideSell(state, clubId, movedSet = new Set()) {
+  const ids = getClubPlayers(state, clubId);
+  if (ids.length <= C.HOLDING_TARGET) return null;
+  if (ids.length - 1 < C.HOLDING_TARGET) return null;
+  const candidates = [];
+  for (const playerId of ids) {
+    if (movedSet.has(playerId)) continue;
+    const profile = getPlayerProfile(state, playerId);
+    if (!profile) continue;
+    const contract = getPlayerContract(state, playerId);
+    if (!contract || contract.status !== CONTRACT_STATUS.ACTIVE || contract.clubId !== clubId) continue;
+    if (!sellerKeepsStructure(state, clubId, playerId, profile)) continue;
+    const age = profile.birthDate ? ageOn(profile.birthDate, state.currentDate) : 26;
+    const suit = evaluatePlayerSuitability(state, clubId, playerId, { position: profile.position }, 'Backup').score;
+    candidates.push({ id: playerId, age, suit, pot: potentialHeadroom(profile), position: profile.position });
+  }
+  if (candidates.length === 0) return null;
+  // surplus 排序：低 suitability → 高年龄 → 低潜力 → playerId 升序（确定性）
+  candidates.sort((a, b) => (
+    a.suit - b.suit || b.age - a.age || a.pot - b.pot || a.id.localeCompare(b.id)
+  ));
+  for (const cand of candidates) {
+    const profile = getPlayerProfile(state, cand.id);
+    const buyer = findBuyerFor(state, clubId, profile);
+    if (!buyer) continue;
+    return makeDecision(clubId, state, 'SELL_PLAYER', {
+      playerId: cand.id,
+      targetClubId: buyer.buyerClubId,
+      position: cand.position,
+      reasonCode: 'SURPLUS_SQUAD',
+      priority: 30,
+      estimatedCost: buyer.fee,
+      confidence: cand.suit,
+    });
+  }
+  return null;
+}
+
 /** 阵容更新决策（使用现有合法 lineup 能力；仅在需要变化时产出）。 */
 export function decideLineup(state, clubId) {
   const club = state?.runtime?.clubs?.[clubId];
@@ -203,20 +276,28 @@ export function evaluateClubDecisions(state, clubId) {
     const transfer = decideTransfer(state, clubId);
     if (transfer) out.push(transfer);
   }
+  const sell = decideSell(state, clubId, new Set());
+  if (sell) out.push(sell);
   const lineup = decideLineup(state, clubId);
   if (lineup) out.push(lineup);
   return out;
 }
 
-/** 单个 club 的 AI cycle（每步后重读最新 state；ephemeral counter 限制每赛季动作数）。 */
-export function runAIForClub(state, clubId, counters = { sign: 0, exit: 0 }) {
-  // 1) 释放（≤ MAX_EXITS）
+/**
+ * 单个 club 的 AI cycle（每步后重读最新 state；ephemeral counter 限制每赛季动作数）。
+ * 顺序（D-AI-18 + D-33.4）：Release → Free Agent → Buy → **Sell** → Lineup。
+ * `counters.exit` 为 **SELL + RELEASE 共享** 的退出计数（D-33.12）；`counters.sign` 独立（BUY/FA）。
+ * `movedSet`：本 season cycle 已易手球员（同一 player 每 cycle 最多一次）。
+ */
+export function runAIForClub(state, clubId, counters = { sign: 0, exit: 0 }, movedSet = new Set()) {
+  // 1) 释放（计入 exit cap）
   while (counters.exit < C.MAX_EXITS_PER_SEASON) {
     const decision = decideRelease(state, clubId);
     if (!decision) break;
     const result = executeAIAction(state, decision);
     if (!result.ok) break;
     counters.exit += 1;
+    if (result.playerId) movedSet.add(result.playerId);
   }
   // 2) Free Agent 优先，其次付费转会（合计 ≤ MAX_SIGNINGS）
   while (counters.sign < C.MAX_SIGNINGS_PER_SEASON) {
@@ -225,8 +306,18 @@ export function runAIForClub(state, clubId, counters = { sign: 0, exit: 0 }) {
     const result = executeAIAction(state, decision);
     if (!result.ok) break;
     counters.sign += 1;
+    if (result.playerId) movedSet.add(result.playerId);
   }
-  // 3) 阵容更新
+  // 3) 主动出售（与 RELEASE 共享 exit cap；roster > HOLDING_TARGET 才允许）
+  while (counters.exit < C.MAX_EXITS_PER_SEASON) {
+    const decision = decideSell(state, clubId, movedSet);
+    if (!decision) break;
+    const result = executeAIAction(state, decision);
+    if (!result.ok) break;
+    counters.exit += 1;
+    if (result.playerId) movedSet.add(result.playerId);
+  }
+  // 4) 阵容更新
   const lineup = decideLineup(state, clubId);
   if (lineup) executeAIAction(state, lineup);
   return counters;
@@ -234,18 +325,19 @@ export function runAIForClub(state, clubId, counters = { sign: 0, exit: 0 }) {
 
 /**
  * 赛季边界 AI 入口（D-AI-17）：按 clubId 升序，对**非 managed**俱乐部执行 AI cycle。
- * 只读 + 经 Domain API 变更；确定性；无 RNG。
+ * 只读 + 经 Domain API 变更；确定性；无 RNG。movedSet 为整个 season cycle 的 ephemeral 集合（不持久化）。
  * @returns {{clubs: Array<{clubId: string, sign: number, exit: number}>}}
  */
 export function runSeasonAI(state) {
   const results = [];
   if (!state?.runtime?.clubs) return { clubs: results };
   const managed = state.runtime.managedClubId ?? null;
+  const movedSet = new Set();
   const clubIds = Object.keys(state.runtime.clubs).sort();
   for (const clubId of clubIds) {
     if (clubId === managed) continue; // 玩家球队不受 AI 控制
     const counters = { sign: 0, exit: 0 };
-    runAIForClub(state, clubId, counters);
+    runAIForClub(state, clubId, counters, movedSet);
     results.push({ clubId, sign: counters.sign, exit: counters.exit });
   }
   return { clubs: results };

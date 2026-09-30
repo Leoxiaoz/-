@@ -2,20 +2,21 @@
  * Squad Need Evaluator —— Step 31 / D-AI-06。
  * 层级归属：Simulation Core / AI。纯函数，**不修改 state**，**无 RNG**，**确定性**。
  *
- * 回答「这个俱乐部现在缺什么？」。区分 Hard / Soft / NONE（D-AI-06）：
+ * 回答「这个俱乐部现在缺什么？」。区分 Hard / Competitive / Soft / NONE（D-AI-06、D-33.3、D-34.3）：
  * - Hard：GK<1 / DF<4 / MF<4 / FW<2 / roster<12 / 可用（非伤）球员不足以排阵。
+ * - Competitive：**仅当该位置无 Hard**；竞技质量明显不足（对联赛基线偏弱 / 绝对偏弱 / 首发-替补断层）。
  * - Soft：位置能力缺口 / 青年储备不足 / 年龄结构失衡（**不只按人数判断**）。
  * - NONE：无显著需求。
  *
  * 输出：`{ clubId, needClass, needs: NeedObject[] }`；NeedObject = `{ clubId, position, needClass, reasonCode, priority }`。
- * Hard 优先于 Soft（priority 数值更大）。
+ * 优先级：HARD(100) > COMPETITIVE(75) > SOFT(50) > NONE。
  */
 
 import { AI_CONFIG } from './ai-config.js';
 import { getAIClubPolicy } from './ai-club-policy.js';
 import { ROSTER_CONFIG, FORMATIONS, DEFAULT_FORMATION } from '../sim-config.js';
-import { getClubPlayers } from '../membership.js';
-import { getPlayerProfile, getPlayerRuntime, INJURY_STATUS } from '../player-runtime.js';
+import { getClubPlayers, getClubLeague, getLeagueClubs } from '../membership.js';
+import { getPlayerProfile, getPlayerRuntime, getEffectiveAttributes, INJURY_STATUS } from '../player-runtime.js';
 import { ATTRIBUTE_DEFAULT } from '../../shared/football-schema.js';
 
 const C = AI_CONFIG;
@@ -39,6 +40,51 @@ function ageBandIndex(age) {
     if (age >= bands[i].min && age <= bands[i].max) return i;
   }
   return bands.length - 1;
+}
+
+/** 位置「主力」人数（结构最低线：GK 1 / DF 4 / MF 4 / FW 2）。 */
+function positionLineCount(position) {
+  return position === 'GK' ? ROSTER_CONFIG.MIN_GK : (ROSTER_CONFIG.MIN_BY_POSITION[position] ?? 0);
+}
+
+/** 某球员在某位置 profile 上的有效属性评分（不使用 OVR，仅 profile 子集均值）。 */
+function profileRating(state, playerId, position) {
+  const attrs = profileAttrs(position);
+  const eff = getEffectiveAttributes(state, playerId) ?? {};
+  return mean(attrs.map((a) => (Number.isFinite(Number(eff[a])) ? Number(eff[a]) : ATTRIBUTE_DEFAULT)));
+}
+
+/** 某俱乐部某位置的 starter / bench 评分（按评分降序取前 N 为主力）。 */
+function starterBenchRating(state, clubId, position) {
+  const ids = getClubPlayers(state, clubId)
+    .filter((id) => getPlayerProfile(state, id)?.position === position);
+  if (ids.length === 0) return null;
+  const rated = ids
+    .map((id) => ({ id, r: profileRating(state, id, position) }))
+    .sort((a, b) => b.r - a.r || a.id.localeCompare(b.id));
+  const n = positionLineCount(position);
+  const starters = rated.slice(0, Math.max(1, n));
+  const bench = rated.slice(Math.max(1, n));
+  return {
+    starter: mean(starters.map((x) => x.r)),
+    bench: bench.length > 0 ? mean(bench.map((x) => x.r)) : null,
+  };
+}
+
+/** 联赛某位置主力评分基线（各俱乐部 starter 评分的中位数；确定性）。 */
+function leaguePositionBaseline(state, clubId, position) {
+  const leagueId = getClubLeague(state, clubId);
+  if (!leagueId) return null;
+  const clubs = getLeagueClubs(state, leagueId).slice().sort();
+  const values = [];
+  for (const cid of clubs) {
+    const sb = starterBenchRating(state, cid, position);
+    if (sb) values.push(sb.starter);
+  }
+  if (values.length === 0) return null;
+  values.sort((a, b) => a - b);
+  const mid = Math.floor(values.length / 2);
+  return values.length % 2 === 1 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
 }
 
 /** 位置最低结构要求（GK 单列）。 */
@@ -90,12 +136,13 @@ export function evaluateSquadNeed(state, clubId) {
   const needs = [];
   const hasHard = (position) => needs.some((n) => n.position === position && n.needClass === 'HARD');
   const push = (position, needClass, reasonCode) => {
+    const priority = needClass === 'HARD' ? 100 : (needClass === 'COMPETITIVE' ? 75 : 50);
     needs.push({
       clubId,
       position,
       needClass,
       reasonCode,
-      priority: needClass === 'HARD' ? 100 : 50,
+      priority,
     });
   };
 
@@ -114,8 +161,28 @@ export function evaluateSquadNeed(state, clubId) {
     if (avail[pos] < (formationCounts[pos] ?? 0) && !hasHard(pos)) push(pos, 'HARD', 'INJURY_COVER');
   }
 
-  // ---- Soft Need（仅当该位置无 Hard 且 Policy 启用）----
+  // ---- Club Policy（供 Competitive / Soft 共享；派生、无状态）----
   const policy = getAIClubPolicy(clubId);
+
+  // ---- Competitive Need（仅当该位置无 HARD；D-33.3 / D-34.3；确定性、无 OVR）----
+  const competitivePositions = new Set();
+  for (const pos of POSITION_ORDER) {
+    if (hasHard(pos)) continue;
+    if (groups[pos].length === 0) continue;
+    const sb = starterBenchRating(state, clubId, pos);
+    if (!sb) continue;
+    const baseline = leaguePositionBaseline(state, clubId, pos);
+    const margin = C.COMPETITIVE_UPGRADE_MARGIN / Math.max(0.1, policy.demandBias ?? 1);
+    const weakVsLeague = baseline != null && sb.starter < baseline - margin;
+    const weakAbsolute = sb.starter < C.COMPETITIVE_ABSOLUTE_FLOOR;
+    const benchCliff = sb.bench != null && (sb.starter - sb.bench) > C.COMPETITIVE_BENCH_GAP;
+    if (weakVsLeague || weakAbsolute || benchCliff) {
+      push(pos, 'COMPETITIVE', 'COMPETITIVE_UPGRADE');
+      competitivePositions.add(pos);
+    }
+  }
+
+  // ---- Soft Need（仅当该位置无 Hard 且 Policy 启用；与 Competitive 去重）----
   if (policy.softNeedEnabled) {
     for (const pos of POSITION_ORDER) {
       if (hasHard(pos)) continue;
@@ -123,7 +190,11 @@ export function evaluateSquadNeed(state, clubId) {
       if (group.length === 0) continue;
       const attrs = profileAttrs(pos);
       const avgAttr = mean(group.map((p) => mean(attrs.map((a) => p[a]))));
-      if (avgAttr < C.SOFT_NEED_ATTRIBUTE_FLOOR) { push(pos, 'SOFT', 'ATTRIBUTE_GAP'); continue; }
+      if (avgAttr < C.SOFT_NEED_ATTRIBUTE_FLOOR) {
+        // D-34.3 去重：该位置已产生 COMPETITIVE_UPGRADE 时，不再因相同质量缺口产生 ATTRIBUTE_GAP。
+        if (!competitivePositions.has(pos)) push(pos, 'SOFT', 'ATTRIBUTE_GAP');
+        continue;
+      }
 
       const ages = group
         .map((p) => (p.birthDate ? Number(String(p.birthDate).slice(0, 4)) : null))
@@ -149,6 +220,10 @@ export function evaluateSquadNeed(state, clubId) {
     b.priority - a.priority
     || POSITION_ORDER.indexOf(a.position) - POSITION_ORDER.indexOf(b.position)
   ));
-  const needClass = needs.length === 0 ? 'NONE' : (needs.some((n) => n.needClass === 'HARD') ? 'HARD' : 'SOFT');
+  const needClass = needs.length === 0
+    ? 'NONE'
+    : (needs.some((n) => n.needClass === 'HARD')
+      ? 'HARD'
+      : (needs.some((n) => n.needClass === 'COMPETITIVE') ? 'COMPETITIVE' : 'SOFT'));
   return { clubId, needClass, needs };
 }

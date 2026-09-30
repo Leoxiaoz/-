@@ -24,8 +24,14 @@ import { computeTransferFee } from '../transfer.js';
 /** 候选来源。 */
 export const CANDIDATE_SOURCE = Object.freeze({ FREE_AGENT: 'FREE_AGENT', TRANSFER: 'TRANSFER' });
 
-/** seller 在失去该球员后是否仍满足结构约束（AI 侧保守护栏，避免把 seller 打到下限以下）。 */
-function sellerKeepsStructure(state, sellerClubId, playerId, profile) {
+/**
+ * seller 在失去该球员后是否仍满足结构约束（AI 侧保守护栏）。
+ * - 保持 `roster ≥ MIN_PLAYERS(12)`（D-33 不变量）+ 最后 GK + 位置最低；
+ * - 不改变 D-27 T11 的 Domain 语义（Domain 仍允许 seller 暂时低于 12，但 **AI 不主动制造** 该状态，
+ *   以保证 `roster ≥ 12` 不变量与 world 有界）。
+ * @returns {boolean}
+ */
+export function sellerKeepsStructure(state, sellerClubId, playerId, profile) {
   const sellerIds = getClubPlayers(state, sellerClubId);
   if (sellerIds.length - 1 < ROSTER_CONFIG.MIN_PLAYERS) return false;
   const counts = { GK: 0, DF: 0, MF: 0, FW: 0 };

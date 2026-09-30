@@ -332,6 +332,13 @@
   - **D-34.3 Competitive > Soft Priority / Dedup**：优先级 `HARD > COMPETITIVE > SOFT > NONE`；COMPETITIVE 独立档（`COMPETITIVE_UPGRADE`）且仅在无 HARD 时考虑；与 SOFT `ATTRIBUTE_GAP` 同位置去重。
 - **状态**：Schema 10 / Save Format 1 不变；D-33.1~D-33.15 未被改写。**Step 34 实现仍未开始**。
 
+### 2.22 实现（2026-09-30，Step 34：World Economy / Transfer Market v2）
+
+- **已实现**：Competitive Need（`COMPETITIVE_UPGRADE`）；`HOLDING_TARGET=14`（仅 AI 层）；Active SELL（`SELL_PLAYER`→`transferPlayer()`）；`SELL+RELEASE` 共享 exit cap（≤2）；`WORLD_SOFT_CAP=112`；`replenishTransferBudget()` carry-over 再生；Club Policy v2 参数；Season Boundary 顺序（regeneration 在 AI 前）。**Schema 10 / Save 1 不变**。
+- **验证**：**312/312 测试通过**；黄金回归 `143/143/1141` 不变；浏览器冒烟通过；10/50/100/200/500 长跑不变量通过。
+- **⚠ 未达成 D-33.1（长期生态）**：50/100/200/500 季仍收敛到 `population=96 / roster=12 / FA=0 / transfer=0` —— **吸收态未被打破**。根因：D-34.1 的 generation 只补结构性缺口、不提升 world stock，供给恒为 0；Competitive Need 与 budget 再生只解决 demand/capacity。
+- **Decision 冲突登记**：**D-33.1 与 D-34.1 互斥**（详见 [DECISIONS D-29/D-34 实现状态](file:///workspace/docs/DECISIONS.md)）。**待 Step 35 Decision Freeze 裁定供给侧机制**；本步未擅自修改冻结规则。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

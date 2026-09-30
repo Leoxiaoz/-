@@ -79,6 +79,28 @@ export function applyTransferBudgetDelta(state, clubId, delta) {
   return f;
 }
 
+/**
+ * 赛季边界 transferBudget 再生（Step 34 / D-33.7、D-34.2）。**carry-over** 语义：
+ * `new = min(INITIAL_TRANSFER_BUDGET, current + TRANSFER_BUDGET_REPLENISHMENT)`。
+ * - 只改 `transferBudget`；**不触碰 `cash`**（D-33.8）；不因卖人增加 seller 预算（T6 不变）。
+ * - 确定性、无 RNG、有上限、不 reset。每赛季边界调用一次。
+ * @returns {object} state（原地）
+ */
+export function replenishTransferBudget(state) {
+  if (!state?.runtime?.clubs) return state;
+  const cap = FINANCE_CONFIG.INITIAL_TRANSFER_BUDGET;
+  const amount = FINANCE_CONFIG.TRANSFER_BUDGET_REPLENISHMENT;
+  for (const club of Object.values(state.runtime.clubs)) {
+    const f = club?.finance;
+    if (!f) continue;
+    const current = Number.isFinite(Number(f.transferBudget)) && Number(f.transferBudget) >= 0
+      ? Number(f.transferBudget)
+      : 0;
+    f.transferBudget = Math.min(cap, current + amount);
+  }
+  return state;
+}
+
 /** 是否为合法数值（有限且 >= 0）。 */
 function isNonNegativeNumber(v) {
   return Number.isFinite(Number(v)) && Number(v) >= 0;

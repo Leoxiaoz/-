@@ -16,17 +16,18 @@ import {
 } from '../src/core/player-runtime.js';
 import { getPlayerClub, getClubPlayers, validateMembership } from '../src/core/membership.js';
 import { getPlayerContract, assertContractInvariants } from '../src/core/contract.js';
-import { getClubFinance, assertFinanceInvariants } from '../src/core/finance.js';
+import { getClubFinance, assertFinanceInvariants, replenishTransferBudget } from '../src/core/finance.js';
 import { getFreeAgents, assertFreeAgentInvariants, releasePlayerToFreeAgent } from '../src/core/free-agent.js';
 import { computeTransferFee } from '../src/core/transfer.js';
-import { ROSTER_CONFIG } from '../src/core/sim-config.js';
+import { replenishPopulation } from '../src/core/player-lifecycle.js';
+import { ROSTER_CONFIG, FINANCE_CONFIG, WORLD_SOFT_CAP } from '../src/core/sim-config.js';
 import { AI_CONFIG } from '../src/core/ai/ai-config.js';
 import { getAIClubPolicy } from '../src/core/ai/ai-club-policy.js';
 import { evaluateSquadNeed } from '../src/core/ai/ai-need.js';
 import { filterCandidates, CANDIDATE_SOURCE } from '../src/core/ai/ai-candidate.js';
 import { evaluatePlayerSuitability, potentialHeadroom } from '../src/core/ai/ai-suitability.js';
 import {
-  evaluateClubDecisions, decideRelease, decideSignFreeAgent, decideTransfer, runSeasonAI,
+  evaluateClubDecisions, decideRelease, decideSignFreeAgent, decideTransfer, decideSell, runSeasonAI,
 } from '../src/core/ai/ai-decide.js';
 import { executeAIAction } from '../src/core/ai/ai-action.js';
 import { MemorySaveManager, serializeState, deserializeState } from '../src/save/save-manager.js';
@@ -52,6 +53,18 @@ function pruneTeam(files, teamId, keep) {
 }
 function findPlayer(state, clubId, position, index = 0) {
   return getClubPlayers(state, clubId).map((id) => getPlayerProfile(state, id)).filter((p) => p.position === position)[index]?.id ?? null;
+}
+/** 向某队追加合成球员（用于构造 roster > HOLDING_TARGET 的场景）。 */
+function addSyntheticPlayers(files, teamId, position, count) {
+  const base = files.players.find((p) => p.teamId === teamId && p.position === position)
+    ?? files.players.find((p) => p.teamId === teamId);
+  let seq = files.players.length;
+  for (let i = 0; i < count; i += 1) {
+    seq += 1;
+    const id = `ply_x${String(seq).padStart(3, '0')}`;
+    files.players.push({ ...base, id, name: id, teamId });
+  }
+  return files;
 }
 function findClubWith(pred) {
   return CLUBS.find((id) => pred(getAIClubPolicy(id))) ?? null;
@@ -90,7 +103,7 @@ test('B. Squad Need：Hard Need（结构缺口）', () => {
   }
 });
 
-test('B. Squad Need：Soft Need（能力缺口，非仅人数），且 Policy 关闭时不产生 Soft', () => {
+test('B. Squad Need：能力/竞技缺口（非仅人数），且 Policy 关闭时不产生 Soft', () => {
   const softClub = findClubWith((p) => p.softNeedEnabled);
   assert(softClub, '应存在启用 Soft Need 的俱乐部');
   const files = makeLeagueWorldFiles(8);
@@ -100,14 +113,20 @@ test('B. Squad Need：Soft Need（能力缺口，非仅人数），且 Policy �
     }
   }
   const softNeed = evaluateSquadNeed(stateFromFiles(files), softClub);
-  assert(softNeed.needs.some((n) => n.position === 'MF' && n.needClass === 'SOFT' && n.reasonCode === 'ATTRIBUTE_GAP'),
-    '应检测到 MF 能力缺口（Soft）');
+  // D-34.3：竞技质量缺口优先以 COMPETITIVE 表达；若未触发 COMPETITIVE，则退回 SOFT ATTRIBUTE_GAP。
+  const mfNeed = softNeed.needs.find((n) => n.position === 'MF');
+  assert(mfNeed, '应检测到 MF 需求');
+  assert(mfNeed.needClass === 'COMPETITIVE' || (mfNeed.needClass === 'SOFT' && mfNeed.reasonCode === 'ATTRIBUTE_GAP'),
+    'MF 缺口应为 COMPETITIVE 或 SOFT(ATTRIBUTE_GAP)');
+  assert(!softNeed.needs.some((n) => n.position === 'MF' && n.needClass === 'COMPETITIVE' && n.reasonCode === 'ATTRIBUTE_GAP'),
+    '去重：COMPETITIVE 与 SOFT ATTRIBUTE_GAP 不得同时命中同一位置');
 
-  // 关闭 Soft 的俱乐部（Conservative）：满编且无 Hard → NONE
+  // 关闭 Soft 的俱乐部（Conservative）：满编且无 Hard → 至多 COMPETITIVE/SOFT（无 Hard）
   const noSoft = findClubWith((p) => !p.softNeedEnabled);
   assert(noSoft, '应存在关闭 Soft Need 的俱乐部');
-  const none = evaluateSquadNeed(leagueState(8), noSoft);
-  assertEquals(none.needClass, 'NONE', '满编且无 Hard 且 Soft 关闭 → NONE');
+  const conservative = evaluateSquadNeed(leagueState(8), noSoft);
+  assert(!conservative.needs.some((n) => n.needClass === 'HARD'), '满编俱乐部不应有 Hard Need');
+  assert(!conservative.needs.some((n) => n.reasonCode === 'ATTRIBUTE_GAP'), 'Conservative 不产生 SOFT ATTRIBUTE_GAP');
 });
 
 // ===========================================================================
@@ -291,28 +310,33 @@ test('G. Transfer：无 FA 时选择付费目标，且 tie-break 确定性', () 
 // ===========================================================================
 // H. Release
 // ===========================================================================
-test('H. Release：不释放最后 GK / 不低于 12 / 不破坏 DF 最低', () => {
-  // 不释放最后 GK（GK 设为高龄，理应被排除在候选之外）
-  const filesGk = makeLeagueWorldFiles(8);
+test('H. Release：不释放最后 GK / 不低于 12 / 不破坏 DF 最低（Holding Target=14）', () => {
+  // 不释放最后 GK：构造 roster 16（> HOLDING_TARGET），GK 与一名 FW 高龄
+  const filesGk = addSyntheticPlayers(makeLeagueWorldFiles(8), 'clb_001', 'MF', 2);
   const gk = filesGk.players.find((p) => p.teamId === 'clb_001' && p.position === 'GK');
   const fw = filesGk.players.find((p) => p.teamId === 'clb_001' && p.position === 'FW');
   gk.birthDate = '1985-01-15';
   fw.birthDate = '1985-01-15';
   const sGk = stateFromFiles(filesGk);
+  assertEquals(getClubPlayers(sGk, 'clb_001').length, 16);
   const relGk = decideRelease(sGk, 'clb_001');
   assert(relGk, '应产生释放决策');
   assert(relGk.playerId !== gk.id, '不得释放最后 GK');
 
-  // roster == 12 → 不得释放
+  // roster == 12（<= HOLDING_TARGET）→ 不得释放
   const files12 = pruneTeam(makeLeagueWorldFiles(8), 'clb_001', { GK: 1, DF: 4, MF: 4, FW: 3 });
   const s12 = stateFromFiles(files12);
   assertEquals(getClubPlayers(s12, 'clb_001').length, 12);
   assertEquals(decideRelease(s12, 'clb_001'), null, 'roster=12 不得释放');
 
-  // DF == 4（最低）→ DF 不可释放
-  const filesDf = pruneTeam(makeLeagueWorldFiles(8), 'clb_001', { GK: 1, DF: 4, MF: 5, FW: 3 });
+  // DF == 4（最低）→ DF 不可释放；构造 roster 16
+  const filesDf = addSyntheticPlayers(
+    pruneTeam(makeLeagueWorldFiles(8), 'clb_001', { GK: 1, DF: 4, MF: 5, FW: 3 }),
+    'clb_001', 'MF', 3,
+  );
   filesDf.players.find((p) => p.teamId === 'clb_001' && p.position === 'MF').birthDate = '1985-01-15';
   const sDf = stateFromFiles(filesDf);
+  assertEquals(getClubPlayers(sDf, 'clb_001').length, 16);
   const relDf = decideRelease(sDf, 'clb_001');
   assert(relDf, '应产生释放决策');
   assert(relDf.position !== 'DF' && relDf.position !== 'GK', 'DF 处于最低线时不得释放 DF/GK');
@@ -480,4 +504,198 @@ test('O. Golden regression：赛季 1 内比分/出场基线不变（143/143/114
   assertEquals(playerGoals, 143);
   assertEquals(playerApp, 1141);
   assertEquals(aiEvents(state).length, 0, '赛季 1 内不应触发 AI');
+});
+
+// ===========================================================================
+// Step 34 / D-33 / D-34 —— World Economy v2
+// ===========================================================================
+test('P. Competitive Need：独立档、优先于 Soft、与 SOFT ATTRIBUTE_GAP 去重、无 OVR', () => {
+  const state = leagueState(8);
+  // 弱队（clb_008）相对联赛基线偏弱 → 应产生 COMPETITIVE_UPGRADE
+  const need = evaluateSquadNeed(state, 'clb_008');
+  assert(need.needs.some((n) => n.needClass === 'COMPETITIVE' && n.reasonCode === 'COMPETITIVE_UPGRADE'),
+    '弱队应产生 COMPETITIVE_UPGRADE');
+  // 优先级：HARD(100) > COMPETITIVE(75) > SOFT(50)
+  const hard = need.needs.filter((n) => n.needClass === 'HARD').map((n) => n.priority);
+  const comp = need.needs.filter((n) => n.needClass === 'COMPETITIVE').map((n) => n.priority);
+  const soft = need.needs.filter((n) => n.needClass === 'SOFT').map((n) => n.priority);
+  if (hard.length && comp.length) assert(Math.min(...hard) > Math.max(...comp), 'HARD > COMPETITIVE');
+  if (comp.length && soft.length) assert(Math.min(...comp) > Math.max(...soft), 'COMPETITIVE > SOFT');
+  // 去重：同一位置不得同时 COMPETITIVE_UPGRADE 与 SOFT ATTRIBUTE_GAP
+  for (const pos of ['GK', 'DF', 'MF', 'FW']) {
+    const hasC = need.needs.some((n) => n.position === pos && n.reasonCode === 'COMPETITIVE_UPGRADE');
+    const hasGap = need.needs.some((n) => n.position === pos && n.reasonCode === 'ATTRIBUTE_GAP');
+    assert(!(hasC && hasGap), `${pos} 不得同时 COMPETITIVE 与 SOFT ATTRIBUTE_GAP`);
+  }
+  // 结果不含 OVR 字段
+  for (const n of need.needs) assert(!('overall' in n) && !('ovr' in n), '不得有 OVR');
+  // 纯函数
+  const snap = JSON.stringify(state.runtime);
+  evaluateSquadNeed(state, 'clb_008');
+  assertEquals(JSON.stringify(state.runtime), snap, 'Need 评估不得修改 state');
+});
+
+test('Q. Holding Target=14：Domain 仍用 12/24；AI 仅在 roster>14 时评估 surplus', () => {
+  assertEquals(AI_CONFIG.HOLDING_TARGET, 14);
+  assertEquals(ROSTER_CONFIG.MIN_PLAYERS, 12, 'Domain hard minimum 仍为 12');
+  assertEquals(ROSTER_CONFIG.MAX_PLAYERS, 24);
+  // roster 14（==H）：无 release
+  const s14 = stateFromFiles(makeLeagueWorldFiles(8));
+  assertEquals(getClubPlayers(s14, 'clb_001').length, 14);
+  assertEquals(decideRelease(s14, 'clb_001'), null, 'roster<=14 不主动制造 surplus exit');
+  // roster 16（>H）：可评估 release
+  const s16 = stateFromFiles(addSyntheticPlayers(makeLeagueWorldFiles(8), 'clb_001', 'MF', 2));
+  assertEquals(getClubPlayers(s16, 'clb_001').length, 16);
+  const rel = decideRelease(s16, 'clb_001');
+  assert(rel, 'roster>H 应可评估 surplus');
+});
+
+test('R. Population bounded：world ∈ [96,112]；roster=12 不生成到 14；结构缺口回补', () => {
+  assertEquals(WORLD_SOFT_CAP, 112);
+  // roster 恰好 12 且位置合法 → 不为其生成（不补到 14）
+  const files = pruneTeam(makeLeagueWorldFiles(8), 'clb_001', { GK: 1, DF: 5, MF: 4, FW: 2 });
+  const s = stateFromFiles(files);
+  assertEquals(getClubPlayers(s, 'clb_001').length, 12);
+  const gen = replenishPopulation(s, { fromSeason: 1, toSeason: 2 });
+  assertEquals(getClubPlayers(s, 'clb_001').length, 12, 'roster=12 不得生成到 14');
+  assert(gen.length === 0, '无边界的 roster=12 不应触发生成');
+  // 结构缺口（GK=0）→ 回补（可能复用 FA 或生成）
+  const filesGk = pruneTeam(makeLeagueWorldFiles(8), 'clb_001', { GK: 0, DF: 5, MF: 5, FW: 3 });
+  const sGk = stateFromFiles(filesGk);
+  replenishPopulation(sGk, { fromSeason: 1, toSeason: 2 });
+  assertEquals(getClubPlayers(sGk, 'clb_001').map((id) => getPlayerProfile(sGk, id).position).filter((p) => p === 'GK').length, 1,
+    'GK 缺口应被回补');
+  // world 上限保护
+  assert(getWorldPlayers(sGk).length <= WORLD_SOFT_CAP + 1, '不应无限超过 soft cap');
+});
+
+test('S. transferBudget 再生：carry-over、有上限、不改 cash（T6 单笔语义不变）', () => {
+  const state = leagueState(8);
+  const f = getClubFinance(state, 'clb_001');
+  const cash0 = f.cash;
+  f.transferBudget = 180;
+  replenishTransferBudget(state);
+  assertEquals(f.transferBudget, 600, '180+420 → 600');
+  f.transferBudget = 80;
+  replenishTransferBudget(state);
+  assertEquals(f.transferBudget, 500, '80+420 → 500（carry-over）');
+  f.transferBudget = 500;
+  replenishTransferBudget(state);
+  assertEquals(f.transferBudget, FINANCE_CONFIG.INITIAL_TRANSFER_BUDGET, '500+420 → 600（上限）');
+  f.transferBudget = 600;
+  replenishTransferBudget(state);
+  assertEquals(f.transferBudget, 600, '已达上限不再增加');
+  assertEquals(f.cash, cash0, 'cash 不受再生影响');
+});
+
+test('T. Active SELL：roster>H 且存在 buyer 时产生 SELL_PLAYER，经 transferPlayer 执行', () => {
+  const files = addSyntheticPlayers(makeLeagueWorldFiles(8), 'clb_001', 'MF', 2); // 16
+  for (const p of files.players) {
+    if (p.position !== 'MF') continue;
+    if (p.teamId === 'clb_001') { for (const a of ['pace', 'technique', 'passing', 'defending', 'finishing']) p[a] = 30; }
+    if (p.teamId === 'clb_002') { for (const a of ['pace', 'technique', 'passing', 'defending', 'finishing']) p[a] = 30; }
+  }
+  const state = stateFromFiles(files);
+  assertEquals(getClubPlayers(state, 'clb_001').length, 16);
+  const d = decideSell(state, 'clb_001', new Set());
+  assert(d && d.type === 'SELL_PLAYER', '应产生 SELL 决策');
+  assert(d.targetClubId && d.targetClubId !== 'clb_001', '应有 buyer');
+  const sellerBefore = getClubPlayers(state, 'clb_001').length;
+  const buyerBefore = getClubPlayers(state, d.targetClubId).length;
+  const r = executeAIAction(state, d);
+  assertEquals(r.ok, true);
+  assertEquals(getPlayerClub(state, d.playerId), d.targetClubId, '球员应转到 buyer');
+  assertEquals(getClubPlayers(state, 'clb_001').length, sellerBefore - 1);
+  assertEquals(getClubPlayers(state, d.targetClubId).length, buyerBefore + 1);
+  assertEquals(aiEvents(state, 'SELL_PLAYER').length, 1);
+  assertEquals(validateMembership(state).fatal, []);
+});
+
+test('U. movedSet：同一 cycle 内已易手球员不再被 SELL', () => {
+  const files = addSyntheticPlayers(makeLeagueWorldFiles(8), 'clb_001', 'MF', 2);
+  for (const p of files.players) {
+    if (p.teamId === 'clb_001' && p.position === 'MF') { for (const a of ['pace', 'technique', 'passing', 'defending', 'finishing']) p[a] = 30; }
+    if (p.teamId === 'clb_002' && p.position === 'MF') { for (const a of ['pace', 'technique', 'passing', 'defending', 'finishing']) p[a] = 30; }
+  }
+  const state = stateFromFiles(files);
+  const d = decideSell(state, 'clb_001', new Set());
+  assert(d, '应有 SELL 决策');
+  const moved = new Set([d.playerId]);
+  const d2 = decideSell(state, 'clb_001', moved);
+  assert(!d2 || d2.playerId !== d.playerId, 'movedSet 中的球员不得再次 SELL');
+});
+
+test('V. Exit cap：SELL + RELEASE 共享 exit cap（≤2），与 signing cap 独立', () => {
+  const state = leagueState(8);
+  new SimulationCore().advanceDays(state, 10 * 125);
+  const byClubSeason = new Map();
+  for (const e of aiEvents(state)) {
+    const k = `${e.payload.clubId}|${e.payload.season}`;
+    const rec = byClubSeason.get(k) ?? { sign: 0, exit: 0 };
+    if (e.payload.type === 'SIGN_FREE_AGENT' || e.payload.type === 'TRANSFER_PLAYER') rec.sign += 1;
+    if (e.payload.type === 'RELEASE_PLAYER' || e.payload.type === 'SELL_PLAYER') rec.exit += 1;
+    byClubSeason.set(k, rec);
+  }
+  for (const [, rec] of byClubSeason) {
+    assert(rec.exit <= AI_CONFIG.MAX_EXITS_PER_SEASON, `exit 超限：${rec.exit}`);
+    assert(rec.sign <= AI_CONFIG.MAX_SIGNINGS_PER_SEASON, `sign 超限：${rec.sign}`);
+  }
+});
+
+test('W. Determinism / Save-Load：v2 决策与预算再生确定性一致', async () => {
+  const a = leagueState(8);
+  const b = leagueState(8);
+  new SimulationCore().advanceDays(a, 130);
+  new SimulationCore().advanceDays(b, 130);
+  assertEquals(aiEvents(a), aiEvents(b), '事件序列应一致');
+  assertEquals(JSON.stringify(a.runtime.membership), JSON.stringify(b.runtime.membership));
+  assertEquals(
+    CLUBS.map((c) => getClubFinance(a, c).transferBudget),
+    CLUBS.map((c) => getClubFinance(b, c).transferBudget),
+    '预算再生应一致',
+  );
+  // save → load
+  const mgr = new MemorySaveManager();
+  await mgr.save('s', a);
+  const payload = await mgr.load('s');
+  const loaded = createGameState(a.static, { date: payload.currentDate, season: payload.season });
+  loaded.runtime = deserializeState(JSON.parse(JSON.stringify(payload))).runtime;
+  initializePlayerRuntime(loaded);
+  assertEquals(JSON.stringify(loaded.runtime.membership), JSON.stringify(a.runtime.membership));
+  for (const c of CLUBS) {
+    assertEquals(getClubFinance(loaded, c).transferBudget, getClubFinance(a, c).transferBudget, `${c} budget 一致`);
+    assertEquals(getClubFinance(loaded, c).cash, getClubFinance(a, c).cash, `${c} cash 一致`);
+  }
+});
+
+test('X–AB. 长跑 10/50/100/200/500 赛季（v2）：不变量 + 有界人口/roster + 无 NaN/负值', () => {
+  for (const seasons of [10, 50, 100, 200, 500]) {
+    const state = leagueState(8);
+    state.runtime.managedClubId = 'clb_008';
+    new SimulationCore().advanceDays(state, seasons * 125);
+
+    assertEquals(validateMembership(state).fatal, [], `${seasons}季 membership`);
+    assertContractInvariants(state);
+    assertFinanceInvariants(state);
+    assertFreeAgentInvariants(state);
+
+    const pop = getWorldPlayers(state).length;
+    assert(pop >= ROSTER_CONFIG.MIN_PLAYERS * CLUBS.length, `${seasons}季 population < 96（${pop}）`);
+    assert(pop <= WORLD_SOFT_CAP, `${seasons}季 population > 112（${pop}）`);
+
+    for (const clubId of CLUBS) {
+      const roster = getClubPlayers(state, clubId).length;
+      assert(roster >= ROSTER_CONFIG.MIN_PLAYERS, `${seasons}季 ${clubId} roster < 12（${roster}）`);
+      assert(roster <= ROSTER_CONFIG.MAX_PLAYERS, `${seasons}季 ${clubId} roster > 24（${roster}）`);
+      const ids = getClubPlayers(state, clubId);
+      const pos = { GK: 0, DF: 0, MF: 0, FW: 0 };
+      for (const id of ids) pos[getPlayerProfile(state, id).position] += 1;
+      assert(pos.GK >= 1 && pos.DF >= 4 && pos.MF >= 4 && pos.FW >= 2, `${seasons}季 ${clubId} 位置最低破坏`);
+      const f = getClubFinance(state, clubId);
+      assert(Number.isFinite(f.cash) && f.cash >= 0, `${seasons}季 ${clubId} cash 非法`);
+      assert(Number.isFinite(f.transferBudget) && f.transferBudget >= 0 && f.transferBudget <= FINANCE_CONFIG.INITIAL_TRANSFER_BUDGET,
+        `${seasons}季 ${clubId} budget 非法`);
+    }
+    assert(!aiEvents(state).some((e) => e.payload.clubId === 'clb_008'), 'managed club 不得有 AI 事件');
+  }
 });
