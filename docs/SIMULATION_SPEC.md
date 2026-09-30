@@ -718,10 +718,15 @@
 
 ---
 
-## §33 Transfer System v1（Step 28A 设计冻结，未实现）
+## §33 Transfer System v1（Step 28A 设计冻结 → Step 28B 已实现）
 
-- **状态**：**设计已冻结（Step 28A）；运行时未实现（属 Step 28B）**。**未实现** Transfer / Transfer UI / AI Transfer / Contract Expiry / Renewal / Loan / Window / Negotiation / Market Value UI。
+- **状态**：**设计已冻结（Step 28A）；运行时已实现（Step 28B）**。已实现 `transferPlayer` 领域操作（**不含 Transfer UI**）；**未实现** AI Transfer / Contract Expiry / Renewal / Loan / Window / Negotiation / Market Value UI。
   schema 仍为 **10**、`SAVE_FORMAT_VERSION` 仍为 **1**；**未新增 RNG**；**D10 仍 Deferred**。决策编号见 [DECISIONS D-27](file:///workspace/docs/DECISIONS.md)。
+- **实现（Step 28B）**：[transfer.js](file:///workspace/src/core/transfer.js) 新增 `transferPlayer` / `validateTransfer` / `buildTransferPlan` /
+  `commitTransferPlan` / `assertTransferInvariants` / `computeTransferFee` / `clampTransferFee`；[finance.js](file:///workspace/src/core/finance.js) 新增
+  `applyCashDelta` / `applyTransferBudgetDelta` 纯原语；[player-lineup.js](file:///workspace/src/core/player-lineup.js) 下沉共享 `removePlayerFromAllLineups`
+  （`free-agent.js` 改为复用）；[game-controller.js](file:///workspace/src/controller/game-controller.js) 追加 `transferPlayer` 转发（`{success, code, issues}`）。
+  **验证**：`tests/transfer.test.js`（A–O + Controller）；累计 **286/286 通过**；10/50/100/200 赛季长跑不变量全通过；Save/Load 往返一致；比赛黄金指纹（143/143/1141）不变。
 - **定义（T1）**：Club A → Club B 的**一次原子球员交易**；一次性完成 **Membership / Contract / Finance / Seller Lineup** 一致变更；
   **Team Strength / Match Squad 不直接修改**（经 Membership 派生）。
 - **费用模型（T2/T3）**：**确定性能力定价** `Base × AbilityFactor × AgeFactor × PositionFactor`，纯函数、不存储、无 RNG；

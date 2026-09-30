@@ -38,6 +38,47 @@ export function getSpendableCash(state, clubId) {
   return Math.min(f.cash, f.transferBudget);
 }
 
+/**
+ * 纯状态变更 primitive：对俱乐部 `cash` 施加增量（Step 28B / D-27 T7/T8）。
+ * - `delta` 必须为有限数值（否则抛错，不静默）；结果 **不得 < 0**（cash 是唯一真实余额）。
+ * - 本函数是 finance 层唯一允许直接改 `cash` 的入口；UI / domain operation 不得绕过它深入改结构。
+ * - 调用方须在 commit 前完成全部业务校验（此函数只做最终安全护栏）。
+ * @returns {object} 更新后的 finance（引用）
+ */
+export function applyCashDelta(state, clubId, delta) {
+  const f = getClubFinance(state, clubId);
+  if (!f) throw new SimulationError('applyCashDelta 需要存在的俱乐部财政', { context: { clubId } });
+  const d = Number(delta);
+  if (!Number.isFinite(d)) {
+    throw new SimulationError('applyCashDelta 的 delta 需为有限数值', { context: { clubId, delta } });
+  }
+  const next = f.cash + d;
+  if (!Number.isFinite(next) || next < 0) {
+    throw new SimulationError('cash 不得为负或非有限（不静默）', { context: { clubId, cash: f.cash, delta: d } });
+  }
+  f.cash = next;
+  return f;
+}
+
+/**
+ * 纯状态变更 primitive：对俱乐部 `transferBudget`（**约束额度，非第二套 cash**）施加增量（Step 28B / D-27 T6）。
+ * 买方支出后递减；结果 **不得 < 0**。卖方不增加。
+ */
+export function applyTransferBudgetDelta(state, clubId, delta) {
+  const f = getClubFinance(state, clubId);
+  if (!f) throw new SimulationError('applyTransferBudgetDelta 需要存在的俱乐部财政', { context: { clubId } });
+  const d = Number(delta);
+  if (!Number.isFinite(d)) {
+    throw new SimulationError('applyTransferBudgetDelta 的 delta 需为有限数值', { context: { clubId, delta } });
+  }
+  const next = f.transferBudget + d;
+  if (!Number.isFinite(next) || next < 0) {
+    throw new SimulationError('transferBudget 不得为负或非有限（不静默）', { context: { clubId, transferBudget: f.transferBudget, delta: d } });
+  }
+  f.transferBudget = next;
+  return f;
+}
+
 /** 是否为合法数值（有限且 >= 0）。 */
 function isNonNegativeNumber(v) {
   return Number.isFinite(Number(v)) && Number(v) >= 0;

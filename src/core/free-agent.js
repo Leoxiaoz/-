@@ -35,6 +35,7 @@ import {
   CONTRACT_STATUS,
 } from './contract.js';
 import { getPlayerProfile, getWorldPlayers } from './player-runtime.js';
+import { removePlayerFromAllLineups } from './player-lineup.js';
 import { recordEvent } from './game-state.js';
 
 /** 抛出带稳定错误码的 SimulationError。 */
@@ -45,16 +46,6 @@ function fail(code, message, context) {
 /** 是否已退役（本地判定）。 */
 function isRetired(state, playerId) {
   return Boolean(state?.runtime?.retired?.[playerId]);
-}
-
-/** 清除某球员在所有俱乐部 persistent lineup（starters + bench）中的引用（release 用）。 */
-function clearPlayerFromAllLineups(state, playerId) {
-  for (const club of Object.values(state.runtime.clubs ?? {})) {
-    const lineup = club?.lineup;
-    if (!lineup) continue;
-    if (Array.isArray(lineup.starters)) lineup.starters = lineup.starters.filter((id) => id !== playerId);
-    if (Array.isArray(lineup.bench)) lineup.bench = lineup.bench.filter((id) => id !== playerId);
-  }
 }
 
 /**
@@ -131,7 +122,7 @@ export function releasePlayerToFreeAgent(state, playerId) {
     endSeason: season,
     wage: 0,
   });
-  clearPlayerFromAllLineups(state, playerId);
+  removePlayerFromAllLineups(state, playerId);
   recordEvent(state, 'player_released', { playerId, fromClubId: clubId, season });
   return { playerId, fromClubId: clubId, status: CONTRACT_STATUS.FREE_AGENT };
 }

@@ -192,6 +192,38 @@ export const FINANCE_CONFIG = Object.freeze({
 });
 
 /**
+ * 转会费参数（Step 28B；DECISIONS D-27 T2/T3）。
+ * 说明：**确定性能力定价模型**——`Fee = BASE × AbilityFactor × AgeFactor × PositionFactor`。
+ * - 纯函数、无随机（D-27 T23）；**不存储** marketValue；**不读取** cash / transferBudget / squad size（禁止「越有钱越贵」）。
+ * - AbilityFactor 基于**完整 effective attribute 向量**的均值（非单一 OVR）；AgeFactor 遵循 Growth/Decline 年龄曲线；
+ *   PositionFactor 仅**轻微**差异。Potential / Fitness / Form / Morale / Injury / Stats **不参与定价**。
+ * - Fee 越界 clamp 到 `[MIN_TRANSFER_FEE, MAX_TRANSFER_FEE]`（T3），防止长期成长导致经济数值无限膨胀。
+ */
+export const TRANSFER_CONFIG = Object.freeze({
+  /** 基准费（能力中性、年龄巅峰、位置中性时的费用）。 */
+  BASE_FEE: 100,
+  /** 能力参考值（effective attribute 均值的中性点；比值 = avg / ABILITY_REFERENCE）。 */
+  ABILITY_REFERENCE: 50,
+  /** AbilityFactor 下限（避免极低能力导致费趋近 0 或负）。 */
+  ABILITY_MIN: 0.2,
+  /** 年龄缺省值（无 birthDate 时回退；视为巅峰）。 */
+  AGE_REFERENCE: 26,
+  /** 年龄系数分档（升序 maxAge；取第一个 `age <= maxAge` 的 factor）。 */
+  AGE_FACTORS: Object.freeze([
+    Object.freeze({ maxAge: 20, factor: 1.15 }), // 年轻溢价
+    Object.freeze({ maxAge: 27, factor: 1.0 }),  // 巅峰
+    Object.freeze({ maxAge: 30, factor: 0.85 }),
+    Object.freeze({ maxAge: 33, factor: 0.65 }),
+    Object.freeze({ maxAge: Infinity, factor: 0.45 }), // 高龄贬值
+  ]),
+  /** 位置系数（仅轻微差异，避免极端位置通胀）。 */
+  POSITION_FACTOR: Object.freeze({ GK: 0.95, DF: 1.0, MF: 1.05, FW: 1.1 }),
+  /** 转会费上下限（T3）。 */
+  MIN_TRANSFER_FEE: 0,
+  MAX_TRANSFER_FEE: 10000,
+});
+
+/**
  * 球员运行时状态参数（第 15 步）。
  * 说明：此处仅为**数据结构默认值与合法量程**（非模型系数）；成长 / 伤病 / 恢复等算法
  * 仍属 `[TBD]`（SIMULATION_SPEC §7–§9、§13–§15），待制定者决策后再接入。

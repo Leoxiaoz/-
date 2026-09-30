@@ -21,6 +21,7 @@ import './ecosystem.test.js';
 import './lifecycle.test.js';
 import './membership.test.js';
 import './free-agent.test.js';
+import './transfer.test.js';
 import './lineup.test.js';
 import './save.test.js';
 import './indexeddb.test.js';

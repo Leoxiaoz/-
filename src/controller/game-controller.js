@@ -24,6 +24,7 @@ import {
   releasePlayerToFreeAgent as releasePlayerToFreeAgentOp,
   signFreeAgent as signFreeAgentOp,
 } from '../core/free-agent.js';
+import { transferPlayer as transferPlayerOp } from '../core/transfer.js';
 import { buildAutoLineup } from '../core/team-strength.js';
 import { cleanLineup, validateLineup, LINEUP_LIMITS } from '../core/player-lineup.js';
 import { FORMATIONS, MENTALITY, DEFAULT_FORMATION } from '../core/sim-config.js';
@@ -399,6 +400,24 @@ export class GameController {
       const r = signFreeAgentOp(this.state, playerId, clubId, terms ? { terms } : {});
       this.#emit();
       return { success: true, playerId: r.playerId, clubId: r.clubId };
+    } catch (err) {
+      return { success: false, code: err?.code, issues: [err?.describe?.() ?? String(err)] };
+    }
+  }
+
+  /** 转会：把球员从当前俱乐部转会给买方俱乐部（Club → Club）。Controller 只转发，不含业务逻辑。 */
+  transferPlayer(playerId, buyerClubId) {
+    this.#requireRunning();
+    try {
+      const r = transferPlayerOp(this.state, playerId, buyerClubId);
+      this.#emit();
+      return {
+        success: true,
+        playerId: r.playerId,
+        sellerClubId: r.sellerClubId,
+        buyerClubId: r.buyerClubId,
+        transferFee: r.transferFee,
+      };
     } catch (err) {
       return { success: false, code: err?.code, issues: [err?.describe?.() ?? String(err)] };
     }

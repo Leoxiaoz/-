@@ -30,6 +30,21 @@ export const LINEUP_LIMITS = Object.freeze({
   BENCH: LINEUP_CONFIG.BENCH,
 });
 
+/**
+ * 共享 primitive：从**所有**俱乐部的 persistent lineup（starters + bench）中移除某球员引用（Step 28B / D-27 T15）。
+ * 供 release（free-agent.js）与 transfer（transfer.js）复用，避免重复实现。纯状态变更，无校验。
+ * @returns {object} state（原地）
+ */
+export function removePlayerFromAllLineups(state, playerId) {
+  for (const club of Object.values(state?.runtime?.clubs ?? {})) {
+    const lineup = club?.lineup;
+    if (!lineup) continue;
+    if (Array.isArray(lineup.starters)) lineup.starters = lineup.starters.filter((id) => id !== playerId);
+    if (Array.isArray(lineup.bench)) lineup.bench = lineup.bench.filter((id) => id !== playerId);
+  }
+  return state;
+}
+
 /** 阵型槽位（顺序固定：GK → DF → MF → FW），供首发构成校验与修复使用。 */
 export function formationSlots(formation) {
   const counts = FORMATIONS[formation] ?? FORMATIONS[DEFAULT_FORMATION];

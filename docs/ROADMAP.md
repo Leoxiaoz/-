@@ -277,7 +277,26 @@
 - **架构**：新模块 `src/core/transfer.js`（`transferPlayer` / `validateTransfer` / `buildTransferPlan` / `commitTransferPlan` / `assertTransferInvariants`），
   单向依赖 contract / membership / finance / player-lineup / player-runtime / sim-config / game-state，**禁止反向依赖**；与 `free-agent.js` 为 sibling。
 - **Deferred / 未来**：**D10**（Deferred）；AI Transfer、Transfer Window、Contract Expiry / Renewal、Loan、Negotiation、Market Value UI、Transfer History、收入系统。
-- **下一步（未开始）**：**Step 28B Implementation** —— `src/core/transfer.js` + 确定性 fee + finance cash primitive + lineup 清理下沉 + controller forwarding + `tests/transfer.test.js`（**不含 Transfer UI**）。
+- **下一步**：**Step 28B Implementation**（已完成，见 §2.18）。
+
+### 2.18 实现（2026-09-30，Step 28B：Transfer System v1）
+
+- **已实现**：新增 [transfer.js](file:///workspace/src/core/transfer.js)（`transferPlayer` / `validateTransfer` / `buildTransferPlan` /
+  `commitTransferPlan` / `assertTransferInvariants` / `computeTransferFee` / `clampTransferFee`）；[finance.js](file:///workspace/src/core/finance.js)
+  新增 `applyCashDelta` / `applyTransferBudgetDelta` 纯状态变更原语；[player-lineup.js](file:///workspace/src/core/player-lineup.js) 下沉共享
+  `removePlayerFromAllLineups`（`free-agent.js` 改为复用）；[sim-config.js](file:///workspace/src/core/sim-config.js) 新增 `TRANSFER_CONFIG`
+  （`BASE_FEE` / `ABILITY_REFERENCE` / `AGE_FACTORS` / `POSITION_FACTOR` / `MIN_TRANSFER_FEE=0` / `MAX_TRANSFER_FEE`）；
+  [game-controller.js](file:///workspace/src/controller/game-controller.js) 追加 `transferPlayer` 转发（`{success, code, issues}`，不含 Transfer UI）。
+- **费用**：确定性纯函数 `Base × AbilityFactor × AgeFactor × PositionFactor`（**runtime 计算、不持久化**；不读 cash/budget/squad；不使用 Potential/Fitness/Form/Morale/Injury/Stats；无 RNG），clamp 到 `[0, MAX_TRANSFER_FEE]`。
+- **原子性**：`validate → plan → commit → assert`；失败发生在 commit 之前，membership / contract / finance / lineup 均不产生半提交。
+- **错误码**：`PLAYER_NOT_FOUND` / `PLAYER_RETIRED` / `PLAYER_NOT_IN_SELLER` / `PLAYER_HAS_NO_ACTIVE_CONTRACT` / `CONTRACT_MISMATCH` /
+  `BUYER_CLUB_NOT_FOUND` / `SAME_CLUB` / `ROSTER_FULL` / `SELLER_LAST_GK` / `FREE_AGENT_NOT_TRANSFERABLE` / `INSUFFICIENT_CASH` /
+  `INSUFFICIENT_TRANSFER_BUDGET` / `INVALID_TRANSFER_FEE`（复用项目既有 SimulationError code 风格）。
+- **schema**：**保持 10**；`SAVE_FORMAT_VERSION` 保持 1；未新增 RNG；未新增持久容器；**D10 仍 Deferred**。
+- **验证**：`tests/transfer.test.js`（A–O + Controller，失败原子性含全部前置拒绝）；累计 **286/286 通过**；
+  10/50/100/200 赛季长跑不变量全通过；Save/Load 往返一致；比赛黄金指纹（143/143/1141）不变。
+- **仍未实现（Step 29+）**：Transfer UI / AI Transfer / Contract Expiry / Renewal / Loan / Window / Negotiation / Market Value / Transfer History / 收入系统 / **D10**。
+- 详见 [DECISIONS D-27](file:///workspace/docs/DECISIONS.md) 与 [SIMULATION_SPEC](file:///workspace/docs/SIMULATION_SPEC.md) §33。
 
 ---
 
