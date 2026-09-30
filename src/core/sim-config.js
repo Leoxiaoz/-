@@ -75,6 +75,49 @@ export const WORLD_MIN_POPULATION = 96;
 export const WORLD_SOFT_CAP = 112;
 
 /**
+ * DDTI —— Dynamic Depth Target Intake 参数（Step 35D；D-35.1~D-35.11 受控重开 D-34.1 的 C 分支）。
+ * 层级归属：Simulation Core / Population。纯数据，无副作用。
+ *
+ * 语义：在 **结构缺口补位之后**，允许**有界、状态驱动、确定性**的 squad depth intake，
+ * 以维持有限 depth elasticity（防止 `96/12/0` 永久吸收）。**不是** population→112 目标，
+ * **不是** 每 club 补到 14，**不是** 强制交易，**不**随机生成 FA。
+ *
+ * 所有数值均为 **Step 35D 实验参数**（D-35.6 / D-35.7 标 `[TBD]`），集中于此以便参数实验。
+ */
+export const DDTI_CONFIG = Object.freeze({
+  /** 总开关：false 时完全跳过 DDTI（结构补位与既有语义不变）。 */
+  ENABLED: true,
+  /**
+   * target 硬上限（D-35.6 `DEPTH_CAP`，`[TBD]`）。实验候选 14 / 15 / 16 / 17。
+   * 必须 ≥ `HOLDING_TARGET(14)`，且 `MIN_TARGET ≤ DEPTH_CAP ≤ WORLD_SOFT_CAP`。
+   */
+  DEPTH_CAP: 16,
+  /** target 硬下限（= Domain 结构生存线，D-35.3 `[已定]`）。 */
+  MIN_TARGET: 12,
+  /** 每 Club 每季 DDTI intake 上限（D-35.7，`[TBD]`；实验候选 1 / 2 / 3）。 */
+  PER_CLUB_INTAKE_CAP: 1,
+  /** World 每季 DDTI intake 上限（独立于 112；D-35.7，`[TBD]`；实验候选 2 / 4 / 6 / 8）。 */
+  WORLD_INTAKE_CAP: 4,
+  /** Hysteresis 进入阈值：非深度状态需 `depthPressure ≥` 此值才允许 intake（D-35.5，`[TBD]`）。 */
+  HYSTERESIS_UP: 0.30,
+  /** Hysteresis 退出阈值：已处于深度状态只需 `depthPressure ≥` 此（更低）值即可维持（D-35.5，`[TBD]`）。 */
+  HYSTERESIS_DOWN: 0.15,
+  /** 「近期动作」派生窗口（赛季）：冷却 + recentTransferBias；**derived，不持久化**。 */
+  RECENT_WINDOW: 2,
+  /** 状态权重（归一化前；D-35.3 六维）。 */
+  STATE_WEIGHTS: Object.freeze({
+    AGE: 0.20,
+    CONGESTION: 0.20,
+    NEED: 0.30,
+    FINANCE: 0.15,
+    RECENT: 0.15,
+    DEVELOPMENT: 0.20,
+  }),
+  /** Policy bias 允许倍率区间（D-35.4：Policy 仅 bias，非 identity；**有界**）。 */
+  POLICY_BIAS_BOUNDS: Object.freeze({ MIN: 0.85, MAX: 1.15 }),
+});
+
+/**
  * 各线评分参考属性（MVP 最小集，DECISIONS D-11）。
  * 供 `team-strength`（选阵/实力/比赛修复）与 `player-lineup`（赛季自愈回填）共用，避免重复定义。
  */

@@ -197,23 +197,26 @@ test('人口补位：每队满足阵容边界与位置最低保障，且不无�
   }
 });
 
-test('长期人口稳定：人口在 [Σ俱乐部下限, 初始] 内波动，不机械恢复初始规模', () => {
+// 说明（Step 35D）：本用例度量 **结构补位基线**（D-17/D-34.1-A/B）——即「不机械恢复初始规模」。
+// DDTI（D-35，受控重开 D-34.1-C）是有界 depth intake，会维持 depth；因此此处显式关闭 DDTI 以隔离该基线语义。
+test('长期人口稳定：人口在 [Σ俱乐部下限, 初始] 内波动，不机械恢复初始规模（结构基线，DDTI 关闭）', () => {
   const state = agedState(8, ['FW']);
   const clubCount = Object.keys(state.runtime.clubs).length;
   const initialTotal = activePlayers(state).length; // 112
-  new SimulationCore().advanceDays(state, 30 * 125);
+  new SimulationCore({ ddti: { ENABLED: false } }).advanceDays(state, 30 * 125);
   const total = activePlayers(state).length;
   assert(total >= clubCount * ROSTER_CONFIG.MIN_PLAYERS,
     `总活跃人数应不低于俱乐部下限总和（实际 ${total}）`);
   assert(total <= initialTotal, `总活跃人数不应超过初始规模（实际 ${total}>${initialTotal}）`);
-  // 强制老龄化后人口应随退休自然下降——exact-112 恢复已被废弃。
+  // 强制老龄化后人口应随退休自然下降——exact-112 恢复已被废弃（结构补位只补缺口，不补 depth）。
   assert(total < initialTotal, `人口应随退休下降而非机械恢复初始规模（实际 ${total}）`);
 });
 
 // ---------- 小型世界 ----------
-test('小型世界：按俱乐部边界补位（不按大库规模造人），人口稳定不爆炸', () => {
+test('小型世界：按俱乐部边界补位（不按大库规模造人），人口稳定不爆炸（结构基线，DDTI 关闭）', () => {
   const state = createGameState(parseWorld(smallWorldFiles()));
-  new SimulationCore().advanceDays(state, 20 * 125);
+  // Step 35D：本用例度量**结构补位基线**（不按大库规模造人）；DDTI 为独立的 depth 机制，此处关闭以隔离。
+  new SimulationCore({ ddti: { ENABLED: false } }).advanceDays(state, 20 * 125);
   const perClub = Object.keys(state.runtime.clubs).map((c) => getTeamPlayers(state, c).length);
   // 每队被补到阵容下限（GK1+DF4+MF4+FW2=11 结构 + 1 缓冲 = MIN_PLAYERS=12），不会无限增长。
   for (const n of perClub) {
@@ -221,8 +224,8 @@ test('小型世界：按俱乐部边界补位（不按大库规模造人），�
       `小型世界阵容应在边界内，实际 ${n}`);
   }
   const after = activePlayers(state).length;
-  new SimulationCore().advanceDays(state, 10 * 125);
-  assertEquals(activePlayers(state).length, after, '小型世界人口应稳定');
+  new SimulationCore({ ddti: { ENABLED: false } }).advanceDays(state, 10 * 125);
+  assertEquals(activePlayers(state).length, after, '小型世界人口应稳定（结构基线）');
 });
 
 // ---------- 访问器 ----------
@@ -421,14 +424,14 @@ function byPosition(state, clubId, position) {
   return getTeamPlayers(state, clubId).filter((p) => p.position === position).length;
 }
 
-test('A. 退役不再导致下一季精确恢复：14 → 13（边界内）不补人', () => {
+test('A. 退役不再导致下一季精确恢复：14 → 13（边界内）不补人（结构基线，DDTI 关闭）', () => {
   const files = makeLeagueWorldFiles(8);
   // 仅让 clb_001 的一名 FW 超龄退役（其余球员年龄 17–28，不达退役软区间）。
   files.players.find((p) => p.teamId === 'clb_001' && p.position === 'FW').birthDate = '1986-06-15';
   const state = createGameState(parseWorld(files));
   assertEquals(rosterCount(state, 'clb_001'), 14);
-  // 本测试度量 Population Policy 语义；AI Club Decision（Step 31）为独立子系统，隔离以避免转会干扰 roster 计数。
-  new SimulationCore({ enableAI: false }).advanceDays(state, 92); // 完成第 1 季并滚动
+  // 本测试度量 **Population Policy 结构语义**；AI（Step 31）与 DDTI depth intake（Step 35）为独立子系统，均隔离。
+  new SimulationCore({ enableAI: false, ddti: { ENABLED: false } }).advanceDays(state, 92); // 完成第 1 季并滚动
   assertEquals(rosterCount(state, 'clb_001'), 13, '13 仍在边界内（>= MIN_PLAYERS），不得补回 14');
   assertEquals(byPosition(state, 'clb_001', 'FW'), 2, 'FW 仍在位置最低保障内');
   assertEquals(Object.values(state.runtime.generated).filter((g) => g.teamId === 'clb_001').length, 0,

@@ -947,6 +947,17 @@ Step 34 实现后必须测试 **10 / 50 / 100 / 200 / 500** 赛季，至少检�
 - **新增生态指标**：population range / mean roster / roster distribution / FA distribution / transfer·SELL·RELEASE·FA-signing counts / buyer·seller distribution / **club role transition count** / max consecutive seasons with zero transfer / zero seller / zero buyer / max single-club market participation / target distribution / target transition count。
 - **不得只看平均值**：必须检查 distribution 与 **per-club persistence**（如 Club A 100 季卖 20 次、Club B 0 次，即使全局平均正常，也视为存在潜在永久身份问题）。**市场健康 = Global Metrics + Club-level Persistence。**
 
+### D-35D DDTI Implementation + Experiment（Step 35D）`[已实现；参数待 Step 35E 冻结]`
+> 依 D-35.1~D-35.11 实现 **DDTI** 并做参数实验 + 长跑验证。**未冻结任何新数值**；`DEPTH_CAP` 等仍 `[TBD]`。Schema **10** / Save Format **1** 不变。
+
+- **实现**：新增 `src/core/ai/ai-depth-intake.js`（`evaluateDepthPressure` / `effectiveDepthTarget` / `evaluateDepthIntake` / `classifyMarketRole`，纯函数、无 RNG、无 OVR）；`sim-config.DDTI_CONFIG`（参数集中）；`player-lifecycle.runDepthIntake`（应用层，FA 优先 → `generatePlayer`）+ 接入 `runPlayerLifecycle`（**结构补位在前、depth intake 在后**）；`SimulationCore({ ddti })` 参数覆盖（实验用）。**未改** Transfer / Match / Team Strength / membership / contract / save。
+- **⚠ 关键发现（真正的长期冻结根因，非 supply）**：AI 候选过滤器 `filterCandidates` / `decideSell` **要求 active 合同**，而 Domain `validateTransfer`（T9）**明确允许 generated 球员无合同**。随着赛季推进，阵容被 generated 球员（**无合同**）取代后，AI **无法产生任何 Club↔Club 候选** → 市场在 ~S50 冻结为 `112/14/0`。**修复**：`ai-candidate.js` / `ai-decide.js` 的资格判定与 Domain 对齐（`activeOwned || (generated && 无合同)`）；`sellerKeepsStructure` / exit cap / transferPlayer **未动**。
+- **实验（8 队，排除 managed 现金汇；**无 managed club** 的纯 AI 世界）**：修复后 500 季市场**持续活跃** —— `C1(cap14/pc1/wc4)` tail20=246、`C2(cap15/pc1/wc6)` tail20=157、`C3(cap16/pc1/wc6)` tail20=267；**maxConsecZeroTransfer=0**；pop∈[104,112]；roster∈[12,15]；FA 偶现；role transition 521~666；maxSellShare≈0.17~0.20（**无永久 supplier/buyer**）；cash/transferBudget ≥0；roster≤24；无 NaN。
+- **参数筛选（50 季）**：`DEPTH_CAP` 14/15/16/17 均可产生活跃市场；**per-club cap ≥2 有害**（cap16/pc2 曾出现 10 季 0 交易）；hysteresis low≈med（0.20/0.30 阈值常不约束），high 略降活跃。world cap 4~6 较优。
+- **⚠ 残余限制（finance 侧，超出 DDTI 范围）**：若存在 **managed（非 AI）俱乐部**，AI 会把现金净付给该俱乐部（AI 只买/卖、managed 不支出），**cash 单向集中**至 managed（如 500 季后 8000 中 7961 集中于 managed），其余 AI 俱乐部 cash→0 而无法购买 → 市场长期冻结。根因：**D-33.8（cash 不再生）** + managed 免于 AI。**非 DDTI 缺陷**，需后续 finance 决策。
+- **建议候选（`[建议]`，未冻结）**：`C1 = cap14 / per-club 1 / world 4`（pop 最富弹性 104–112、tail20 最高之一、maxSellShare 最低 0.17）；备选 `C3 = cap16 / 1 / 6`（活跃最高）。**最终数值留待 Step 35E。**
+- **验证**：测试 **321/321 通过**（新增 `tests/ai-depth-intake.test.js` A1–9）；Golden `143/143/1141` 不变；determinism（同 world/seed/config 结果一致）；Browser Smoke clean。
+
 ### D-35 附：保持不变（不改写）`[已定]`
 - **Transfer Domain 不修改**：仍 `Club A → Club B`，经 `transferPlayer()`；buyer `cash -= fee` 且 `transferBudget -= fee`；seller `cash += fee`，seller `transferBudget` **不自动增加**；Population Supply **不得强迫 Transfer**。
 - **AI 链不变**：`Need → Candidate → Suitability → Finance → Action`；`HARD > COMPETITIVE > SOFT > NONE`。

@@ -22,7 +22,9 @@ import {
   ROSTER_CONFIG,
   WORLD_MIN_POPULATION,
   WORLD_SOFT_CAP,
+  DDTI_CONFIG,
 } from './sim-config.js';
+import { evaluateDepthIntake } from './ai/ai-depth-intake.js';
 import { createRng, hashSeed } from './rng.js';
 import { ageOn } from './date-utils.js';
 import {
@@ -36,7 +38,7 @@ import {
   getPlayerRuntime,
   createPlayerRuntime,
 } from './player-runtime.js';
-import { addPlayerMembership, removePlayerMembership } from './membership.js';
+import { addPlayerMembership, removePlayerMembership, getClubPlayers } from './membership.js';
 import { getPlayerContract, terminateContract } from './contract.js';
 import { selectFreeAgentForPosition, signFreeAgent } from './free-agent.js';
 import { recordEvent } from './game-state.js';
@@ -327,14 +329,51 @@ export function replenishPopulation(state, { fromSeason, toSeason }) {
 }
 
 /**
+ * DDTI —— Controlled Depth Intake 应用层（Step 35D；D-35.1~D-35.11）。
+ * 在**结构缺口补位之后**调用：按 `evaluateDepthIntake` 的**确定性计划**执行有限 depth intake。
+ * 语义：
+ * - FA 优先：计划若给出 `FREE_AGENT` 且仍可用 → `signFreeAgent`（不改 N）；否则回退 `generatePlayer`。
+ * - 有界：受 `per-club intake cap` / `world intake cap` / `N ≤ WORLD_SOFT_CAP` / `roster < MAX` 约束。
+ * - **不**制造交易、**不**直接补到 112、**不**随机生成 FA；仅提供潜在 squad surplus。
+ * @returns {string[]} 本季新生成的 playerId（FA 签约不计入）
+ */
+export function runDepthIntake(state, { fromSeason, toSeason, overrides = null }) {
+  if (!DDTI_CONFIG.ENABLED && !(overrides && overrides.ENABLED)) return [];
+  const generated = [];
+  const { plans } = evaluateDepthIntake(state, { season: toSeason, overrides });
+  for (const plan of plans) {
+    for (const pick of plan.picks) {
+      if (getClubPlayers(state, plan.clubId).length >= ROSTER_CONFIG.MAX_PLAYERS) break;
+      if (pick.source === 'FREE_AGENT' && pick.freeAgentId) {
+        try {
+          signFreeAgent(state, pick.freeAgentId, plan.clubId);
+          continue; // FA 复用不改变 world population
+        } catch {
+          // FA 已不可用（被签走/已非 FA）→ 回退生成
+        }
+      }
+      if (getWorldPlayers(state).length >= WORLD_SOFT_CAP) continue; // 硬安全上限：不再生成
+      generated.push(generatePlayer(state, {
+        position: pick.position,
+        teamId: plan.clubId,
+        season: toSeason,
+        fromSeason,
+      }));
+    }
+  }
+  return generated;
+}
+
+/**
  * 赛季滚动的球员生命周期编排（在 `developPlayers` 之后、`resetSeasonStats` 之前调用）。
- * 顺序：退役+归档 → 计算人口/位置缺口 → 生成属于下一赛季的新生代。
+ * 顺序：退役+归档 → 结构缺口补位（含 world 安全网）→ **DDTI depth intake**（结构优先于 depth）。
  * @param {{fromSeason: number, toSeason: number}} ctx
  * @returns {{retired: string[], generated: string[]}}
  */
-export function runPlayerLifecycle(state, { fromSeason, toSeason }) {
+export function runPlayerLifecycle(state, { fromSeason, toSeason, ddti = null }) {
   if (!C.ENABLED) return { retired: [], generated: [] };
   const retired = processRetirements(state, fromSeason);
   const generated = replenishPopulation(state, { fromSeason, toSeason });
+  generated.push(...runDepthIntake(state, { fromSeason, toSeason, overrides: ddti }));
   return { retired, generated };
 }

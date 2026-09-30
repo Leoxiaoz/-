@@ -32,13 +32,15 @@ import { tickInjuries, resolveMatchInjuries } from './player-injury.js';
 import { SCHEDULE_CONFIG, MATCH_LOAD_CONFIG } from './sim-config.js';
 
 export class SimulationCore {
-  /** @param {{logger?: object, trainingFactor?: Function, enableAI?: boolean}} [deps] */
+  /** @param {{logger?: object, trainingFactor?: Function, enableAI?: boolean, ddti?: object}} [deps] */
   constructor(deps = {}) {
     this.logger = deps.logger ?? null;
     /** 训练修正预留接口（B1）；缺省由 player-growth 使用 1.0。 */
     this.trainingFactor = deps.trainingFactor ?? null;
     /** AI Club Decision Framework v1（Step 31）：缺省启用；置 false 可在测试中隔离非 AI 子系统。 */
     this.enableAI = deps.enableAI !== false;
+    /** DDTI 实验参数覆盖（Step 35D；缺省 null = 使用 DDTI_CONFIG）。仅影响 depth intake。 */
+    this.ddti = deps.ddti ?? null;
   }
 
   /**
@@ -221,7 +223,7 @@ export class SimulationCore {
         seasonNumber: prevSeason,
         training: this.trainingFactor ?? undefined,
       });
-      runPlayerLifecycle(state, { fromSeason: prevSeason, toSeason: maxSeason });
+      runPlayerLifecycle(state, { fromSeason: prevSeason, toSeason: maxSeason, ddti: this.ddti });
       // Step 34 / D-33.15：transferBudget 再生（Population 稳定后、AI 决策前；每赛季边界恰好一次）。
       replenishTransferBudget(state);
       // AI Club Decision Framework v1（Step 31 / D-28）：Population Health 完成后、lineup repair 前。

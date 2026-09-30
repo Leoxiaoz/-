@@ -23,6 +23,7 @@ import './membership.test.js';
 import './free-agent.test.js';
 import './transfer.test.js';
 import './ai.test.js';
+import './ai-depth-intake.test.js';
 import './lineup.test.js';
 import './save.test.js';
 import './indexeddb.test.js';

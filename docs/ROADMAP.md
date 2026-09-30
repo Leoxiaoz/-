@@ -379,6 +379,14 @@
 - **全部具体数值 `[TBD]`**：`DEPTH_CAP`（候选 14/15/16/17）、target function、hysteresis 阈值、per-club / world intake cap —— 留待 **Step 35D 参数实验**。
 - **Step 35D 验收**：10/50/100/200/500 季；`N∈[96,112]`、`R_c∈[12,24]`、`FA≥0`、`cash/transferBudget≥0`、无 NaN/Infinity/负值/`>24`、deterministic、Golden `143/143/1141` 不变；新增生态指标 + **club role transition** + **per-club persistence**（不得只看均值）。
 
+### 2.26 DDTI 实现 + 参数实验（2026-09-30，Step 35D）
+
+- **已实现**：`src/core/ai/ai-depth-intake.js`（DDTI 纯评估/规划）；`sim-config.DDTI_CONFIG`；`player-lifecycle.runDepthIntake`（FA 优先→生成）；接入 `runPlayerLifecycle`（结构→depth）；`SimulationCore({ ddti })` 实验覆盖。**未改 Transfer/Match/TeamStrength/membership/contract/save**。
+- **⚠ 根因修正**：长期市场冻结的真正原因是 **AI 候选资格要求 active 合同**、而 Domain（T9）**允许 generated 无合同**——generated 取代静态球员后 AI 无候选 → ~S50 冻结。已修 `ai-candidate.js`/`ai-decide.js`（与 Domain 对齐）。
+- **长跑（纯 AI 世界，500 季）**：市场**持续活跃**（maxConsecZeroTransfer=0），`N∈[104,112]`、roster∈[12,15]、无永久 supplier/buyer、cash/budget≥0、Golden 不变。
+- **残余限制（超出 DDTI）**：存在 **managed club** 时 cash 单向集中（D-33.8 cash 不再生 + managed 免 AI）→ 长期冻结；需后续 finance 决策。**待 Step 35E 冻结参数。**
+- **测试**：**321/321 通过**（新增 `tests/ai-depth-intake.test.js`）；Browser Smoke clean。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

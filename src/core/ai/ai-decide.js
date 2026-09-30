@@ -220,7 +220,11 @@ export function decideSell(state, clubId, movedSet = new Set()) {
     const profile = getPlayerProfile(state, playerId);
     if (!profile) continue;
     const contract = getPlayerContract(state, playerId);
-    if (!contract || contract.status !== CONTRACT_STATUS.ACTIVE || contract.clubId !== clubId) continue;
+    const activeOwned = Boolean(contract)
+      && contract.status === CONTRACT_STATUS.ACTIVE
+      && contract.clubId === clubId;
+    // 与 Domain `validateTransfer` 一致：generated 球员允许无 active 合同（T9）。
+    if (!activeOwned && !(profile.generated && !contract)) continue;
     if (!sellerKeepsStructure(state, clubId, playerId, profile)) continue;
     const age = profile.birthDate ? ageOn(profile.birthDate, state.currentDate) : 26;
     const suit = evaluatePlayerSuitability(state, clubId, playerId, { position: profile.position }, 'Backup').score;

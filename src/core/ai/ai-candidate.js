@@ -105,11 +105,15 @@ export function filterCandidates(state, clubId, need, source) {
       // fee = 0 → 8) finance 恒满足
       out.push(playerId);
     } else {
-      // 6) transfer eligibility
+      // 6) transfer eligibility（与 Domain `validateTransfer` 一致：T9 允许 generated 球员无 active 合同）
       const sellerClubId = getPlayerClub(state, playerId);
       if (sellerClubId == null) continue;
       const contract = getPlayerContract(state, playerId);
-      if (!contract || contract.status !== CONTRACT_STATUS.ACTIVE || contract.clubId !== sellerClubId) continue;
+      const activeOwned = Boolean(contract)
+        && contract.status === CONTRACT_STATUS.ACTIVE
+        && contract.clubId === sellerClubId;
+      const generatedUncontracted = Boolean(profile.generated) && !contract;
+      if (!activeOwned && !generatedUncontracted) continue;
       // 9) no known Domain hard block（seller 结构护栏）
       if (!sellerKeepsStructure(state, sellerClubId, playerId, profile)) continue;
       // 8) finance affordable（fee ≤ cash 且 fee ≤ availableBudget）
