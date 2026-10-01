@@ -1039,6 +1039,61 @@ Step 34 实现后必须测试 **10 / 50 / 100 / 200 / 500** 赛季，至少检�
 
 ---
 
+## D-38 Competition Structure（Step 38A 审计 / Step 38B 决策冻结）
+
+> 本步（Step 38B）为 **DOCS-ONLY Decision Freeze**：**未修改任何代码 / 测试 / 配置 / .fdb / Schema / Save Format**，**未 commit**。
+> 依据：Step 38A 只读审计（Current Competition Model = **League ≡ Competition ≡ Division**；Club→League 单值、无历史、无写入口；**H2：赛季边界判定取"首个 competition"**）。
+> **冻结取向 = Candidate B（Competition 与 Division 分离）+ Country/World 规则数据化 + 两阶段派生执行 + 一期最小金字塔。**
+
+### D38.1 Competition Domain 实体模型 `[已定]`
+- **实体**：`Country → Division → Club`；`Competition`（含 `format`）引用 `Division` 与参赛集合；`Competition Season` 为 Competition 的**逻辑实例边界**。
+- **League 与 Competition 合并**：`format = RoundRobin` 即"联赛"，**不再保留独立 League 实体**；**Division = Country 下的层级（tier）**。
+- **约束**：一个 Club **同一赛季同一国内层级只属于一个 Division**；**可**同时参加国内联赛 + 杯赛 + 洲际赛（多赛事 = 多个 Competition，靠显式 `competitionId` 关联）。
+
+### D38.2 Competition Season `[已定]`
+- **逻辑独立**：赛季是 Competition 的**实例边界**；Standings / Fixtures / History / Champions / Promotion-Relegation / Qualification 均以**赛季实例**为自然键。
+- **Phase 1 持久化**：`Competition Season` **不强制**为独立顶层持久实体（可先作为 Competition runtime 的子结构 + 归档）；**实体化属增强，延后**。
+- **世界级 `state.season`**：保持"推进标量"语义（可由各 Competition Season 派生，保留现有 `maxSeason` 行为）。
+
+### D38.3 Club Membership 语义 `[已定]`
+- `runtime.membership.clubs[clubId]` 保持为**当前归属的唯一真相源**（不破坏 D-19）。
+- **历史归属不写入 membership**；由 **Competition Season 最终排名 + 升降级结果** 归档**派生**。
+- 升降级迁移必须经**新增的受控 Domain 写入口**；**禁止**绕过 membership 层直接改写归属。
+
+### D38.4 Promotion / Relegation 归属与执行 `[已定]`
+- **规则归属 = Country / World 层**；规则**数据化**（见 D38.5）。
+- **执行时机 = 两阶段**：① 赛季结束 → 生成 Promotion/Relegation 结果；② 下一赛季开始 → 迁移 membership → 生成新赛程。
+- **结果纯派生**：可由「上季各 Division 最终排名 + 规则」**确定性重算** ⇒ **不新增持久 transition 字段**（降低 Save 风险）。
+- **确定性**：无 RNG / 时间 / 未排序遍历依赖；同 `(World + Save + Season + Input)` 必得同结果。
+
+### D38.5 Competition Rules 数据驱动 `[已定]`
+- **Engine Rule（固定，写代码）**：Round-Robin / Knockout 算法、排名计算、确定性 tiebreak 机制、赛程生成算法。
+- **World Data Rule（写 `.fdb`）**：`pointsForWin/Draw/Loss`、`promotionSpots`、`relegationSpots`、`playoff`、tiebreak 顺序、`tier`、赛程参数。
+- **目标**：年度 `.fdb`（2027/2028/…）可改变真实赛事规则而**不重写模拟引擎**。
+
+### D38.6 多赛事 Season Boundary `[已定（架构约束）]`
+- 现有"取 id 升序首个 competition"判定赛季边界（Step 38A **H2**）**必须泛化**：赛季滚动须支持**多个 Competition 的独立完成判定 + 世界级推进**。
+- 本步**仅冻结约束**；实现属后续步骤。
+
+### D38.7 Save / Schema `[已定]`
+- **Schema 10 / Save Format 1 保持**；新增 Competition / Division / Season 结构一律**加法式 + 读档 normalize**。
+- **不新增**升降级 transition 持久字段（结果纯派生）。
+- Competition 主键**向后兼容**（保留 `leagueId` 兼容键，避免旧档失效）。
+
+### D38.8 Phase 1 最小金字塔范围 `[已定]`
+- **纳入**：多 Division（多层级）、Promotion、Relegation、membership 迁移、Competition Season（逻辑）、Competition Rules 数据化、多赛事 Season Boundary 修复。
+- **不纳入（Deferred / 扩展）**：Playoff、Domestic Cup、Continental、Qualification（保留接口，不在 Phase 1 实现）。
+
+### D38.9 不破坏冻结系统 `[已定]`
+- **DDTI C1 不变**（多 Division 不改变世界人口 `96–112` 与 DDTI 机制；DDTI 不引入 league 维度）。
+- **Finance Feedback 不变**；**Transfer Domain 不变**；**Match / Team Strength 不变**。
+- **Golden `143/143/1141` 必须保持**；现有 **336** 测试不得回退。
+
+### D38 附：Step 38A 已确认的关键事实（供实现参考）
+- Competition 主键 ≡ League ID（`runtime.competitions[league.id]`）；Club→League **单值、无写入口**；Fixture/Standings 内嵌于 competition（靠 id 字符串 / 存放位置隐式关联）；`getSeasonCalendar` 取**首个** competition（H2）；唯一已有 league 依赖点为 `ai-need` 的联赛基线（**派生读取，天然适配升降级**）。
+
+---
+
 ## Deferred Issues（登记；不在本步骤处理）
 
 ### DF-01 Managed Club Cash Concentration / World Finance Feedback `[Resolved → Step 36C 冻结]`

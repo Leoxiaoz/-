@@ -412,6 +412,14 @@
 - **Browser Smoke**：页面/世界加载正常、赛季推进正常、无 console error、无 JS/数据 404（仅既有 `favicon.ico` 404）。
 - **下一步**：进入用户决策（Step 37 由用户指定），本步**不自行进入**。
 
+### 2.30 Competition Structure Decision Freeze（2026-10-01，Step 38A 审计 / Step 38B 冻结）
+
+- **性质**：**DOCS-ONLY Decision Freeze**；未修改代码 / 测试 / 配置 / .fdb / Schema / Save Format，未 commit。详见 [DECISIONS D-38](file:///workspace/docs/DECISIONS.md) 与 [SIMULATION_SPEC §36](file:///workspace/docs/SIMULATION_SPEC.md)。
+- **冻结模型（Candidate B）**：`Country → Division(tier) → Club`；`Competition(format)` 引用 Division/参赛集合；`Competition Season` 为 Competition 的逻辑实例边界；**League ≡ Competition(format=RoundRobin)**。
+- **已定（D38.1~D38.9）**：实体模型；Competition Season 逻辑独立（Phase 1 不强制持久实体）；membership 仅存当前归属（历史派生）+ 受控写入口；Promotion/Relegation 归 Country/World + 规则数据化 + **两阶段派生执行**（无新持久字段）；Rules 分层（Engine 固定 / World Data 入 `.fdb`）；**多赛事 Season Boundary 修复**（Phase 1 前置）；Schema **10** / Save **1** 加法式；一期**最小金字塔**（多层级 + 升降级 + membership 迁移，Playoff/Cup/Continental/Qualification 延后）。
+- **不变**：DDTI C1、Finance Feedback、Transfer Domain、Match / Team Strength、Golden `143/143/1141`。
+- **下一步 [TBD]**：Step 38C+ 由用户指定；本步**不自行进入**。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

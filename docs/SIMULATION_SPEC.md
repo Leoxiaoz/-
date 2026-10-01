@@ -795,3 +795,20 @@
 - **不变**：Transfer Domain、Transfer Fee 公式、DDTI C1（`DEPTH_CAP=14 / PER_CLUB=1 / WORLD=4 / HU=0.30 / HD=0.15`）、Match / Team Strength、**Schema 10 / Save Format 1**；**不新增**任何 finance feedback 持久化字段（纯派生、无迁移）。
 - **验证依据（Step 36B 摘要）**：CF-A 基线冻结（maxZero≈243）；**CF-B（sink）/ CF-D（world income）/ CF-F（decoupling）失败**；**CF-C / CF-E 通过**；**最终选择 CF-E2（threshold=35% / redistribution=20%）**。**Golden Regression 143/143/1141 必须保持**。
 - **Step 36D 实现 + 验证**：`runManagedFinanceFeedback` 接入 `#rollFinishedSeasons`（`replenishTransferBudget` 之后 / `runSeasonAI` 之前）；新增 `tests/finance-feedback.test.js`（FF-01~FF-15）。**全量测试 336/336 通过**（321 旧 + 15 新，0 失败）；Golden `143/143/1141` 不变；10/50/100/200/500 赛季长跑（managed-normal / cash-high / heavy-sell / ~34% / ~50% / AI-ultra-low / AI-uneven / pure-AI）：`worldCash` 严格守恒、`managedShare` 稳定在 ~0.28–0.35、AI cash median 健康、`maxConsecZeroTransfer ≤ 1`、无新 absorbing state；browser smoke clean（仅既有 `favicon.ico` 404）。
+
+---
+
+## §36 Competition Structure（Step 38A 审计；Step 38B 决策冻结）
+
+- **状态**：**实体模型与升降级机制已冻结（Step 38B，DOCS-ONLY）**；**实现待后续步骤**。决策来源见 [DECISIONS D-38](file:///workspace/docs/DECISIONS.md)（D38.1~D38.9）。
+- **目标模型（Candidate B）**：`Country → Division(tier) → Club`；`Competition`（含 `format`）引用 `Division` 与参赛集合；`Competition Season` 为 Competition 的**逻辑实例边界**。**League ≡ Competition(format=RoundRobin)**；**Division = Country 下的层级**。
+- **Club Membership**：`runtime.membership.clubs[clubId]` 仅存**当前归属**（D-19 唯一真相源，保持不变）；**历史归属由赛季归档派生**；升降级经**新增受控 Domain 写入口**，禁止绕过 membership 层。
+- **Promotion / Relegation**：规则归 **Country / World 层**且**数据化**；**两阶段**执行（赛季末生成结果 → 下季初迁移 membership → 生成新赛程）；结果**纯派生**、确定性、**无新持久字段**。
+- **Competition Rules 分层**：**Engine Rule**（Round-Robin/Knockout 算法、排名计算、确定性 tiebreak、赛程算法）固定；**World Data Rule**（`pointsForWin/Draw/Loss`、`promotionSpots/relegationSpots`、`playoff`、tiebreak 顺序、`tier`、赛程参数）入 `.fdb`。
+- **Fixture**：共享**单一 Fixture Domain**；需补显式 `competitionId` / `competitionSeasonId`（当前靠存放位置 + id 字符串隐含）；`stage / leg / neutralVenue` 属扩展。
+- **Standings**：挂 **Competition Season**（**非** Club）。
+- **Season Boundary**：**必须泛化**以支持多 Competition（现有 `getSeasonCalendar` 取"首个 competition"的假设需替换）—— 多赛事一切扩展的前置条件。
+- **现状事实（Step 38A）**：Competition 主键 ≡ League ID；Club→League 单值无写入口；`ai-need` 的联赛基线是唯一已有 league 依赖点（派生读取，**天然适配**升降级）。
+- **不变**：DDTI C1（`DEPTH_CAP=14 / PER_CLUB=1 / WORLD=4 / HU=0.30 / HD=0.15`）、Finance Feedback、Transfer Domain、Match / Team Strength；**Schema 10 / Save Format 1 保持**（全加法 + normalize）。
+- **Phase 1 范围**：多 Division + Promotion + Relegation + membership 迁移 + Competition Season（逻辑）+ Rules 数据化 + 多赛事 Season Boundary 修复；**Playoff / Cup / Continental / Qualification 延后**（保留接口）。**Golden `143/143/1141` 必须保持**。
+- **下一步 [TBD]**：Step 38C+ 由用户指定（实现 Competition Domain / 修复多赛事边界 / 或其余缺口）。
