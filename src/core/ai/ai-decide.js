@@ -13,7 +13,8 @@ import { AI_CONFIG } from './ai-config.js';
 import { getAIClubPolicy } from './ai-club-policy.js';
 import { evaluateSquadNeed } from './ai-need.js';
 import { filterCandidates, CANDIDATE_SOURCE, sellerKeepsStructure } from './ai-candidate.js';
-import { evaluatePlayerSuitability, potentialHeadroom } from './ai-suitability.js';
+import { evaluatePlayerSuitability } from './ai-suitability.js';
+import { estimatePotentialHeadroom } from './ai-potential-estimate.js';
 import { ROSTER_CONFIG } from '../sim-config.js';
 import { getPlayerClub, getClubPlayers } from '../membership.js';
 import { getPlayerContract, CONTRACT_STATUS } from '../contract.js';
@@ -87,7 +88,7 @@ export function decideRelease(state, clubId) {
     if (!releaseKeepsStructure(state, clubId, playerId)) continue;
     const age = profile.birthDate ? ageOn(profile.birthDate, state.currentDate) : 26;
     const suit = evaluatePlayerSuitability(state, clubId, playerId, { position: profile.position }, 'Backup').score;
-    candidates.push({ id: playerId, age, suit, pot: potentialHeadroom(profile), position: profile.position });
+    candidates.push({ id: playerId, age, suit, pot: estimatePotentialHeadroom(state, clubId, playerId), position: profile.position });
   }
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => (
@@ -155,7 +156,7 @@ export function decideTransfer(state, clubId) {
         id,
         score: evaluatePlayerSuitability(state, clubId, id, n, role).score,
         age,
-        pot: potentialHeadroom(profile),
+        pot: estimatePotentialHeadroom(state, clubId, id),
       };
     });
     scored.sort((a, b) => (
@@ -228,7 +229,7 @@ export function decideSell(state, clubId, movedSet = new Set()) {
     if (!sellerKeepsStructure(state, clubId, playerId, profile)) continue;
     const age = profile.birthDate ? ageOn(profile.birthDate, state.currentDate) : 26;
     const suit = evaluatePlayerSuitability(state, clubId, playerId, { position: profile.position }, 'Backup').score;
-    candidates.push({ id: playerId, age, suit, pot: potentialHeadroom(profile), position: profile.position });
+    candidates.push({ id: playerId, age, suit, pot: estimatePotentialHeadroom(state, clubId, playerId), position: profile.position });
   }
   if (candidates.length === 0) return null;
   // surplus 排序：低 suitability → 高年龄 → 低潜力 → playerId 升序（确定性）

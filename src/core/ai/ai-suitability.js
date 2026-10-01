@@ -10,6 +10,7 @@
 
 import { AI_CONFIG } from './ai-config.js';
 import { getAIClubPolicy } from './ai-club-policy.js';
+import { estimatePotential } from './ai-potential-estimate.js';
 import { getEffectiveAttributes, getPlayerProfile, getPlayerRuntime, INJURY_STATUS } from '../player-runtime.js';
 import { injuryChanceFor } from '../player-injury.js';
 import { ageOn } from '../date-utils.js';
@@ -49,9 +50,10 @@ function ageBandIndex(age) {
  * @param {string} playerId
  * @param {{position?: string}} need
  * @param {'Starter'|'Rotation'|'Backup'|'Development'} [role]
+ * @param {string} [difficulty] AI Difficulty（仅影响信息质量；缺省 NORMAL）
  * @returns {{playerId: string, role: string, score: number}}
  */
-export function evaluatePlayerSuitability(state, clubId, playerId, need, role = 'Starter') {
+export function evaluatePlayerSuitability(state, clubId, playerId, need, role = 'Starter', difficulty = undefined) {
   const profile = getPlayerProfile(state, playerId);
   const resolvedRole = C.ROLE_WEIGHTS[role] ? role : 'Starter';
   if (!profile) return { playerId, role: resolvedRole, score: 0 };
@@ -59,13 +61,15 @@ export function evaluatePlayerSuitability(state, clubId, playerId, need, role = 
   const position = need?.position ?? profile.position;
   const attrs = attributeProfile(position);
   const eff = getEffectiveAttributes(state, playerId) ?? {};
+  // D39C-03：AI 不得读取 True Potential；Potential 信息一律来自 estimator（AI Perception）。
+  const estimated = estimatePotential(state, clubId, playerId, difficulty)?.estimated ?? null;
 
   let attrSum = 0;
   let headroomSum = 0;
   for (const attr of attrs) {
     const current = finite(eff[attr], ATTRIBUTE_DEFAULT);
     attrSum += current;
-    const pot = finite(profile.potential?.[attr], current);
+    const pot = finite(estimated?.[attr], current);
     headroomSum += Math.max(0, pot - current);
   }
   const attrScore = clamp01((attrSum / attrs.length) / 99);
@@ -102,15 +106,9 @@ export function evaluatePlayerSuitability(state, clubId, playerId, need, role = 
   return { playerId, role: resolvedRole, score: Math.round(score * 1000) / 1000 };
 }
 
-/** 只读：球员发展潜力余量均值（供排序上下文使用；不暴露为球员字段）。 */
-export function potentialHeadroom(profile) {
-  if (!profile) return 0;
-  const attrs = attributeProfile(profile.position);
-  let sum = 0;
-  for (const attr of attrs) {
-    const base = finite(profile[attr], ATTRIBUTE_DEFAULT);
-    const pot = finite(profile.potential?.[attr], base);
-    sum += Math.max(0, pot - base);
-  }
-  return Math.round((sum / attrs.length) * 1000) / 1000;
-}
+/**
+ * 说明（D39C-03 / Step 39F-B）：原先的 `potentialHeadroom(profile)`（直接读取 True Potential）
+ * **已移除**。AI 侧潜在余量统一经 `ai-potential-estimate.js` 的
+ * `estimatePotentialHeadroom(state, clubId, playerId, difficulty)` 获取，不存在绕过 estimator 的路径。
+ */
+

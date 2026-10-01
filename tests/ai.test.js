@@ -25,7 +25,8 @@ import { AI_CONFIG } from '../src/core/ai/ai-config.js';
 import { getAIClubPolicy } from '../src/core/ai/ai-club-policy.js';
 import { evaluateSquadNeed } from '../src/core/ai/ai-need.js';
 import { filterCandidates, CANDIDATE_SOURCE } from '../src/core/ai/ai-candidate.js';
-import { evaluatePlayerSuitability, potentialHeadroom } from '../src/core/ai/ai-suitability.js';
+import { evaluatePlayerSuitability } from '../src/core/ai/ai-suitability.js';
+import { estimatePotentialHeadroom } from '../src/core/ai/ai-potential-estimate.js';
 import {
   evaluateClubDecisions, decideRelease, decideSignFreeAgent, decideTransfer, decideSell, runSeasonAI,
 } from '../src/core/ai/ai-decide.js';
@@ -217,7 +218,7 @@ test('D. Suitability：Starter 偏当前能力，Development 偏潜力（角色�
   const da = evaluatePlayerSuitability(state, 'clb_001', a.id, { position: 'FW' }, 'Development').score;
   const db = evaluatePlayerSuitability(state, 'clb_001', b.id, { position: 'FW' }, 'Development').score;
   assert(db > da, 'Development 角色应偏潜力');
-  assert(potentialHeadroom(getPlayerProfile(state, b.id)) > 0, '潜力余量应 > 0');
+  assert(estimatePotentialHeadroom(state, 'clb_001', b.id) > 0, '估计潜力余量应 > 0');
 });
 
 // ===========================================================================

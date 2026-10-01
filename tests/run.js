@@ -24,6 +24,7 @@ import './free-agent.test.js';
 import './transfer.test.js';
 import './ai.test.js';
 import './ai-depth-intake.test.js';
+import './ai-potential-estimate.test.js';
 import './development-derived.test.js';
 import './finance-feedback.test.js';
 import './competition.test.js';

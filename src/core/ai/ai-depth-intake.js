@@ -25,7 +25,7 @@ import { evaluateSquadNeed } from './ai-need.js';
 import { getAIClubPolicy } from './ai-club-policy.js';
 import { AI_CONFIG } from './ai-config.js';
 import { ageOn } from '../date-utils.js';
-import { potentialHeadroom } from './ai-suitability.js';
+import { estimatePotentialHeadroom } from './ai-potential-estimate.js';
 
 const D = DDTI_CONFIG;
 const POSITION_ORDER = Object.freeze(['GK', 'DF', 'MF', 'FW']);
@@ -124,13 +124,13 @@ function recentComponent(activity) {
   return clamp01((activity.outflow - activity.intake + 2) / 4);
 }
 
-/** 发展分量：年轻球员的潜力余量（development context）。 */
-function developmentComponent(profiles) {
+/** 发展分量：年轻球员的**估计**潜力余量（development context）。D39C-03：必须经 estimator，不读 True Potential。 */
+function developmentComponent(state, clubId, profiles) {
   if (profiles.length === 0) return 0;
   let sum = 0;
   let n = 0;
   for (const p of profiles) {
-    sum += clamp01(potentialHeadroom(p) / 10);
+    sum += clamp01(estimatePotentialHeadroom(state, clubId, p.id) / 10);
     n += 1;
   }
   return n > 0 ? clamp01(sum / n) : 0;
@@ -151,7 +151,7 @@ export function evaluateDepthPressure(state, clubId) {
     need: needComponent(state, clubId),
     finance: financeComponent(state, clubId),
     recent: recentComponent(activity),
-    development: developmentComponent(profiles),
+    development: developmentComponent(state, clubId, profiles),
   };
   const totalW = w.AGE + w.CONGESTION + w.NEED + w.FINANCE + w.RECENT + w.DEVELOPMENT || 1;
   const raw = (
