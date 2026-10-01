@@ -977,14 +977,71 @@ Step 34 实现后必须测试 **10 / 50 / 100 / 200 / 500** 赛季，至少检�
 
 ---
 
+## D-36 Managed Finance Feedback（DF-01：Step 36A 审计 / Step 36B 反事实实验 / Step 36C 决策冻结）
+
+> 本步（Step 36C）为 **DOCS-ONLY Decision Freeze**：**未修改任何生产代码 / 配置 / 测试 / Schema / Save Format / DDTI / Transfer Domain / Match / Team Strength**，**未运行生产实现**，**未 commit**。
+> 依据：Step 36A 只读审计（`Σ club.cash ≡ 8000` 严格守恒；managed cash 单向集中；AI aggregate cash → 0；市场冻结，`maxConsecZeroTransfer ≈ 243`）+ Step 36B 只读反事实实验（CF-A ~ CF-F）。
+> **冻结机制 = CF-E2（threshold-triggered managed finance redistribution）。**
+
+### D36.1 Managed Finance Feedback `[已定]`
+- **目的**：防止 managed club 成为**长期现金汇（永久资金黑洞）**，从而避免 `AI aggregate cash → 0` 与 transfer market **absorbing state**。
+- **机制（CF-E2 冻结）**：
+  1. 每个 **赛季边界**检查 `managedShare = cash_managed / WorldCash`。
+  2. 当 `managedShare > 35%` 时触发 Finance Feedback。
+  3. 从 managed **cash** 中**确定性再分配 20%**。
+  4. 资金**不销毁、不生成**：`Σ club.cash ≡ WorldCash ≡ 8000`（严格守恒）。
+  5. 接收方为 **AI 俱乐部**（**不含** managed）。
+- **接收方确定性规则（冻结）**：计算所有 AI 俱乐部 cash 的**中位数** → 优先选择 `cash < AI median` 的 AI clubs → 按 **cash 升序**（同 cash 以 **clubId 升序** 作 tie-break）→ 若无低于 median 的 AI club 则**全部 AI** 作为接收方 → 本轮资金在接收方之间**均分**（整数余数按该确定性顺序依次 +1）。**不使用** RNG / OVR / 隐藏随机 / 不可复现排序。
+- **只改 cash**：不改 `transferBudget`、不改 `wageBudget`、不产生债务、不允许 `cash < 0`、不改 transfer fee 公式、不改 Transfer Domain。
+
+### D36.2 Managed Player Agency `[已定]`
+- managed club **始终属于玩家控制范围**。
+- AI **不得**因 Finance Feedback：强制玩家买球员 / 卖球员 / 修改玩家阵容 / 修改玩家战术 / 修改玩家合同 / 修改玩家转会决定 / 代玩家执行转会。
+- Finance Feedback **只允许**执行 `managed cash → AI clubs cash` 的确定性资金再分配；**不**触碰 player membership / contract / transfer / lineup。
+
+### D36.3 Finance Feedback Determinism `[已定]`
+- **无 RNG**、无 OVR、无隐藏随机、无可复现性问题。
+- 排序 = **cash 升序**，tie-break = **clubId 升序**，分配 = **确定性均分**。
+- 相同 `(world state, managedClubId, season)` ⇒ **相同** Finance Feedback 结果。
+
+### D36.4 D36.1 的精确含义：现金汇 ≠ 球员净卖出 `[已定]`
+- D36.1 禁止的是**"现金层面的永久资金汇"**，**不要求**：managed 成为球员净买入方 / 保持 buy·sell 平衡 / AI 必须向 managed 买或卖。
+- **允许**：AI 从 managed 买球员；managed 长期为球员净卖出方；managed 在玩家操作下大量出售；AI 与 managed 之间形成正常转会关系。
+- **禁止**：managed cash 长期单调吸收世界现金；AI aggregate cash 长期趋近 0；transfer market 因 AI cash 枯竭进入 absorbing state。
+- **解释原则**：「球员流」与「现金流」是两个不同层次；玩家俱乐部成为球员净卖出方属正常足球经营结果，成为世界现金的**永久资金黑洞**才是当前简化 Finance 模型中的结构性问题。
+
+### D36.5 不重开 D-33.8 / 不引入收入系统 `[已定]`
+- `D-33.8`（cash 不自动 regeneration）**保持不变**。
+- 本决策**不引入**：世界收入 / TV revenue / sponsorship / prize money / ticket income / operating expense / wage expense / debt / negative cash / financial injection（属未来完整 Finance 系统，非本次 DF-01 修复）。
+- 依据：Step 36B 证明 **CF-B（managed 支出→世界 sink，销毁现金）**、**CF-D（world income）**、**CF-F（cash/budget 解耦）** 均破坏 world cash 有界性；**仅"守恒再分配"通过**。
+
+### D36.6 冻结不变式 / Schema / Save `[已定]`
+- **D36.7 DDTI C1 完全冻结**：`DEPTH_CAP=14`、`PER_CLUB_INTAKE_CAP=1`、`WORLD_INTAKE_CAP=4`、`HYSTERESIS_UP=0.30`、`HYSTERESIS_DOWN=0.15`（本决策**不得修改**）。
+- **D36.8 Transfer Fee Formula 完全冻结**；**D36.9 不得通过强制交易维持市场活跃**。
+- **D36.10 Finance Feedback 必须**：deterministic / bounded / state-driven / explainable / reproducible。
+- **Schema = 10 / Save Format = 1 保持**：Finance Feedback 为 **season-boundary 纯派生行为**，**不新增** `finance feedback state / redistribution history / last redistribution season / threshold state / cooldown state`，**无需迁移**。
+- **Transfer Domain / Match / Team Strength 不修改**。
+
+### D36 验证依据（Step 36B 摘要）`[已定]`
+- **CF-A baseline**：managed cash concentration、AI cash collapse、market freeze、`maxConsecZeroTransfer ≈ 243`。
+- **CF-B（sink）**：world cash 下降、market freeze 未解决 → **不采用**。
+- **CF-D（world income）**：cash expansion、world cash 无界增长 → **不采用**。
+- **CF-F（cash/budget decoupling）**：隐式第二货币 / money creation → **不采用**。
+- **CF-C（conservation redistribution）**：通过。
+- **CF-E（threshold + redistribution）**：通过。
+- **最终选择 = CF-E2：`threshold = 35%` / `redistribution = 20%`。**
+
+---
+
 ## Deferred Issues（登记；不在本步骤处理）
 
-### DF-01 Managed Club Cash Concentration / World Finance Feedback `[Deferred → Step 36]`
+### DF-01 Managed Club Cash Concentration / World Finance Feedback `[Resolved → Step 36C 冻结]`
 - **现象**：存在 `managedClubId` 时，AI clubs 可持续购买 managed club 球员，而 managed club 不参与 AI spending；**cash 长期单向集中**到 managed club，最终使 AI clubs `cash → 0` 并**冻结市场**。（Step 35D 实测：500 季后 8000 总现金中 7961 集中于 managed club。）
 - **已确认归属**：Finance / managed-club feedback 问题。**不是** DDTI supply 问题、**不是** Transfer Domain validation 问题、**不是** SELL 资格问题、**不是** Match / Team Strength 问题。
 - **当前处理**：**DEFER 到 Step 36**（Step 36 单独进行 read-only audit + decision freeze）。
 - **本步骤（35E）不得修改**：D-33.8（cash 不再生）、finance cash regeneration、transfer fee formula、managed club AI exemption、AI club spending、league revenue、wages、transfer budget。
 - **备注**：纯 AI 世界（无 managed club）不出现该问题（Step 35D 500 季 `maxConsecZeroTransfer = 0`），进一步佐证其为 managed-club 财政反馈问题。
+- **冻结结论（Step 36C）**：已通过 [D-36 Managed Finance Feedback](file:///workspace/docs/DECISIONS.md) 正式冻结解决方案（**CF-E2：threshold = 35% / redistribution = 20% 的守恒再分配**）。机制为 **DOCS-ONLY 冻结**；**生产实现待 Step 36D**。
 
 ---
 

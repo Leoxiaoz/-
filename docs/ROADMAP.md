@@ -395,6 +395,15 @@
 - **Deferred Issue `DF-01`（→ Step 36）**：Managed Club Cash Concentration / World Finance Feedback（Finance 问题，非 DDTI/Transfer/Match）。
 - **回归**：**321/321 通过**；Golden `143/143/1141` 不变；Schema **10** / Save Format **1**；determinism 不变。
 
+### 2.28 DF-01 Decision Freeze：Managed Finance Feedback（2026-10-01，Step 36A 审计 / Step 36B 反事实实验 / Step 36C 冻结）
+
+- **性质**：**DOCS-ONLY Decision Freeze** —— **未修改代码 / 配置 / 测试 / Schema / Save Format / DDTI / Transfer Domain / Match / Team Strength**，未运行生产实现，**未 commit**。详见 [DECISIONS D-36](file:///workspace/docs/DECISIONS.md) 与 [SIMULATION_SPEC §35](file:///workspace/docs/SIMULATION_SPEC.md)。
+- **冻结机制（CF-E2）**：**threshold-triggered managed finance redistribution** —— 赛季边界 `managedShare > 35%` 时，**确定性再分配 20%** 的 managed **cash** 给 AI 俱乐部（AI cash 中位数 → 优先 `cash < median` → cash 升序 → clubId tie-break → 均分）；**只改 cash**；**world cash 严格守恒 = 8000**；无 RNG；无新持久化。**Schema 10 / Save Format 1 不变**。
+- **D36.1~D36.6（`[已定]`）**：D36.1 Managed Finance Feedback（35%/20%、守恒、接收方规则）；D36.2 Managed Player Agency（AI 不得操作 managed 的 membership/contract/transfer/lineup）；D36.3 Determinism（无 RNG / cash 升序 / clubId tie-break / 均分）；D36.4「现金汇 ≠ 球员净卖出」（managed 长期球员净卖出允许）；D36.5 不重开 D-33.8 / 不引入收入系统；D36.6 DDTI C1 / fee 公式 / Schema·Save 冻结。
+- **Step 36B 依据（摘要）**：CF-A 基线冻结（maxZero≈243）；**CF-B（sink）/ CF-D（world income）/ CF-F（decoupling）失败**；**CF-C / CF-E 通过**；**最终选择 CF-E2**。
+- **保持不变**：D-33.8（cash 不再生）、DDTI C1、Transfer Domain、fee 公式、Match / Team Strength、Golden `143/143/1141`。
+- **下一步**：**Step 36D = Finance Feedback Production Implementation + Validation**（生产实现 + 10/50/100/200/500 赛季长跑验证）。
+
 ---
 
 ## 3. 第三阶段：完整足球世界
