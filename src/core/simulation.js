@@ -27,6 +27,7 @@ import {
 import { developPlayers } from './player-growth.js';
 import { runPlayerLifecycle } from './player-lifecycle.js';
 import { replenishTransferBudget } from './finance.js';
+import { runManagedFinanceFeedback } from './finance-feedback.js';
 import { runSeasonAI } from './ai/ai-decide.js';
 import { tickInjuries, resolveMatchInjuries } from './player-injury.js';
 import { SCHEDULE_CONFIG, MATCH_LOAD_CONFIG } from './sim-config.js';
@@ -226,6 +227,9 @@ export class SimulationCore {
       runPlayerLifecycle(state, { fromSeason: prevSeason, toSeason: maxSeason, ddti: this.ddti });
       // Step 34 / D-33.15：transferBudget 再生（Population 稳定后、AI 决策前；每赛季边界恰好一次）。
       replenishTransferBudget(state);
+      // Step 36D / D-36：Managed Finance Feedback（DF-01）。位置：本季 transfer cash flow 已结算之后、
+      //   下一季 AI 做购买决策之前（`runSeasonAI` 前），使 AI 看到反馈后的现金状态。只改 cash、守恒、无 RNG。
+      runManagedFinanceFeedback(state);
       // AI Club Decision Framework v1（Step 31 / D-28）：Population Health 完成后、lineup repair 前。
       if (this.enableAI) runSeasonAI(state);
       // 退役/离队后修复玩家阵容：剔除失效引用、去重、保持容量（第 20 步）。

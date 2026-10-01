@@ -249,6 +249,26 @@ export const FINANCE_CONFIG = Object.freeze({
 });
 
 /**
+ * Managed Finance Feedback（DF-01；Step 36C 冻结 / Step 36D 实现）。
+ * 层级归属：Simulation Core / Finance。纯数据，无副作用。
+ *
+ * 语义（D36.1）：赛季边界若 managed club 的现金占世界现金比例超过 `THRESHOLD`，
+ * 则从 managed 的 `cash` 中**确定性再分配** `REDISTRIBUTION_RATE` 给 AI 俱乐部。
+ * - **只改 `cash`**；资金不生成、不销毁、不产生债务、不允许 `cash < 0`；
+ *   `Σ club.cash` 严格守恒。
+ * - 无 RNG、无 OVR、无新持久化字段（season-boundary 纯派生）。
+ * 数值已由 **Step 36C 正式冻结**（D36.1），**不得重新设计**。
+ */
+export const FINANCE_FEEDBACK_CONFIG = Object.freeze({
+  /** 总开关（缺省启用）；仅用于测试 / 实验隔离，不改变冻结语义。 */
+  ENABLED: true,
+  /** 触发阈值：`managedShare > THRESHOLD` 才触发（严格大于；等于 35% 不触发）。 */
+  THRESHOLD: 0.35,
+  /** 触发后从 managed cash 再分配的比例。 */
+  REDISTRIBUTION_RATE: 0.20,
+});
+
+/**
  * 转会费参数（Step 28B；DECISIONS D-27 T2/T3）。
  * 说明：**确定性能力定价模型**——`Fee = BASE × AbilityFactor × AgeFactor × PositionFactor`。
  * - 纯函数、无随机（D-27 T23）；**不存储** marketValue；**不读取** cash / transferBudget / squad size（禁止「越有钱越贵」）。

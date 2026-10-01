@@ -1031,6 +1031,12 @@ Step 34 实现后必须测试 **10 / 50 / 100 / 200 / 500** 赛季，至少检�
 - **CF-E（threshold + redistribution）**：通过。
 - **最终选择 = CF-E2：`threshold = 35%` / `redistribution = 20%`。**
 
+### D36 实现状态（Step 36D）`[已实现]`
+- 新增 `src/core/finance-feedback.js`（`calculateManagedFinanceFeedback` → plan / `applyManagedFinanceFeedback` → apply / `runManagedFinanceFeedback`，**纯函数、无 RNG**）；`sim-config.FINANCE_FEEDBACK_CONFIG`（`THRESHOLD=0.35` / `REDISTRIBUTION_RATE=0.20`）。
+- **接入位置（已定）**：`simulation.#rollFinishedSeasons` 中 `replenishTransferBudget` **之后**、`runSeasonAI` **之前**；**未改变**任何既有步骤顺序；每赛季边界**恰好一次**（`maxSeason > prevSeason` 单次触发保证，无需防重复持久化字段）。
+- **只改 `cash`**；`Σ club.cash` 严格守恒；**Schema 10 / Save Format 1 不变**；无新持久化字段。
+- **验证**：全量测试 **336/336 通过**（321 旧 + 15 新 `tests/finance-feedback.test.js`，0 失败）；Golden `143/143/1141` 不变；determinism 通过；10/50/100/200/500 赛季长跑通过（`managedShare` 稳定 ~0.28–0.35、AI cash median 健康、`maxConsecZeroTransfer ≤ 1`、无新 absorbing state）；browser smoke clean。
+
 ---
 
 ## Deferred Issues（登记；不在本步骤处理）

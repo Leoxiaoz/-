@@ -782,15 +782,16 @@
 
 ## §35 Managed Finance Feedback（DF-01）—— Finance / AI / Transfer 集成（Step 36C 冻结；Step 36D 实现）
 
-- **状态**：**机制已冻结（Step 36C，DOCS-ONLY）；生产实现待 Step 36D**。决策来源见 [DECISIONS D-36](file:///workspace/docs/DECISIONS.md)（D36.1~D36.6）。
+- **状态**：机制已冻结（Step 36C）；**生产实现已完成（Step 36D）**。决策来源见 [DECISIONS D-36](file:///workspace/docs/DECISIONS.md)（D36.1~D36.6）。
+  - 实现：新增 [finance-feedback.js](file:///workspace/src/core/finance-feedback.js)（`calculateManagedFinanceFeedback`（只读→plan）/ `applyManagedFinanceFeedback`（应用 plan）/ `runManagedFinanceFeedback`；plan→apply）；配置 `FINANCE_FEEDBACK_CONFIG`（`THRESHOLD=0.35` / `REDISTRIBUTION_RATE=0.20`）。
 - **问题（DF-01）**：存在 `managedClubId` 时，AI 可从 managed 买球员（`ai-candidate.filterCandidates` 的 TRANSFER 候选池未排除 managed），而 managed **不受 AI 控制**（`runSeasonAI` 跳过 managed、`findBuyerFor` 排除 managed 作 buyer）⇒ `cash` **单向**由 AI 流向 managed；因 `Σ club.cash` **严格守恒（≡8000）**，`AI aggregate cash → 0`，transfer market 进入 **absorbing state**（`maxConsecZeroTransfer ≈ 243`）。
 - **冻结机制（CF-E2）**：**season-boundary process** —— 检查 `managedShare = cash_managed / WorldCash`；当 `> 35%` 时，**确定性再分配 20%** 的 managed **cash** 给 AI 俱乐部。
   - **接收方规则**：AI cash **中位数** → 优先 `cash < median` 的 AI clubs → **cash 升序**（同 cash 以 **clubId 升序** tie-break）→ 若无低于 median 者则**全部 AI** → 本轮资金**均分**（整数余数按确定性顺序依次 +1）。
   - **只改 `cash`**：不改 `transferBudget` / `wageBudget`；**不产生债务**；**不允许 `cash < 0`**；不改 transfer fee 公式；不改 Transfer Domain。
   - **world cash 严格守恒**（`Σ club.cash ≡ INITIAL_WORLD_CASH ≡ 8000`）：**不销毁、不生成**。
   - **无 RNG / 无 OVR / 无隐藏随机**；相同 `(world, managedClubId, season)` ⇒ 相同结果。
-- **运行位置 `[待 Step 36D]`**：Finance Feedback 属 **season-boundary process**。**本步不修改**现有 season 顺序（D-33.15：`developPlayers → runPlayerLifecycle → bounded population replenishment → transferBudget regeneration → runSeasonAI → repairManagedLineups → resetSeasonStats`）；**生产接入位置留待 Step 36D 决定**（候选：`replenishTransferBudget` 之后 / `runSeasonAI` 之前，或 `runSeasonAI` 之后；须保证**每季恰好一次**、deterministic、且 AI 决策所见的 finance 一致）。
+- **运行位置（Step 36D 已定）**：Finance Feedback 属 **season-boundary process**，插入于 `replenishTransferBudget` **之后**、`runSeasonAI` **之前**，使下一季 AI 决策看到反馈后的 `cash`；**未改变**任何既有步骤顺序（D-33.15 仍为 `developPlayers → runPlayerLifecycle → bounded population replenishment → transferBudget regeneration → **managed finance feedback** → runSeasonAI → repairManagedLineups → resetSeasonStats`）。每赛季边界**恰好一次**（由 `#rollFinishedSeasons` 的 `maxSeason > prevSeason` 单次触发保证）。
 - **边界（D36.2 / D36.4）**：Finance Feedback **只**做 `managed cash → AI clubs cash`；**不**触碰 membership / contract / transfer / lineup；managed **仍属玩家控制**（AI 不得代玩家买卖/改阵容/改战术/改合同）；managed 长期为**球员净卖出方允许**（D36.1 只禁止**现金层面**的永久资金汇）。
 - **不变**：Transfer Domain、Transfer Fee 公式、DDTI C1（`DEPTH_CAP=14 / PER_CLUB=1 / WORLD=4 / HU=0.30 / HD=0.15`）、Match / Team Strength、**Schema 10 / Save Format 1**；**不新增**任何 finance feedback 持久化字段（纯派生、无迁移）。
 - **验证依据（Step 36B 摘要）**：CF-A 基线冻结（maxZero≈243）；**CF-B（sink）/ CF-D（world income）/ CF-F（decoupling）失败**；**CF-C / CF-E 通过**；**最终选择 CF-E2（threshold=35% / redistribution=20%）**。**Golden Regression 143/143/1141 必须保持**。
-- **下一步**：**Step 36D = Finance Feedback Production Implementation + Validation**。
+- **Step 36D 实现 + 验证**：`runManagedFinanceFeedback` 接入 `#rollFinishedSeasons`（`replenishTransferBudget` 之后 / `runSeasonAI` 之前）；新增 `tests/finance-feedback.test.js`（FF-01~FF-15）。**全量测试 336/336 通过**（321 旧 + 15 新，0 失败）；Golden `143/143/1141` 不变；10/50/100/200/500 赛季长跑（managed-normal / cash-high / heavy-sell / ~34% / ~50% / AI-ultra-low / AI-uneven / pure-AI）：`worldCash` 严格守恒、`managedShare` 稳定在 ~0.28–0.35、AI cash median 健康、`maxConsecZeroTransfer ≤ 1`、无新 absorbing state；browser smoke clean（仅既有 `favicon.ico` 404）。

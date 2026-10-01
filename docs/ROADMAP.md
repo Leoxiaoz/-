@@ -404,6 +404,14 @@
 - **保持不变**：D-33.8（cash 不再生）、DDTI C1、Transfer Domain、fee 公式、Match / Team Strength、Golden `143/143/1141`。
 - **下一步**：**Step 36D = Finance Feedback Production Implementation + Validation**（生产实现 + 10/50/100/200/500 赛季长跑验证）。
 
+### 2.29 Managed Finance Feedback 实现 + 验证（2026-10-01，Step 36D）
+
+- **实现**：新增 [finance-feedback.js](file:///workspace/src/core/finance-feedback.js)（`calculateManagedFinanceFeedback` / `applyManagedFinanceFeedback` / `runManagedFinanceFeedback`，plan→apply，纯函数、无 RNG）；`sim-config.FINANCE_FEEDBACK_CONFIG`（`THRESHOLD=0.35` / `REDISTRIBUTION_RATE=0.20`）；接入 `simulation.#rollFinishedSeasons`（`replenishTransferBudget` 之后 / `runSeasonAI` 之前，**未改变既有顺序**）。**只改 `cash`**；**world cash 严格守恒**；Schema **10** / Save Format **1** 不变（无新持久化）。
+- **测试**：新增 `tests/finance-feedback.test.js`（FF-01~FF-15，覆盖阈值/边界/接收方/均分/余数/守恒/不变式/确定性/无 OVR）。**全量 336/336 通过**（321 旧 + 15 新，0 失败）；Golden `143/143/1141` 不变。
+- **长跑**：10/50/100/200/500 赛季；managed-normal / cash-high / heavy-sell / ~34% / ~50% / AI-cash-ultra-low / AI-cash-uneven / pure-AI 场景：`worldCash` 恒为初值、`managedShare` 稳定 ~0.28–0.35、AI cash median 健康、`maxConsecZeroTransfer ≤ 1`、threshold 仅异常时触发（约 500 季中 40 次量级）、**S\* absorbing state 消除**、无固定单一资金赢家。**DDTI C1 / Transfer Domain / fee 公式 / Match / Team Strength 均未改**。
+- **Browser Smoke**：页面/世界加载正常、赛季推进正常、无 console error、无 JS/数据 404（仅既有 `favicon.ico` 404）。
+- **下一步**：进入用户决策（Step 37 由用户指定），本步**不自行进入**。
+
 ---
 
 ## 3. 第三阶段：完整足球世界
