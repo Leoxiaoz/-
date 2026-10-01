@@ -180,14 +180,14 @@ function findTargetId(files) {
   return best;
 }
 
-// ---------- 训练接口（B1 预留） ----------
-test('训练修正接口可放大成长（B1 预留，默认 1.0）', () => {
+// ---------- 训练接口（Step 39F-C：Training = Development Input 档位） ----------
+test('训练档位接口可放大成长（STRONG > LIMITED）', () => {
   const files = makeLeagueWorldFiles(4);
   const id = findTargetId(files);
   const a = createGameState(parseWorld(files));
   const b = createGameState(parseWorld(makeLeagueWorldFiles(4)));
-  developPlayers(a, { seasonNumber: 1, training: () => 2 }); // 强化训练
-  developPlayers(b, { seasonNumber: 1 });                    // 默认 1.0
+  developPlayers(a, { seasonNumber: 1, training: () => 'STRONG' }); // 强化训练档位
+  developPlayers(b, { seasonNumber: 1, training: () => 'LIMITED' }); // 弱训练档位
   const sumA = ATTRS.reduce((s, k) => s + getEffectiveAttributes(a, id)[k], 0);
   const sumB = ATTRS.reduce((s, k) => s + getEffectiveAttributes(b, id)[k], 0);
   assert(sumA >= sumB, `训练加成应不劣于默认（${sumA} vs ${sumB}）`);

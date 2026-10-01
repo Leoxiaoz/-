@@ -1,20 +1,28 @@
 /**
- * 球员成长 / 衰退引擎（Simulation Core）。
+ * 球员成长 / 衰退引擎（Simulation Core）—— Step 39F-C（D39 Phase 3）。
  * 层级归属：Simulation Core。纯逻辑，**不依赖 DOM / 存储 / UI**。
  *
- * 规范来源：DECISIONS D-14、SIMULATION_SPEC §20（第 16 步）。
- * 核心模型（每赛季结算一次，按赛季滚动触发）：
- *   成长期（年龄 < 该属性分组巅峰）：delta = 距潜力上限的余量 × 年龄速率 × 修正 × 有界随机
- *   衰退期（年龄 ≥ 巅峰）：        delta = -衰退速率 × 过峰年数 × 抗衰退修正 × 有界随机
- * 修正项：人格（职业素养/决心/野心）、状态与士气（温和）、比赛出场（年轻权重）、
- *        训练（预留接口，本期默认 1.0）、长期伤病（放缓后续成长）。
+ * 规范来源：D39.31–D39.38 / Step 39E §二~§十二 / **OD-39FC-1 · OD-39FC-2 · OD-39FC-3**（DECISIONS D-39）。
+ * 每赛季结算一次，**六属性各自独立**（不存在 OVR / 总体分配）：
+ *   Growth branch（age < peakAge）：
+ *     headroomFactor = clamp((potential − current) / 20, 0, 1)
+ *     ageFactor      = clamp(1 − 0.06 × ((peakAge − age)/(peakAge − 17))², 0, 1)      // OD-39FC-3
+ *     baseCapacity   = 2.4 × ageFactor × headroomFactor
+ *     inputFactor    = 0.75 + 0.50 × clamp(0.40·training + 0.40·matchExperience + 0.20·environment, 0, 1)
+ *     preRandom      = clamp(baseCapacity × inputFactor + conditionAdjustment, −2.50, +2.50)
+ *   Decline branch（age >= peakAge）：
+ *     preRandom      = clamp(−(age − peakAge + 1) × 0.18 × sensitivity[attr] × floorFactor, −2.50, 0)
+ *   Both：delta = clamp(round(preRandom + noise), −3, +3)，noise ∈ [−0.20, +0.20]（确定性 seed）
+ *
+ * Condition Adjustment（加性、有界）：Personality ∈ [−0.10,+0.10]；Form / Morale 分档 ±0.05/±0.02/0；
+ * Severe Injury（`growth.injuryPenaltySeasons > 0`）−0.15。**Fitness 不进入 Growth。**
  *
  * 红线：
- * - **只写 runtime deltas**，绝不修改 `state.static`（项目规则第 6 条 / A3）。
- * - 结果**绝不突破** `potential[attr]`（A2/C3），且始终在 1–99 内。
- * - **确定性**：种子 = hash(worldId, playerId, season)，同一（库+档+种子）必复现（第 10 条）。
- * - 随机仅**有界扰动**速率，不替代逻辑（第 9、11 条）；同一赛季**幂等**（不重复结算）。
- * - 可解释：每条成长可归因于年龄阶段、潜力余量、出场、士气、人格、伤病（第 22 条）。
+ * - **只写 runtime deltas**（`applyAbilityDelta`），绝不修改 `state.static`。
+ * - 结果始终在 1–99 且 **≤ per-attribute Potential**（Runtime 层再夹取一次）。
+ * - **确定性**：seed = `worldId|growth|playerId|season|attribute`；同一（库+档+种子）必复现；同赛季幂等。
+ * - **无 BREAKOUT**、无 Talent / GrowthRate 字段；不使用 `Math.random()` / `Date.now()`。
+ * - Potential 是 **World Simulation Ceiling** —— 本引擎可读 True Potential；**AI 侧不可读**（D39C-03）。
  */
 
 import { PLAYER_ATTRIBUTES, ATTRIBUTE_RANGE } from '../shared/football-schema.js';
@@ -22,122 +30,154 @@ import { SimulationError } from '../shared/errors.js';
 import { PLAYER_GROWTH_CONFIG } from './sim-config.js';
 import { createRng, hashSeed } from './rng.js';
 import { ageOn } from './date-utils.js';
-import { getEffectiveAttributes, getPlayerRuntime, applyAbilityDelta, getPlayerProfile, getWorldPlayers } from './player-runtime.js';
+import {
+  getEffectiveAttributes,
+  getPlayerRuntime,
+  applyAbilityDelta,
+  getPlayerProfile,
+  getWorldPlayers,
+} from './player-runtime.js';
+import { getPlayerClub } from './membership.js';
+import { evaluateDevelopmentEnvironment } from './ai/ai-development-environment.js';
 
 const C = PLAYER_GROWTH_CONFIG;
 
-/** 归一化人格/士气值到约 -1..1（以 50 为中性）。 */
-function norm(value) {
-  return (Number(value) - 50) / 50;
+/** 人格条件调整使用的三项（不新增 Personality 维度）。 */
+const PERSONALITY_KEYS = Object.freeze(['professionalism', 'determination', 'ambition']);
+
+function clamp(v, min, max) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return min;
+  return Math.min(max, Math.max(min, n));
 }
 
-/** 年龄对应的成长速率（吸收潜力余量的比例）；达到/超过巅峰返回 0。 */
-function growthRateForAge(age) {
-  for (const band of C.GROWTH_RATE_BY_AGE) {
-    if (age <= band.maxAge) return band.rate;
+/**
+ * Pre-peak 平滑 ageFactor（OD-39FC-3，**冻结公式，不得修改**）。
+ * `normalizedDistance = (peakAge − age) / (peakAge − 17)`；`ageFactor = clamp(1 − 0.06 × d², 0, 1)`。
+ * 边界：age = 17 → 0.94；age = peakAge → 1.00；随年龄增大单调不减；连续无跳变。
+ * @returns {number} ∈ [0.94, 1]（峰值区间内）
+ */
+export function prePeakAgeFactor(age, peakAge) {
+  const span = Number(peakAge) - C.PRE_PEAK.ANCHOR_AGE;
+  if (!(span > 0)) return 1;
+  const d = clamp((Number(peakAge) - Number(age)) / span, 0, 1);
+  return clamp(1 - C.PRE_PEAK.CURVATURE * d * d, 0, 1);
+}
+
+/**
+ * 解析 Training 输入：接受档位字符串（LIMITED/NORMAL/STRONG）或数值；数值夹取到冻结档位区间。
+ * @returns {number} ∈ [0.75, 1.15]
+ */
+export function resolveTrainingInput(value) {
+  if (typeof value === 'string' && C.TRAINING_LEVELS[value] != null) return C.TRAINING_LEVELS[value];
+  const n = Number(value);
+  if (!Number.isFinite(n)) return C.TRAINING_LEVELS[C.DEFAULT_TRAINING_LEVEL];
+  return clamp(n, C.TRAINING_LEVELS.LIMITED, C.TRAINING_LEVELS.STRONG);
+}
+
+/** Match Experience（P3-F6 冻结）：`sqrt(clamp(minutes / 1800, 0, 1))`，>1800 不再增加。 */
+export function matchExperienceInput(minutes) {
+  return Math.sqrt(clamp(Number(minutes) / C.MATCH_EXPERIENCE_FULL_MINUTES, 0, 1));
+}
+
+/** 状态 / 士气的分档条件调整（39E §八 冻结）。 */
+export function conditionBandAdjustment(value, bands = C.CONDITION.BANDS) {
+  const v = Number(value);
+  if (!Number.isFinite(v)) return 0;
+  for (const band of bands) {
+    if (v >= band.min) return band.value;
   }
   return 0;
 }
 
-/** 成长人格修正（>1 更快）。 */
-function personalityGrowthFactor(personality) {
-  const P = C.PERSONALITY;
-  return (
-    (1 + P.PROFESSIONALISM * norm(personality?.professionalism)) *
-    (1 + P.DETERMINATION * norm(personality?.determination)) *
-    (1 + P.AMBITION * norm(personality?.ambition))
-  );
-}
-
-/** 抗衰退修正（>1 更慢衰退）。仅采用职业素养与决心（更可解释）。 */
-function declineResistanceFactor(personality) {
-  const P = C.PERSONALITY;
-  return (
-    (1 + P.PROFESSIONALISM * norm(personality?.professionalism)) *
-    (1 + P.DETERMINATION * norm(personality?.determination))
-  );
-}
-
-/** 状态/士气温和修正（约 0.8–1.2）。 */
-function vitalsFactor(rt) {
-  const s = C.VITALS_SENSITIVITY;
-  return 1 + s * norm(rt.morale) + s * norm(rt.form);
-}
-
-/** 出场加成（仅成长期；年轻权重随年龄递减到 0）。 */
-function appearanceFactor(rt, age) {
-  const A = C.APPEARANCE;
-  const minutes = rt.stats?.season?.minutes ?? 0;
-  let youth = 1;
-  if (age > A.YOUNG_AGE) {
-    youth = Math.max(0, (A.FADE_AGE - age) / (A.FADE_AGE - A.YOUNG_AGE));
+/** 人格条件调整：三项均值（1–99）→ 归一化 → ±0.10（39E §八 冻结）。 */
+export function personalityAdjustment(personality) {
+  let sum = 0;
+  for (const key of PERSONALITY_KEYS) {
+    const n = Number(personality?.[key]);
+    sum += Number.isFinite(n) ? clamp(n, 1, 99) : 50;
   }
-  return 1 + A.MAX_BONUS * Math.min(1, minutes / A.FULL_MINUTES) * youth;
+  const avg = sum / PERSONALITY_KEYS.length;
+  const norm = (avg - 50) / 50; // −1..1
+  return clamp(C.CONDITION.PERSONALITY_MAX * norm, -C.CONDITION.PERSONALITY_MAX, C.CONDITION.PERSONALITY_MAX);
 }
 
-/** 稳定性对随机波动的影响：高稳定 → 更小波动（约 0.8–1.2）。 */
-function noiseScale(personality) {
-  const c = Number(personality?.consistency);
-  const v = Number.isFinite(c) ? c : 50;
-  return 1.2 - 0.4 * (v / ATTRIBUTE_RANGE.MAX);
+/**
+ * 某球员的 Development Environment 输入（∈[0,1]）。
+ * 复用 Phase 1 的纯函数 `evaluateDevelopmentEnvironment`（无循环依赖）；
+ * 自由球员（无俱乐部）使用中性值。**Environment 只作为 Development Input 的一部分**，
+ * 不是 Growth multiplier；Club Strength / Reputation / Budget / Cash 均不参与。
+ */
+function environmentInputFor(state, playerId) {
+  const clubId = getPlayerClub(state, playerId);
+  if (!clubId) return C.NEUTRAL_ENVIRONMENT_INPUT;
+  const env = evaluateDevelopmentEnvironment(state, clubId, playerId);
+  if (!env || !Number.isFinite(env.environmentInput)) return C.NEUTRAL_ENVIRONMENT_INPUT;
+  return clamp(env.environmentInput, 0, 1);
 }
 
 /**
  * 结算一名球员一个赛季的成长/衰退（内部）。
  * @returns {{ applied: boolean }}
  */
-function developPlayer(state, playerId, seasonNumber, trainingFactor, date) {
+function developPlayer(state, playerId, seasonNumber, trainingInput, date) {
   const player = getPlayerProfile(state, playerId);
   const rt = getPlayerRuntime(state, playerId);
   if (!player || !rt) return { applied: false };
   if (rt.growth.lastEvaluatedSeason >= seasonNumber) return { applied: false }; // 幂等
-  if (!player.birthDate) return { applied: false }; // 无生日不做成长（正式库校验应保证存在）
+  if (!player.birthDate) return { applied: false };
 
   const age = ageOn(player.birthDate, date);
   const effective = getEffectiveAttributes(state, playerId);
-  const personality = player.personality ?? {};
-  const rng = createRng(hashSeed(`${state.worldId}|growth|${playerId}|${seasonNumber}`));
 
-  // 长期伤病放缓成长：**只消费**由伤病系统（player-injury）在伤病发生时写入的字段，
-  // 不再自行读取/推断伤病状态（第 17 步 D-15：两个系统不互相推断）。
-  const penaltyFactor = rt.growth.injuryPenaltySeasons > 0 ? C.INJURY_PENALTY.FACTOR : 1;
+  // ---- Development Inputs（每赛季每球员一次）----
+  const matchExperience = matchExperienceInput(rt.stats?.season?.minutes ?? 0);
+  const environment = environmentInputFor(state, playerId);
+  const w = C.INPUT_WEIGHTS;
+  const rawInputScore = w.TRAINING * trainingInput
+    + w.MATCH_EXPERIENCE * matchExperience
+    + w.ENVIRONMENT * environment;
+  const inputScore = clamp(rawInputScore, 0, 1);
+  const inputFactor = C.INPUT_FACTOR.BASE + C.INPUT_FACTOR.SLOPE * inputScore;
 
-  const growthModifier =
-    personalityGrowthFactor(personality) *
-    vitalsFactor(rt) *
-    appearanceFactor(rt, age) *
-    trainingFactor *
-    penaltyFactor;
-  const declineModifier = 1 / declineResistanceFactor(personality);
-  const nScale = noiseScale(personality);
+  // ---- Limited Condition Adjustments（加性、有界）----
+  const conditionAdjustment =
+    personalityAdjustment(player.personality)
+    + conditionBandAdjustment(rt.form)
+    + conditionBandAdjustment(rt.morale)
+    + (rt.growth.injuryPenaltySeasons > 0 ? C.CONDITION.INJURY_PENALTY : 0);
 
-  // 超预期成长（C3）：本球员-本赛季小概率触发，随机挑一个属性加成（仍受潜力上限约束）。
-  const breakoutAttr = rng.next() < C.BREAKOUT.CHANCE
-    ? PLAYER_ATTRIBUTES[Math.floor(rng.next() * PLAYER_ATTRIBUTES.length)]
-    : null;
-
+  // ---- 六属性独立结算 ----
   for (const attr of PLAYER_ATTRIBUTES) {
+    const peak = C.PEAK_AGE[attr];
     const potRaw = Number(player.potential?.[attr]);
-    const cap = Number.isFinite(potRaw)
-      ? Math.min(ATTRIBUTE_RANGE.MAX, Math.max(ATTRIBUTE_RANGE.MIN, potRaw))
-      : ATTRIBUTE_RANGE.MAX;
+    const cap = Number.isFinite(potRaw) ? clamp(potRaw, ATTRIBUTE_RANGE.MIN, ATTRIBUTE_RANGE.MAX) : ATTRIBUTE_RANGE.MAX;
     const current = effective[attr];
-    const group = C.GROUPS[attr] ?? 'technical';
-    const peak = C.PEAK_AGE[group];
-    const noise = 1 + C.NOISE_AMPLITUDE * nScale * (rng.next() * 2 - 1);
 
-    let expected;
+    // 每属性独立确定性随机（seed 含 attribute）
+    const rng = createRng(hashSeed(`${state.worldId}|growth|${playerId}|${seasonNumber}|${attr}`));
+    const noise = (rng.next() * 2 - 1) * C.NOISE_AMPLITUDE;
+
+    let preRandom;
     if (age < peak) {
-      const headroom = Math.max(0, cap - current);
-      expected = headroom * growthRateForAge(age) * growthModifier * noise;
-      if (breakoutAttr === attr) expected += C.BREAKOUT.BONUS * growthModifier;
+      // GROWTH branch（OD-39FC-2）
+      const headroomFactor = clamp((cap - current) / C.HEADROOM_REFERENCE, 0, 1);
+      const ageFactor = prePeakAgeFactor(age, peak);
+      const baseCapacity = C.BASE_CAPACITY_FACTOR * ageFactor * headroomFactor;
+      const rawDevelopment = baseCapacity * inputFactor;
+      preRandom = clamp(rawDevelopment + conditionAdjustment, -C.EFFICIENCY_CAP, C.EFFICIENCY_CAP);
     } else {
-      const yearsPast = age - peak + 1;
-      expected = -C.DECLINE_RATE[group] * yearsPast * declineModifier * noise;
+      // DECLINE branch（OD-39FC-2）
+      const floorFactor = clamp((current - C.DECLINE.FLOOR) / C.DECLINE.FLOOR_REFERENCE, 0, 1);
+      const sensitivity = C.DECLINE.SENSITIVITY[attr] ?? 0;
+      const declineBase = (age - peak + 1) * C.DECLINE.BASE_PER_YEAR * sensitivity;
+      const decline = clamp(declineBase * floorFactor, 0, C.DECLINE.MAX);
+      preRandom = clamp(-decline, -C.EFFICIENCY_CAP, 0);
     }
 
-    let delta = Math.round(expected);
-    if (current + delta > cap) delta = cap - current;          // 绝不突破潜力上限
+    let delta = Math.round(preRandom + noise);
+    delta = clamp(delta, -C.ANNUAL_SAFETY_BOUND, C.ANNUAL_SAFETY_BOUND);
+    if (current + delta > cap) delta = cap - current;                       // 不越 Potential
     if (current + delta < ATTRIBUTE_RANGE.MIN) delta = ATTRIBUTE_RANGE.MIN - current;
     if (delta !== 0) applyAbilityDelta(state, playerId, attr, delta);
   }
@@ -150,8 +190,8 @@ function developPlayer(state, playerId, seasonNumber, trainingFactor, date) {
 /**
  * 结算全部球员一个赛季的成长/衰退（赛季滚动时调用；幂等）。
  * @param {object} state
- * @param {{seasonNumber?: number, training?: (playerId: string, ctx: object) => number}} [options]
- *   training：**训练修正预留接口**（B1）。返回倍率；缺省 1.0，本期不实现训练本体。
+ * @param {{seasonNumber?: number, training?: (playerId: string, ctx: object) => (string|number)}} [options]
+ *   `training`：Development Input 接口。返回档位（LIMITED/NORMAL/STRONG）或数值；缺省 NORMAL。
  * @returns {object} state（原地）
  */
 export function developPlayers(state, options = {}) {
@@ -163,16 +203,15 @@ export function developPlayers(state, options = {}) {
   const seasonNumber = options.seasonNumber ?? state.season ?? 1;
   const training = typeof options.training === 'function'
     ? options.training
-    : () => C.DEFAULT_TRAINING_FACTOR;
+    : () => C.DEFAULT_TRAINING_LEVEL;
   const date = state.currentDate;
 
   state.runtime.players ??= {};
   for (const player of getWorldPlayers(state)) {
     const rt = getPlayerRuntime(state, player.id);
     if (!rt) continue;
-    const factor = Number(training(player.id, { seasonNumber, date }));
-    const trainingFactor = Number.isFinite(factor) ? factor : C.DEFAULT_TRAINING_FACTOR;
-    developPlayer(state, player.id, seasonNumber, trainingFactor, date);
+    const trainingInput = resolveTrainingInput(training(player.id, { seasonNumber, date }));
+    developPlayer(state, player.id, seasonNumber, trainingInput, date);
   }
   return state;
 }

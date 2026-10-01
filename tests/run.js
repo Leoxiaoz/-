@@ -16,6 +16,7 @@ import './consumption.test.js';
 import './foundation.test.js';
 import './player-runtime.test.js';
 import './growth.test.js';
+import './growth-engine.test.js';
 import './injury.test.js';
 import './ecosystem.test.js';
 import './lifecycle.test.js';

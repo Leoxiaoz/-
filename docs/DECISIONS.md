@@ -1258,6 +1258,21 @@ D39.33 calibration targets；D39.34 potential ceiling semantics；D39.37 six ind
   而实现该「结合」的 39E-R peak-relative 锚定（R-A）已由 OD-39FC-1 废止 ⇒ **两条曲线均失去适用锚定**；
   Owner 又明确「成长期接近 1.00 且平滑、不得硬编码常数、不得自行发明曲线」。
 - **需 Owner 提供唯一确定的 pre-peak 曲线（或其索引 / 锚定 / 插值规则）**，方可实现 Growth Engine。
+- **→ 已由 OD-39FC-3 解决（见下）。**
+
+### OD-39FC-3 Pre-Peak Smooth Age Curve `[已定]`
+- 在 `age < peakAge` 的 **GROWTH branch** 中，采用**唯一确定**的平滑曲线（不采用 C1 绝对年龄表、不采用 C2 恒定 1.00、不恢复已废止的 R-A）：
+
+```
+normalizedDistance = (peakAge − age) / (peakAge − 17)     // peakAge 为该属性自己的 per-attribute peak
+ageFactor          = clamp(1.00 − 0.06 × normalizedDistance², 0, 1)
+适用：17 <= age < peakAge
+边界：age = 17 → 0.94 ；age = peakAge → 1.00
+```
+- 语义：成长期恒有**正向** Growth Capacity；ageFactor **处于高位**；越接近该属性 Peak 越接近 1.00；pre-peak **不得为常数**；曲线**连续平滑、无年龄跳变**。
+- **不得**自行修改 `0.06`、平方指数、`17` 岁锚点。
+- 分支条件（OD-39FC-2）：`age < peakAge → GROWTH`；`age >= peakAge → DECLINE`。
+- **Calibration 仍为 LONG-RUN / BEHAVIORAL TARGET，非逐案例硬约束**；不得为命中 Calibration 私自修改 `2.4`、`headroomFactor`、`inputFactor`、weights、decline sensitivity、noise amplitude。
 
 ---
 

@@ -334,51 +334,86 @@ export const PLAYER_RUNTIME_CONFIG = Object.freeze({
 });
 
 /**
- * 球员成长 / 衰退参数（第 16 步；DECISIONS D-14）。
- * 说明：下列为**暂定校准值**（制定者已确认按建议默认值落地，可后续统一调参），
- * 集中于此以便调整结构而不改算法。全部为**确定性模型参数**，随机仅作有界扰动。
+ * 球员成长 / 衰退参数（Step 39F-C；D39 Phase 3）。
+ * 规范来源：D39.31–D39.38 / Step 39E §二~§十二 / **OD-39FC-1 · OD-39FC-2 · OD-39FC-3**（DECISIONS D-39）。
  *
- * 核心设计：成长以「距每属性潜力上限的余量 × 年龄速率」驱动（自然收益递减、绝不越上限）；
- * 过巅峰后按年龄线性衰退，身体属性优先。
+ * 模型（每赛季每属性独立结算，六属性不共享）：
+ *   Growth branch（age < peakAge）:
+ *     ageFactor      = clamp(1 − 0.06 × ((peakAge − age) / (peakAge − 17))², 0, 1)      // OD-39FC-3
+ *     headroomFactor = clamp((potential − current) / 20, 0, 1)
+ *     baseCapacity   = 2.4 × ageFactor × headroomFactor
+ *     inputScore     = clamp(0.40·training + 0.40·matchExperience + 0.20·environment, 0, 1)
+ *     inputFactor    = 0.75 + 0.50 × inputScore
+ *     preRandom      = clamp(baseCapacity × inputFactor + conditionAdjustment, −2.50, +2.50)
+ *   Decline branch（age >= peakAge）:
+ *     declineBase    = (age − peakAge + 1) × 0.18 × sensitivity[attr]
+ *     preRandom      = clamp(−declineBase × floorFactor, −2.50, 0)
+ *   Both: delta = clamp(round(preRandom + noise∈[−0.20,+0.20]), −3, +3)
+ *
+ * 红线：无 OVR / 无 Talent / 无 GrowthRate；无 BREAKOUT；不修改静态库；写入 `runtime.players[].ability.deltas`。
+ * 红线：Potential 是 **World Simulation Ceiling**（Growth Engine 可读 True Potential；AI 不可读）。
  */
 export const PLAYER_GROWTH_CONFIG = Object.freeze({
-  /** 属性分组（不同年龄曲线；B5）。 */
-  GROUPS: Object.freeze({
-    pace: 'physical',
-    technique: 'technical',
-    passing: 'technical',
-    defending: 'technical',
-    finishing: 'technical',
-    goalkeeping: 'goalkeeping',
+  /** 每属性巅峰年龄（D39.37 / D39-E 冻结）。 */
+  PEAK_AGE: Object.freeze({
+    pace: 27,
+    technique: 29,
+    passing: 29,
+    defending: 30,
+    finishing: 29,
+    goalkeeping: 32,
   }),
-  /** 各分组巅峰年龄（超过即开始衰退；B6：身体最早、门将最晚）。 */
-  PEAK_AGE: Object.freeze({ physical: 27, technical: 30, goalkeeping: 32 }),
-  /** 成长速率：每赛季吸收「剩余潜力余量」的比例，按年龄段递减。 */
-  GROWTH_RATE_BY_AGE: Object.freeze([
-    Object.freeze({ maxAge: 20, rate: 0.25 }),
-    Object.freeze({ maxAge: 24, rate: 0.15 }),
-    Object.freeze({ maxAge: 28, rate: 0.06 }),
-  ]),
-  /** 衰退速率：过巅峰后每多一岁的每赛季衰退点数（按分组；B6）。 */
-  DECLINE_RATE: Object.freeze({ physical: 0.7, technical: 0.4, goalkeeping: 0.3 }),
-  /** 出场加成：赛季满勤(1800 分钟)时的最大成长加成倍率与「年轻权重」年龄窗（B2）。 */
-  APPEARANCE: Object.freeze({ MAX_BONUS: 0.2, FULL_MINUTES: 1800, YOUNG_AGE: 21, FADE_AGE: 27 }),
-  /** 状态/士气温和影响幅度（B3）：各自 ±该比例，合计约 0.8–1.2。 */
-  VITALS_SENSITIVITY: 0.1,
-  /** 人格对成长/衰退的修正强度（B4；每 50 点偏离带来该比例变化）。 */
-  PERSONALITY: Object.freeze({
-    PROFESSIONALISM: 0.1,
-    DETERMINATION: 0.05,
-    AMBITION: 0.05,
+  /** Pre-peak 平滑曲线参数（OD-39FC-3，**不得修改**）。 */
+  PRE_PEAK: Object.freeze({ ANCHOR_AGE: 17, CURVATURE: 0.06 }),
+  /** Base capacity 系数（P3-F1.3）。 */
+  BASE_CAPACITY_FACTOR: 2.4,
+  /** Headroom 归一化参考（P3-F1.3）。 */
+  HEADROOM_REFERENCE: 20,
+  /** Development Inputs 权重（39E-R §三 冻结）。 */
+  INPUT_WEIGHTS: Object.freeze({ TRAINING: 0.40, MATCH_EXPERIENCE: 0.40, ENVIRONMENT: 0.20 }),
+  /** inputFactor = BASE + SLOPE × inputScore（39E-R §二 冻结）。 */
+  INPUT_FACTOR: Object.freeze({ BASE: 0.75, SLOPE: 0.50 }),
+  /** Match Experience 满勤分钟（P3-F6 冻结：sqrt(clamp(minutes/1800, 0, 1))）。 */
+  MATCH_EXPERIENCE_FULL_MINUTES: 1800,
+  /** Training 档位（P3-F7 冻结）。 */
+  TRAINING_LEVELS: Object.freeze({ LIMITED: 0.75, NORMAL: 1.00, STRONG: 1.15 }),
+  DEFAULT_TRAINING_LEVEL: 'NORMAL',
+  /** Condition Adjustments（39E §八 冻结；加性、有界）。 */
+  CONDITION: Object.freeze({
+    PERSONALITY_MAX: 0.10,
+    /** 状态 / 士气分档（同一张表用于 form 与 morale）。 */
+    BANDS: Object.freeze([
+      Object.freeze({ min: 90, value: 0.05 }),
+      Object.freeze({ min: 70, value: 0.02 }),
+      Object.freeze({ min: 40, value: 0.00 }),
+      Object.freeze({ min: 20, value: -0.02 }),
+      Object.freeze({ min: -Infinity, value: -0.05 }),
+    ]),
+    INJURY_PENALTY: -0.15,
   }),
-  /** 随机波动幅度（±比例，有界；C2）。 */
-  NOISE_AMPLITUDE: 0.15,
-  /** 超预期成长（C3）：触发概率与额外点数（不突破潜力上限）。 */
-  BREAKOUT: Object.freeze({ CHANCE: 0.05, BONUS: 2 }),
-  /** 长期伤病放缓成长的幅度倍率（惩罚赛季数由**伤病系统**写入 `growth.injuryPenaltySeasons`）。 */
-  INJURY_PENALTY: Object.freeze({ FACTOR: 0.85 }),
-  /** 训练修正默认值（B1：预留接口，本期不实现训练本体）。 */
-  DEFAULT_TRAINING_FACTOR: 1.0,
+  /** Efficiency Cap（pre-random 夹取，P3-F3 冻结）。 */
+  EFFICIENCY_CAP: 2.50,
+  /** 年度安全阀（工程护栏，非成长公式）。 */
+  ANNUAL_SAFETY_BOUND: 3,
+  /** 有界确定性随机幅度（P3-F4 冻结）。 */
+  NOISE_AMPLITUDE: 0.20,
+  /** Decline 参数（39E §十二 冻结）。 */
+  DECLINE: Object.freeze({
+    BASE_PER_YEAR: 0.18,
+    SENSITIVITY: Object.freeze({
+      pace: 1.00,
+      defending: 0.90,
+      finishing: 0.80,
+      technique: 0.65,
+      passing: 0.55,
+      goalkeeping: 0.45,
+    }),
+    FLOOR: 1,
+    FLOOR_REFERENCE: 20,
+    MAX: 2.50,
+  }),
+  /** 无俱乐部（自由球员）时的中性 Environment 输入。 */
+  NEUTRAL_ENVIRONMENT_INPUT: 0.50,
 });
 
 /**
