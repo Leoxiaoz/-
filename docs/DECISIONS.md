@@ -1215,6 +1215,52 @@ World Season Boundary：
 
 ---
 
+## D-39 Player Development & AI Development（Step 39A Audit → Step 39E-R Clarification；Step 39F-C Owner Ruling）
+
+> 本条为 **SPEC AMENDMENT 记录**（Step 39F-C Owner Ruling）：只记录裁定与修订，**不含实现**。
+> 未修改任何代码 / 测试 / 数据 / Schema 10 / Save Format 1。
+
+### OD-39FC-1 Growth Age Curve 锚定 `[已定]`
+- **采用 Calibration-compatible pre-peak interpretation（Owner Option 2）**。
+- **REJECTED / superseded**：`ageFactor = curve(peakAge − age)`（即 39E-R §一 的 R-A peak-relative 读法）。
+  理由：该读法使成长期年轻球员 Growth Capacity 明显过低（例：17 岁 / Pace peak 27 → ageFactor = 0.31），
+  与年龄阶段成长逻辑、Calibration Targets、Potential Ceiling 语义、长期青年培养路径不一致。
+
+### OD-39FC-2 Growth / Decline 分支条件 `[已定]`
+- `age < peakAge` → **GROWTH branch**
+- `age >= peakAge` → **DECLINE branch**
+- 旧文本中互相矛盾的两条（`ageOffset < 0 → growth capacity = 0`；`ageOffset >= 0 → growth capacity = 0`）**superseded**。
+
+### Age Curve 语义 `[已定]`
+1. 成长期 `age < peakAge` **必须存在正向 Growth Capacity**。
+2. 成长期 `ageFactor` 应处于高位并**接近 1.00**。
+3. 随年龄接近 Peak，Growth Capacity 可**平滑**变化。
+4. Peak 附近仍属 Growth Branch；`age >= peakAge` 后进入 Decline Branch。
+5. 禁止：17 岁成长能力仅 0.31；年轻球员须接近 Peak 才具主要成长能力；全年龄 Growth Capacity = 0。
+6. 不重新引入 `GROWTH_RATE_BY_AGE`；不重新引入 breakout；不新增 Talent / Growth Rate / LateDeveloper 字段。
+
+### Calibration `[已定]`
+- Calibration Targets 属 **LONG-RUN / BEHAVIORAL** 目标，**非逐公式硬约束**；不得为追求 6/6 命中而反向调参。
+- 未经 Owner 明确批准，不得修改：`2.4 baseCapacity`、`headroomFactor`、`inputFactor`、
+  training weights、environment weights、decline sensitivity、noise amplitude。
+
+### Decline `[已定]`（保持）
+- `declineBase = (age − peakAge + 1) × 0.18 × declineSensitivity`
+- sensitivity：`pace 1.00 / defending 0.90 / finishing 0.80 / technique 0.65 / passing 0.55 / goalkeeping 0.45`
+
+### 明确保留（未被修订）
+D39.31 Growth Engine architecture；D39.32 smooth age curve + headroom diminishing returns；
+D39.33 calibration targets；D39.34 potential ceiling semantics；D39.37 six independent attributes；D39.38 independent decline。
+
+### 未决（Step 39F-C 第二次 BLOCKED）`[TBD]`
+- **成长期（`age < peakAge`）smooth `ageFactor` 的具体曲线形态未被唯一确定。**
+  现有冻结材料中：39E 的绝对年龄表被 39E 自身要求「结合 per-attribute peak、不得直接作为绝对年龄表使用」；
+  而实现该「结合」的 39E-R peak-relative 锚定（R-A）已由 OD-39FC-1 废止 ⇒ **两条曲线均失去适用锚定**；
+  Owner 又明确「成长期接近 1.00 且平滑、不得硬编码常数、不得自行发明曲线」。
+- **需 Owner 提供唯一确定的 pre-peak 曲线（或其索引 / 锚定 / 插值规则）**，方可实现 Growth Engine。
+
+---
+
 ## Deferred Issues（登记；不在本步骤处理）
 
 ### DF-01 Managed Club Cash Concentration / World Finance Feedback `[Resolved → Step 36C 冻结]`
