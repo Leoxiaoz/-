@@ -1094,6 +1094,127 @@ Step 34 实现后必须测试 **10 / 50 / 100 / 200 / 500** 赛季，至少检�
 
 ---
 
+## D-38D Competition Structure Phase 1 Final Freeze（Step 38C 实现审计 / Step 38D 最终冻结）
+
+> 本步（Step 38D）为 **DOCS-ONLY FINAL DECISION FREEZE**：**未修改任何 `src/` 代码 / `tests/` / `.fdb` 世界数据 / Schema 10 / Save Format 1**，**未 commit**。
+> 依据：Step 38B 冻结的 D38.1–D38.9 + Step 38C READ-ONLY IMPLEMENTATION AUDIT。本步**不重开** D38.1–D38.9。
+
+### D38D.1 World Season 采用「同步世界赛季」`[已定]`
+- **Phase 1 World Season 同步推进**。**World Season Boundary = 所有参与 World Season 的 League-format Competition 均完成当前赛季，且满足现有 season calendar 的完成条件。**
+- **禁止**：① 某一个 Competition 单独触发 World rollover；② Competition A rollover 后等待 Competition B；③ Competition B 使用已被 A 修改过的 membership 再决定自身 Promotion/Relegation。
+- **Phase 1 暂不支持独立异步 Competition Season lifecycle**。原因：`state.season` 仍为 World-level scalar，且尚无真正独立的 Competition Calendar / Competition Season lifecycle。
+- 未来引入 Cup / Continental / 跨赛季赛事时，再单独设计 **Competition-level lifecycle**。
+
+### D38D.2 World Season Participants `[已定]`
+- **Phase 1：World Season Participants = 当前 World 中全部 League-format RoundRobin Competitions**（由现有 `leagues` 数据派生）。
+- **不新增** `participatesInWorldSeason` 之类独立 `.fdb` 标记（Phase 1 无 Cup / Continental / 独立 Competition Calendar，提前增加属过度建模）。
+- 参与者枚举必须 **deterministic**：**不依赖 `Object.keys()` 未排序结果**；按**稳定 ID 排序**后处理；**空 World / 空 Competition 集合行为必须明确**。
+- 未来 Competition 类型真正扩展时，再设计 **Competition Calendar Participation**。
+
+### D38D.3 Division 与 Competition 的 Phase 1 数据边界 `[已定]`
+- **Phase 1 不新增** `divisions.json` / `competitions.json`；**继续复用 `leagues.json`**。
+- 语义定义：**`leagues.json` entry = 逻辑 Division + Phase 1 对应的 League Competition 定义**。
+- `league.id` 在 Phase 1 **同时承担** `divisionId` 的兼容实现与 `competitionId` 的兼容实现。
+- **概念层**：`divisionId` / `competitionId` **语义须明确区分**；**存储层**：`leagueId`；**当前二者一一对应**。
+- **不因语义分离而修改 Save Format**；**不批量迁移**旧 `membership.clubs` 的 `leagueId` 值；**不创建伪造的独立 Division runtime entity**。
+- 未来进入 Cup / Continental / 多 Competition 同层并存时，再考虑 `divisions.json` / `competitions.json` 或其他显式实体化方案。
+
+### D38D.4 Promotion/Relegation Planner 必须全局计算 `[已定]`
+- **两阶段模型**：**Phase A 纯 planner**（输入：上赛季所有相关 Division 的最终 standings + World Data Rules + tier/adjacent 信息 → 输出 `PromotionRelegationPlan`）；**Phase B 统一 apply**（顺序：① planner 生成完整 Plan → ② 全局校验 Plan → ③ **一次性**修改 membership → ④ `validateMembership` → ⑤ 生成下一赛季 Competition runtime / fixtures）。
+- **禁止**：`D1 planner → apply D1 → D2 planner → apply D2 → …` 的链式顺序依赖；**必须**"所有 Division 读取旧赛季最终状态 → 生成完整 Plan → 一次性 Apply"。
+- **Invariants（冻结）**：
+  - 一个 club 在一次 transition 中**最多移动一次**；
+  - 不允许 `fromDivisionId === toDivisionId`；
+  - 不允许不存在的 `clubId` / `fromDivisionId` / `toDivisionId`；
+  - Apply 前必须验证 source membership 与 Plan 一致；
+  - Apply 后必须验证 membership 全局合法；
+  - 同一 club 不得同时 promotion + relegation；
+  - 不得出现重复 movement；
+  - 不得产生非法 tier；
+  - **top tier 不得 promotion**；
+  - **bottom tier 不得 relegation**；
+  - **只允许相邻 Division 迁移**；
+  - 不允许跨两级直接跳 tier；
+  - 所有 movement 必须 **deterministic**。
+
+### D38D.5 Division 邻接规则 `[已定]`
+- Phase 1 **只允许相邻 tier**（`Tier 1 ↔ Tier 2`、`Tier 2 ↔ Tier 3`）；**禁止** `Tier 1 → Tier 3` / `Tier 3 → Tier 1`。
+- 相邻关系优先由 **`countryId + tier`** 确定；**Phase 1 不强制新增 `parentDivisionId`**。
+- 若同一 Country 内出现**相同 tier / 非连续 tier**，必须由 **World Data validation 明确拒绝**非法配置，**不得运行时猜测**。
+
+### D38D.6 Promotion / Relegation 名额 `[已定]`
+- 每个相邻 Division pair 使用确定性的 `promotionPlaces` / `relegationPlaces` 规则。
+- **Phase 1 不实现**：playoff / playoff promotion / playoff relegation / best-loser compensation / special survival / registration-based movement / financial eligibility / license-based movement。
+- **Engine 默认值**（未提供配置时）：`promotionPlaces = 2`、`relegationPlaces = 2`。且必须满足：
+  1. top tier 的 `promotionPlaces` **实际效果为 0**；
+  2. bottom tier 的 `relegationPlaces` **实际效果为 0**；
+  3. 名额**不能超过** source Division 实际参赛 Club 数；
+  4. 名额**不能造成重复移动**；
+  5. 名额不足时 **deterministic clamp**；
+  6. invalid（负数 / NaN / 非整数）配置必须**被拒绝或规范化为安全默认值**；
+  7. **不允许通过补人机制人为制造额外 Promotion/Relegation**。
+- 本规则**只定义 Phase 1 自动升降级**，不扩展到 Playoff。
+
+### D38D.7 Ranking / Tiebreak `[已定]`
+- Phase 1 **不**把完整 tiebreak 做成复杂 World Data DSL；继续保持当前 **Engine 确定性基础**：① `points` ② `goalDifference` ③ `goalsScored` ④ `clubId` deterministic tie-break。
+- World Data 未来可覆盖排序规则，**Phase 1 不实现复杂可编程排序**。若在 `.fdb` 增加字段，必须 **additive optional**，缺失时使用上述 Engine 默认。
+- **不得**引入脚本化规则 / 表达式语言 / 任意排序函数。
+
+### D38D.8 Rules 字段 `[已定]`
+- Phase 1 允许 `leagues.json` 增加**可选** `rules`，**最小允许范围**：`{ promotionPlaces?, relegationPlaces? }`；**可选保留**：`pointsForWin? / pointsForDraw? / pointsForLoss?`（仅当实现确需时才写）。
+- **暂不加入**：`playoffRules` / `cupRules` / `qualificationRules` / `continentalRules` / `registrationRules` / `financialRules` / `reputationRules`。
+- 原则：**Rules 只描述 Phase 1 当前真正需要的数据**。
+
+### D38D.9 Membership API `[已定]`
+- Promotion/Relegation **优先使用批量原子 transition API**：概念名 `applyPromotionRelegationTransition(state, plan)`，职责：① 校验完整 Plan；② 校验 source membership；③ 校验 club 唯一移动；④ 校验 from/to Division 合法；⑤ 校验 tier adjacency；⑥ 应用全部 membership changes；⑦ 执行 `validateMembership`；⑧ **任意校验失败则不得产生部分修改**。
+- **不推荐**在 Promotion/Relegation 主流程中逐个直接调用 `applyClubDivisionMembership(...)`；单条 API 可存在供未来其他受控 Domain 使用，**主路径必须用 batch atomic API**。
+- 命名若在实现阶段调整，可保持同一语义，但 **atomic / deterministic / all-or-nothing** 要求**不得改变**。
+
+### D38D.10 Season Rollover 最终顺序 `[已定]`
+```
+每日：advance date → tick injuries → play due fixtures for all competitions → update competition status
+World Season Boundary：
+  → 确认所有 World Season Participants 已完成
+  → 固化所有相关 Competition 最终 standings
+  → 生成完整 Promotion/Relegation Plan
+  → 全局校验 Plan
+  → atomic membership transition
+  → validate membership
+  → 创建下一赛季 Competition runtime
+  → 生成下一赛季 fixtures
+  → archive / update season history
+  → 推进 state.season
+  → developPlayers → player lifecycle → replenishTransferBudget → Finance Feedback
+    → runSeasonAI → repairManagedLineups → resetSeasonStats
+```
+- **红线**：Promotion/Relegation **必须发生在 `createLeagueRuntime` / fixture generation 之前**；**AI 必须在新 Division membership 生效之后运行**；DDTI / Finance / Transfer **不因 Division transition 改变其规则**。
+
+### D38D.11 Fixture `competitionId` `[已定]`
+- Phase 1 **可以**为 fixture 增加**可选** `competitionId`（作为显式语义归属），但**不得强制重构现有 fixture ID**。
+- 兼容：旧 `fx_{leagueId}_s{season}_r{round}_{idx}` **继续有效**。
+- **不改变 Match Engine**；**不要求**重新设计 fixture ID；**不升级 Save Format**；**不强制**把旧 fixture 迁移为新 ID。
+- 若实现阶段发现增加 `competitionId` 的成本明显高于收益，**可暂缓**到 Cup/Continental 引入阶段。
+
+### D38D.12 Save / Migration `[已定]`
+- **Schema = 10；Save Format = 1；不升级。**
+- 旧 Save 必须：保持 **membership 为当前归属真相源**；保留旧 **`leagueId` 兼容**；新 Rules 缺失时**使用默认**；新 optional 字段缺失时 **normalize**；**不尝试**让 `static teams[].leagueId` 与 runtime membership 自动同步；**不生成** transition history 持久对象；**不保存** Promotion/Relegation Plan；**不保存**中间 rollover 状态。
+- **Transition Plan 是临时运行时对象**。
+
+### D38D.13 失败与边界语义 `[已定]`
+- 若 Promotion/Relegation Plan 非法：**整个 transition 失败**。**不得**：部分升降级 / 部分写入 membership / 自动随机修复 / 随机选择替代 Club / 修改 standings / 修改 static world data。**错误应可诊断**。
+- 若 World Data 存在非法 Division 配置（同 country 同 tier 重复 / tier 不连续 / promotion·relegation 配置非法 / club membership 不属于有效 Division）：应在 **world validation / transition validation** 阶段**明确失败**。**禁止运行时静默猜测**。
+
+### D38D.14 Golden / 回归不变量 `[已定]`
+- **Golden `143/143/1141`**；**测试基线 `336/336`**。
+- 实现阶段必须保持：单 Division 行为与当前版本**等价**；单联赛 Season Boundary 行为**等价**；**DDTI C1 / Finance Feedback / Transfer Domain / Match Engine / Team Strength / Schema 10 / Save Format 1 不变**。
+- 实现后**必须新增**测试：Two Division promotion、Two Division relegation、Multi Division chain、Top tier boundary、Bottom tier boundary、deterministic transition、atomicity、duplicate movement rejection、multi-competition season boundary、old save migration、membership invariant regression、long-run multi-division simulation。
+
+### D38D — Deferred（明确不在 Phase 1）`[Deferred]`
+- Playoff、Domestic Cup、Continental、Qualification、Complex competition stages、Youth/Reserve、Staff、Scout、Reputation、Revenue/Sponsor/TV/Prize、Loan、Registration Rules、Club licensing、Financial fair play、promotion history entity、CompetitionSeason persistent entity。
+- 未来真正需要时，重新设计（含 Competition-level lifecycle / Competition Calendar Participation / 显式 division·competition 实体化）。
+
+---
+
 ## Deferred Issues（登记；不在本步骤处理）
 
 ### DF-01 Managed Club Cash Concentration / World Finance Feedback `[Resolved → Step 36C 冻结]`

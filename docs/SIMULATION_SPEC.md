@@ -811,4 +811,25 @@
 - **现状事实（Step 38A）**：Competition 主键 ≡ League ID；Club→League 单值无写入口；`ai-need` 的联赛基线是唯一已有 league 依赖点（派生读取，**天然适配**升降级）。
 - **不变**：DDTI C1（`DEPTH_CAP=14 / PER_CLUB=1 / WORLD=4 / HU=0.30 / HD=0.15`）、Finance Feedback、Transfer Domain、Match / Team Strength；**Schema 10 / Save Format 1 保持**（全加法 + normalize）。
 - **Phase 1 范围**：多 Division + Promotion + Relegation + membership 迁移 + Competition Season（逻辑）+ Rules 数据化 + 多赛事 Season Boundary 修复；**Playoff / Cup / Continental / Qualification 延后**（保留接口）。**Golden `143/143/1141` 必须保持**。
-- **下一步 [TBD]**：Step 38C+ 由用户指定（实现 Competition Domain / 修复多赛事边界 / 或其余缺口）。
+- **下一步**：Phase 1 决策已**最终冻结**（Step 38D，见 §37）；**实现阶段 = Step 38E — Competition Structure Production Implementation**。
+
+---
+
+## §37 Competition Structure Phase 1 — Final Freeze（Step 38C 审计 / Step 38D 冻结）
+
+- **状态**：**Phase 1 决策已最终冻结（Step 38D，DOCS-ONLY）**；**实现待 Step 38E**。决策见 [DECISIONS D-38D](file:///workspace/docs/DECISIONS.md)（D38D.1~D38D.14）。
+- **World Season 语义（D38D.1）**：**同步世界赛季**。`World Season Boundary = 所有参与 World Season 的 League-format Competition 均完成当前赛季且满足 season calendar 完成条件`。**禁止**单个 Competition 单独触发 World rollover、禁止 A 先 rollover 再等 B、禁止 B 使用被 A 改过的 membership；Phase 1 **不支持**异步 Competition Season lifecycle（`state.season` 仍为 World-level scalar）。
+- **Participants（D38D.2）**：Phase 1 = **当前 World 全部 League-format RoundRobin Competitions**（由 `leagues` 派生）；**不新增** `participatesInWorldSeason`；枚举 **deterministic**（按稳定 ID 排序，**不依赖未排序 `Object.keys()`**）；空 World/空集合行为须明确。
+- **Division / Competition 语义分离（D38D.3）**：概念层区分 `divisionId` / `competitionId`；**存储层复用 `leagues.json` + `runtime.competitions[leagueId]`**（`league.id` 同时充当二者的兼容实现，当前一一对应）；**不新增** `divisions.json` / `competitions.json`；**不改 Save Format**；**不批量迁移** `membership.clubs` 的 `leagueId`；**不创建伪造独立 Division runtime entity**。
+- **Promotion/Relegation planner（D38D.4）**：**两阶段**——Phase A **纯 planner**（读上赛季全部相关 Division 最终 standings + World Data Rules + tier/adjacency → `PromotionRelegationPlan`）；Phase B **统一 apply**（生成完整 Plan → 全局校验 → **一次性**改 membership → `validateMembership` → 生成下季 runtime/fixtures）。**禁止** per-Division 链式 apply。Invariants 见 D38D.4（单次移动、相邻 tier、top 不升 / bottom 不降、无重复、确定性等）。
+- **邻接（D38D.5）**：仅相邻 tier；邻接由 `countryId + tier` 确定；非法配置（同 country 同 tier / tier 不连续）由 World Data validation **明确拒绝**。
+- **名额（D38D.6）**：默认 `promotionPlaces = 2` / `relegationPlaces = 2`；top tier promotion 实际 0、bottom tier relegation 实际 0；名额 clamp 且不超 source club 数、不造成重复移动；invalid 配置拒绝/规范化；**不实现** playoff/补偿/注册/财务/牌照类移动。
+- **Ranking/Tiebreak（D38D.7）**：Phase 1 保持 Engine 默认 `points → GD → GF → clubId`；**不引入复杂可编程排序 / DSL / 表达式**；新增字段 additive optional。
+- **Rules 边界（D38D.8）**：`leagues.json` 可选 `rules = { promotionPlaces?, relegationPlaces? }`（可选 `pointsFor*?`）；**不加** playoff/cup/qualification/continental/registration/financial/reputation rules。
+- **Membership API / source of truth（D38D.9）**：**`membership.clubs` 仍是运行期当前归属唯一真相源**；升降级用**批量原子** `applyPromotionRelegationTransition(state, plan)`（校验完整 Plan/source/唯一移动/from-to 合法/tier adjacency → 应用 → `validateMembership` → **失败即 all-or-nothing**）；主路径**不得**逐个 `applyClubDivisionMembership`；**禁止**以 `static teams[].leagueId` 覆盖 membership。
+- **Season Rollover 顺序（D38D.10）**：`所有参与者完成 → 固化最终 standings → 生成 Plan → 全局校验 → atomic membership transition → validate membership → 创建下季 Competition runtime → 生成下季 fixtures → 归档 history → 推进 state.season → developPlayers → player lifecycle → replenishTransferBudget → Finance Feedback → runSeasonAI → repairManagedLineups → resetSeasonStats`。**红线**：Promotion/Relegation **必须早于** `createLeagueRuntime`/fixture 生成；**AI 必须在新 Division membership 生效后运行**。
+- **Fixture（D38D.11）**：Phase 1 **可**加**可选** `competitionId`；旧 `fx_{leagueId}_s{season}_r{round}_{idx}` 继续有效；**不改 Match Engine**；不升级 Save Format；成本高于收益可延后。
+- **Save 兼容（D38D.12）**：**Schema 10 / Save Format 1 不升级**；旧档以 membership 为准、保留 `leagueId` 兼容、Rules/optional 缺失用默认或 normalize；**不同步** `static teams[].leagueId` 与 membership；**不持久** Plan / transition history / 中间 rollover 状态（Plan 为临时运行时对象）。
+- **失败语义（D38D.13）**：Plan 非法 → **整个 transition 失败**（无部分升降级 / 无部分写入 / 无随机修复 / 不改 standings / 不改 static）；非法 Division 配置在 validation 阶段**明确失败**，**禁止运行时静默猜测**。
+- **回归不变量（D38D.14）**：Golden `143/143/1141`、测试基线 `336/336`；单 Division 与单联赛边界行为**等价**；**DDTI C1 / Finance Feedback / Transfer Domain / Match Engine / Team Strength / Schema 10 / Save Format 1 不变**。
+- **Deferred**：Playoff / Domestic Cup / Continental / Qualification / Complex stages / Youth·Reserve / Staff / Scout / Reputation / Revenue·TV·Sponsor·Prize / Loan / Registration / licensing / FFP / promotion history entity / CompetitionSeason persistent entity。

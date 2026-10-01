@@ -418,7 +418,28 @@
 - **冻结模型（Candidate B）**：`Country → Division(tier) → Club`；`Competition(format)` 引用 Division/参赛集合；`Competition Season` 为 Competition 的逻辑实例边界；**League ≡ Competition(format=RoundRobin)**。
 - **已定（D38.1~D38.9）**：实体模型；Competition Season 逻辑独立（Phase 1 不强制持久实体）；membership 仅存当前归属（历史派生）+ 受控写入口；Promotion/Relegation 归 Country/World + 规则数据化 + **两阶段派生执行**（无新持久字段）；Rules 分层（Engine 固定 / World Data 入 `.fdb`）；**多赛事 Season Boundary 修复**（Phase 1 前置）；Schema **10** / Save **1** 加法式；一期**最小金字塔**（多层级 + 升降级 + membership 迁移，Playoff/Cup/Continental/Qualification 延后）。
 - **不变**：DDTI C1、Finance Feedback、Transfer Domain、Match / Team Strength、Golden `143/143/1141`。
-- **下一步 [TBD]**：Step 38C+ 由用户指定；本步**不自行进入**。
+- **下一步**：Phase 1 决策已**最终冻结**（Step 38D，见 2.31）；实现阶段 = **Step 38E — Competition Structure Production Implementation**。
+
+### 2.31 Competition Structure Phase 1 Decision Freeze（2026-10-01，Step 38C 实现审计 / Step 38D 最终冻结）
+
+- **性质**：**DOCS-ONLY FINAL DECISION FREEZE**；未修改代码 / tests / `.fdb` / Schema 10 / Save Format 1，未 commit。详见 [DECISIONS D-38D](file:///workspace/docs/DECISIONS.md) 与 [SIMULATION_SPEC §37](file:///workspace/docs/SIMULATION_SPEC.md)。
+- **已最终冻结（D38D.1~D38D.14，`[已定]`）**：
+  - **同步世界赛季**（所有 League-format Competition 完成后统一 rollover；不支持异步 Competition Season）。
+  - **Participants = 全部 League-format RoundRobin Competitions**（由 leagues 派生，deterministic 排序，不新增 `participatesInWorldSeason`）。
+  - **Division/Competition 语义分离但存储复用 `leagues.json` + `runtime.competitions[leagueId]`**（概念层 `divisionId`/`competitionId` 一对一映射 `leagueId`）。
+  - **Promotion/Relegation = 两阶段**（纯 planner 生成完整 `PromotionRelegationPlan` → 全局校验 → **一次性** atomic membership transition → validate → 生成下季 runtime/fixtures）；**禁止链式 per-Division apply**；含完整 invariants（单次移动/相邻 tier/top 不升·bottom 不降/无重复/确定性）。
+  - **邻接 = `countryId + tier` 相邻 tier**；非法配置在 validation 明确拒绝。
+  - **名额默认 `promotionPlaces=2` / `relegationPlaces=2`**，含 clamp/边界/非法拒绝规则；不实现 playoff/补偿/注册/财务/牌照移动。
+  - **Ranking 保持 Engine 默认** `points→GD→GF→clubId`（不引入 DSL）。
+  - **Rules 最小化**：`leagues.json` 可选 `rules{promotionPlaces?,relegationPlaces?}`（可选 `pointsFor*?`）。
+  - **Membership API = 批量原子 `applyPromotionRelegationTransition`**（all-or-nothing）；`membership.clubs` 为当前归属唯一真相源。
+  - **Rollover 最终顺序**（Promotion/Relegation 早于 `createLeagueRuntime`/fixtures，AI 在新 Division 生效后运行）。
+  - **Fixture 可选 `competitionId`**（不重构旧 ID、不改 Match Engine、不升级 Save）。
+  - **Schema 10 / Save Format 1 不升级**；Plan 为临时运行时对象（不持久）。
+  - **失败语义**：Plan 非法 → 整个 transition 失败，禁止部分/随机修复/改 static。
+  - **回归不变量**：Golden `143/143/1141`、测试基线 `336/336`；单 Division 与单联赛边界行为等价；DDTI C1 / Finance Feedback / Transfer / Match / Team Strength 不变。
+- **Deferred**：Playoff / Domestic Cup / Continental / Qualification / Complex stages / Youth·Reserve / Staff / Scout / Reputation / Revenue·TV·Sponsor·Prize / Loan / Registration / licensing / FFP / promotion history entity / CompetitionSeason persistent entity。
+- **下一步**：**Step 38E — Competition Structure Production Implementation**（生产实现 + 回归 + 多 Division 长跑验证）。本步**不自行进入**。
 
 ---
 
