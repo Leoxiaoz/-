@@ -1471,6 +1471,191 @@ noise `±0.20`、pre-random clamp `±2.50`、annual bound `±3`、Fitness 不进
 
 ---
 
+## D-41 / OD-39FG — Development Opportunity / Rotation Decision（Step 39F-G-DECISION；Owner Ruling / Freeze）
+
+> 本条为 **SPEC AMENDMENT / DECISION RECORD**（Step 39F-G-DECISION Owner Ruling）。
+> 依据：Step 39F-G Development Opportunity / Rotation Design Review（只读代码审查 + 真实测试世界观测）。
+> **本记录为纯文档**：未修改生产代码 / 测试 / 数据 / Schema 10 / Save Format 1 / 39F-C / 39F-E / baseline / Golden。
+> 本步骤**不实现** Rotation / Development Opportunity / Match Importance / Substitution / Fatigue Engine / Loan / Loan Fit。
+
+### 审查基准（39F-G Design Review 已确认事实）
+AI club 使用 `selectMatchSquad()`；`selectMatchSquad()` 主要按 **CURRENT EFFECTIVE LINE RATING** 选择；**无** rotation / substitution / bench participation；fitness、form、morale、Development Phase、Development Value **均不参与** selection；Development Gap **未进入生产代码**；Match Importance 恒为 **NORMAL**；starter ≈ **90 min**、未选 ≈ **0 min**，**分钟分布高度 binary**；Playing Opportunity 为**事后观察型**；Development Value **无 production caller**；存在**高 headroom / 高 DV / 极低 minutes** 的真实案例。
+⇒ 39F-G 核心问题冻结为：「如何在不破坏竞技选择逻辑的前提下，让 Development Gap / Development Value 对合理比赛机会产生**间接影响**。」
+
+### OD-39FG-1 Development Gap 是否进入 Selection `[已定]`
+- **YES，但只能作为 INDIRECT DEVELOPMENT SIGNAL。**
+- `Development Gap = Development Need − Playing Opportunity`，继续保持 **DERIVED / PURE**。
+- **不得**：直接成为首发条件 / Growth Modifier / 增加能力 / 保证 minutes / 覆盖 Current Ability / 覆盖 Position Competition。
+- 正确语义：`Development Gap → Development Opportunity Priority → 在合法竞争范围内影响 Selection / Rotation → Actual Match Minutes → 39F-C Growth`。
+- **禁止**：`Development Gap → Growth`。
+
+### OD-39FG-2 第一阶段 Rotation 架构 `[已定]`
+- 第一阶段采用 **SOFT PRIORITY + ROTATION WINDOW**，两者职责不同：
+  - **SOFT PRIORITY**：用于「竞争力**已经接近**的球员之间，Development Priority 可以产生**有限**影响」。
+  - **ROTATION WINDOW**：用于「未来存在合适比赛情境时，允许 Development Priority 的**影响范围扩大**」。
+- 未来结构：`Current Ability + Position Competition + Match Context + Development Priority → Rotation / Selection`。
+- **不是** `Development Priority → 直接首发`。
+
+### OD-39FG-3 Development Value 的影响形态 `[已定]`
+- Development Value 可作为 **INDIRECT SOFT PRIORITY SIGNAL**；未来允许在 **ROTATION WINDOW** 中提高其影响力。
+- **禁止**：`High Development Value → automatic starter`；`High DV → guaranteed minutes`；`High Potential → guaranteed minutes`；`High Potential → guaranteed starter`。
+- 职责：表达「这个球员**值得在合理竞技范围内**获得发展机会」，**不是**「应该无视竞技结果上场」。
+
+### OD-39FG-4 Current Ability 的角色 `[已定]`
+- 第一阶段采用 **COMBINATION MODEL**，**只冻结结构，不冻结参数**：
+  1. Current Ability / Position Fit = **竞技主体**；
+  2. Position Competition = **竞技约束**；
+  3. Match Context = **情境约束**；
+  4. Development Priority = **小幅、间接**的发展影响；
+  5. Rotation Policy = 最终决定合理机会。
+- Current Ability **不得被** Development Priority 完全覆盖；但**也不是**绝对禁止年轻球员挑战老球员。
+- 允许未来 `65 young` vs `66 experienced` 在**合理竞争范围**内受 Development Priority 影响；「合理竞争范围」**尚未冻结**。
+
+### OD-39FG-5 「竞争力接近」的定义 `[TBD]`
+- **本步骤不得冻结**：absolute rating gap / line rating gap / ranking range / percentile / dynamic match-importance threshold。
+- 未来必须**单独设计并测试**；**不得**简单写成「能力差 ≤ X」（除非未来 Owner 单独冻结）。
+
+### OD-39FG-6 Match Importance `[已定]`
+- Match Importance 是**未来合法**的 Development Opportunity 输入；但 **CURRENT MATCH IMPORTANCE SYSTEM 仍保持 NORMAL / PLACEHOLDER**。
+- 本步骤**不实现** Match Importance；**不修改** `ai-match-importance.js`。
+- 未来可影响 Development Priority 的**允许影响范围**。原则方向：`High importance → influence lower`；`Normal → normal`；`Low → may increase`。
+- 具体**权重 / 阈值 / 分类 / 比赛类型 / 重要性计算** 全部 **[TBD]**。
+
+### OD-39FG-7 低重要性比赛是否扩大 Development Opportunity `[已定]`
+- **YES — ARCHITECTURALLY ALLOWED**：未来低重要性比赛可以成为 **Development Opportunity Window**。
+- 因 Match Importance 尚未实现，本步骤**只冻结**「低重要性比赛可以成为未来的发展机会窗口」。
+- **不冻结**：什么比赛算低重要性 / 扩大多少 / 哪些年龄可用 / 哪些位置可用 / 是否必须实力领先 / 是否必须轮休 / 是否必须赛程密集 —— 全部 **[TBD]**。
+
+### OD-39FG-8 GK 是否使用独立 Rotation Policy `[已定]`
+- **YES — ALLOW POSITION-SPECIFIC POLICY**（GK 与 DF/MF/FW 的机会结构不同）。
+- 原则：GK 更强调**稳定性**、轮换频率可低于场上球员、发展机会可通过**特定比赛窗口**产生；Field Players 可使用更一般化 policy。
+- 所有具体 GK 参数 **[TBD]**；本步骤**不实现** GK rotation。
+
+### OD-39FG-9 Substitution `[已定]`
+- 第一阶段 **NO SUBSTITUTION**；39F-G 第一阶段**只解决 STARTING XI ROTATION**。
+- 当前阶段允许 **0 / 90 minutes**，属 **COARSE-GRAINED DEVELOPMENT OPPORTUNITY**，不是最终分钟模型。
+- 原因：当前真问题是「**谁**获得比赛机会？」，不是「每个人获得**多少**分钟？」。
+- Substitution 属**未来独立阶段**；若未来实现 `15/30/45/60/90` 分钟谱，必须重新设计 Match Engine / Match Involvement / Player Stats / Fitness / Rotation / AI / Tests / Save。**不得**在 39F-G 第一阶段偷偷加入。
+
+### OD-39FG-10 Development Opportunity 是否 DERIVED `[已定]`
+- **YES**：Development Gap / Development Value / Development Opportunity Priority / Rotation Priority / Player Pathway 均保持 **DERIVED / PURE**。
+- **不得**新增 `developmentMinutes` / `rotationPoints` / `developmentDebt` / `developmentOpportunityDebt` 等冗余 runtime state。
+- **优先复用** `stats.season.appearances` / `stats.season.minutes`。
+
+### OD-39FG-11 AI Club vs Managed Club `[已定]`
+- **AI CLUB**：未来可以**自动执行** Rotation Policy。
+- **MANAGED CLUB**：AI **不得自动替玩家修改阵容**；Development Gap / Development Value 在 Managed Club **只能**未来作为 recommendation / warning / development analysis / suggested rotation / squad insight。
+- **特别禁止**：AI 自动把玩家球员塞进首发。具体 UI **[TBD]**，本步骤不实现。
+
+### OD-39FG-12 是否立即创建 `ai-rotation-policy.js` `[已定]`
+- **NO — NOT YET。** 理由：尚未冻结 rotation formula / competitive proximity / match importance / position-specific behavior / development influence / rotation window；现在创建属**提前抽象**。
+- 未来只有在 Rotation Policy 出现**第二个以上明确 production consumer** 时，再评估该模块。
+
+### OD-39FG-13 是否创建 `ai-development-opportunity.js` `[已定]`
+- **NO — NOT YET。** 不得为一个公式提前创建模块。
+- 未来**优先复用** `ai-development-signals.js` / `ai-playing-opportunity.js` / `ai-development-value.js`；若实际 production wiring 后出现明确职责边界，再单独评估新模块。
+
+### OD-39FG-14 Development Influence 的衰减与上限 `[已定]`
+- **必须存在**（decay / cap / weight / threshold 全部 **[TBD]**）。
+- 安全原则：Development Priority 必须 **BOUNDED** 且 **DIMINISHING**，不能无限扩大。
+- 目标：防止 `High DV → more minutes → more growth → higher ability → higher DV → even more minutes` 形成**无界雪球**；允许 `Ability → Minutes → Growth → Ability`，但 Development influence **必须有边界**。
+
+### OD-39FG-15 Minimum Opportunity Target `[已定]`
+- 第一阶段 **NO**。先验证 Soft Priority + Rotation Window 是否已足够解决 0-minute / low-minute development problem。
+- **Protected Opportunity 保留为 FUTURE OPTION**；若未来重新启用，必须解决 ability floor / phase filter / minutes cap / exploit prevention / position competition。
+
+### OD-39FG-16 Match Importance 前置依赖 `[已定]`
+- Match Importance **不作为** 39F-G 第一阶段的**硬前置依赖**。
+- 第一阶段可先实现 `Current Ability + Position Competition + Development Priority` 的受限 Soft Priority。
+- Rotation Window **先保留接口语义**；在 Match Importance 尚未 operational 前，**不得假装**已拥有真实 match context。
+- 因此：第一阶段 Soft Priority 可先设计/实现；**Rotation Window 具体窗口机制延后**。
+
+### OD-39FG-17 连续 N 场 / Substitution Persistence `[已定]`
+- 第一阶段 **NO NEW PERSISTENT STATE**；**不记录** `consecutiveZeroMinutes` / `developmentDebt` / `rotationDebt` 等新字段。
+- 若未来确需 consecutive N matches / detailed substitution history / expected minutes history，再单独进行 **Schema / Save Design Review**。
+- 当前 `GAME_STATE_SCHEMA_VERSION = 10`、`SAVE_FORMAT_VERSION = 1` **保持不变**。
+
+### OD-39FG-18 第一阶段 Rotation 的最小边界 `[已定]`
+- 39F-G 第一阶段**只允许解决**：「AI 是否在**当前可接受竞技范围内**，让**另一个球员**获得首发机会。」
+- **不解决**：substitution / fatigue engine / full fixture congestion / loan / match importance engine / expected minutes / minimum minutes guarantee / player development contract / squad promise。
+- 第一阶段边界 = **STARTER SELECTION ONLY**。
+
+### OD-39FG-19 CURRENT MATCH SELECTION 的职责边界 `[已定]`
+- 最终 Match Selection **仍属 player-lineup / match selection layer**。
+- **Development System 不得直接写** `lineup.starters`；只能提供 **DERIVED DEVELOPMENT PRIORITY**。
+- 最终选择层负责综合 competitive ability / position / availability / development priority / future match context 决定最终 XI。
+- 目的：避免 AI Development System **直接控制**比赛阵容。
+
+### OD-39FG-20 39F-C / 39F-E 完全冻结 `[已定]`
+- 本阶段**不得修改** 39F-C Growth Engine 与 39F-E Growth Resolution Policy。
+- 保持：`matchExperience` **来自真实比赛 minutes**。
+- **禁止**：`Development Priority → Growth multiplier`；`Development Gap → Growth bonus`；`Potential → Growth bonus`。
+- Growth 仍只通过 **实际比赛机会 + 训练 + 环境 + 39F-C 已冻结因素**产生。
+
+### 正式冻结的未来闭环 `[方向已定]`
+```
+AI Evaluation
+ ↓
+Development Need + Playing Opportunity
+ ↓
+Development Gap
+ ↓
+Development Value
+ ↓
+Development Opportunity Priority
+ ↓
+Current Ability / Position Competition
+ ↓
+Match Context
+ ↓
+Rotation / Selection
+ ↓
+Actual Match Minutes
+ ↓
+39F-C Growth Engine
+ ↓
+Effective Ability
+ ↓
+Performance
+ ↓
+下一赛季 AI Re-Evaluation
+```
+> `Development Opportunity Priority` **不得跳过** Current Ability / Position Competition。
+
+### 明确禁止的闭环 `[已定]`
+`Potential → Direct Minutes`；`Potential → Growth Bonus`；`Development Value → Automatic Starter`；`Development Gap → Guaranteed Minutes`；`High Headroom → Automatic Starter`；`AI Development → Direct Ability Delta`；`AI Development → Growth Multiplier`；`Development Priority → Override Current Ability`；`Development System → Automatically modify Managed Club lineup`。
+
+### 正反馈 `[已定]`
+- **允许**：`Ability → Minutes → Growth → Ability`。
+- **不允许无界**：`Development Value → Minutes → Growth → Ability → Development Value → Minutes`。
+- 未来实现必须具备 bounded influence / diminishing influence / current ability competition / position competition / context constraints；具体参数 **[TBD]**。
+
+### 负反馈 `[已定]`
+- 现象：`AI Estimate low → Low Opportunity → Low Match Experience → Slow Growth → Continued Low Estimate`。
+- 定义：**CLUB-LOCAL AI PERCEPTION RISK**，**不是**永久世界锁死。
+- 潜在纠偏来源：observable performance / season re-evaluation / transfer / club change / development priority。
+- 未来可研究 confidence decay / bounded patience / performance-driven correction，**当前不实现**。
+
+### Deferred `[已定 → DEFERRED]`
+- **OPTION C Protected Opportunity**：**DEFERRED，不删除**；未来可作为 Phase 2+ candidate，须在 Soft Priority + Rotation Window 运行后再评估；若重新启用须**重新进行 Owner Decision**。
+- **OPTION D Fatigue / Rotation Engine**：**DEFERRED**，不属 39F-G 第一阶段；未来若实现须**独立设计 MATCH ROTATION / FATIGUE SYSTEM**，**不得塞进 Growth Engine**，**不得借 39F-G 顺便实现**。
+- **Match Importance**：`ai-match-importance.js` 仍为 NORMAL / PLACEHOLDER，本阶段不实现；未来可作 Development Opportunity 的 context modifier，计算系统须**独立设计**。
+- **GK**：允许 POSITION-SPECIFIC ROTATION POLICY，当前不实现；未来须单独评估 starter stability / backup GK / cup opportunities / low importance matches / ability gap / development phase。
+- **模块边界**：当前**不新增** `ai-rotation-policy.js` / `ai-development-opportunity.js`；优先复用 `ai-playing-opportunity.js` / `ai-development-value.js` / `ai-development-signals.js` / `ai-match-importance.js`。原则：**DO NOT CREATE A FILE FOR A SINGLE FORMULA.**
+
+### 39F-C / 39F-E Compatibility `[已定]`
+正式确认：**39F-G 不修改任何 39F-C / 39F-E 冻结规则**；Growth Engine 仍为**唯一** Growth Engine；**无 AI Growth Multiplier / 无 new Growth modifier**；`matchExperience` 仍来自真实比赛 minutes；OD-39FE-1 OPTION A 保持冻结。
+
+### Schema / Save `[已定]`
+本步骤**不修改** `GAME_STATE_SCHEMA_VERSION = 10` 与 `SAVE_FORMAT_VERSION = 1`；**不新增 runtime persistence**；Development Opportunity 相关概念保持 **DERIVED / PURE**。
+
+### 仍然 TBD 的清单（不得写成 `[已定]`）
+1. 「竞争力接近」的具体阈值；2. Development Priority 具体公式；3. Development Priority 权重；4. Development influence cap；5. Development influence decay；6. Match Importance 公式；7. Match Importance 分类；8. Rotation Window 具体条件；9. GK rotation 参数；10. Position-specific modifier；11. Minimum opportunity target；12. Protected Opportunity；13. Substitution；14. Fatigue；15. Fixture congestion；16. Expected minutes；17. Loan Fit；18. Loan Lifecycle；19. Managed Club UI；20. 新 Rotation module 是否最终需要。
+
+**验证**：本记录为**纯文档**；未修改生产代码 / 测试 / 数据 / Schema 10 / Save Format 1 / 39F-C / 39F-E / baseline / Golden / 运行行为。
+
+---
+
 ## Deferred Issues（登记；不在本步骤处理）
 
 ### DF-01 Managed Club Cash Concentration / World Finance Feedback `[Resolved → Step 36C 冻结]`
