@@ -23,11 +23,11 @@ function fnv(str) {
   return (h >>> 0).toString(16);
 }
 /**
- * 完整运行时指纹（用于 G1b① 行为等价对比）。
+ * 完整运行时指纹（用于单联赛确定性与行为基线对比）。
  * 投影为**跨 Step 21-A 稳定**的字段子集：显式选取 Step 21-A **未新增/未改变**的字段
  * （vitals/injury/ability/growth + 统计线中 Step 21-A 之前的 appearances/minutes/goals），
  * 排除 Step 21-A 新增的 shots/shotsOnTarget/assists/yellow/red/ratingSum，从而让本测试
- * 始终度量「赛季边界改造」的影响，而不受后续表现系统结构变化干扰。
+ * 始终度量「赛季边界 + 成长引擎」的确定性行为，而不受后续表现系统结构变化干扰。
  */
 function fingerprint(state) {
   const comp = state.runtime.competitions.lg_a;
@@ -66,13 +66,15 @@ function fingerprint(state) {
   return fnv(JSON.stringify(proj));
 }
 /**
- * 改造前（G1b① 实现前）基线指纹——行为等价红线。
- * 由「撤销 simulation.js 的边界守卫、运行同一指纹函数」实测得到（非人工填写）。
- * 指纹已投影为 Step 21-A 稳定字段，故不受表现系统结构变化影响。
+ * 行为基线指纹（deterministic regression baseline）。
+ * 语义：固定输入（同一 .fdb 世界 + 同一推进天数 + `enableAI:false`）下，多个时间点必须产生
+ * **稳定、可重复**的运行时指纹；本基线已按 **Step 39F-C（OD-39FC-4）新 Growth Engine** 的
+ * **实测输出**重新冻结（非人工填写），取代旧的 G1b①「实现前基线」。
+ * 说明：`day 1` 尚未发生 season rollover ⇒ Growth Engine 未执行，其值与旧基线保持完全一致。
  */
 const BASELINE = {
-  1: '67641d9e', 91: 'b20e4710', 92: 'd9ac2a5c', 121: '97133d57',
-  200: 'b8730a7', 400: 'c1ec49c5', 800: '14f00413',
+  1: '67641d9e', 91: '843f571', 92: 'be0fa07b', 121: 'b63db3e1',
+  200: '68781ac9', 400: 'dcbb9', 800: 'dc598915',
 };
 
 // ---------- A. SeasonCalendar ----------
@@ -154,13 +156,13 @@ test('边界：空联赛（无赛程）永不触发，season 不变', () => {
   assertEquals(state.season, 1, '空联赛不应滚动');
 });
 
-// ---------- C. 单联赛行为等价（hash 基线） ----------
-test('单联赛行为等价：多时点运行时指纹与改造前基线完全一致', () => {
+// ---------- C. 单联赛确定性行为基线（hash 指纹回归） ----------
+test('单联赛确定性基线：多时点运行时指纹与 39F-C 冻结基线完全一致', () => {
   for (const days of [1, 91, 92, 121, 200, 400, 800]) {
     const state = leagueState(8);
-    // 本测试度量「赛季边界改造」的行为等价；AI Club Decision（Step 31）为独立子系统，此处隔离以保持基线语义。
+    // 本测试度量确定性模拟的行为稳定性；AI Club Decision（Step 31）为独立子系统，此处隔离以保持基线语义。
     new SimulationCore({ enableAI: false }).advanceDays(state, days);
-    assertEquals(fingerprint(state), BASELINE[days], `第 ${days} 天指纹应与基线一致`);
+    assertEquals(fingerprint(state), BASELINE[days], `第 ${days} 天指纹应与 39F-C 基线一致`);
   }
 });
 
