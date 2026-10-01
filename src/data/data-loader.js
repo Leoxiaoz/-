@@ -85,7 +85,9 @@ export function validateWorld(world) {
         context: { file: 'leagues.json', entity: 'league', id: league.id, field: 'countryId', value: league.countryId },
       });
     }
+    validateLeagueRules(league);
   }
+  validateDivisionStructure(world.leagues);
   for (const team of world.teams) {
     if (!leagueIds.has(team.leagueId)) {
       throw new DataError('球队引用了不存在的联赛', {
@@ -189,6 +191,76 @@ function validatePersonality(player) {
       throw new DataError('球员 personality 缺失或超出范围', {
         context: { file: 'players.json', entity: 'player', id: player.id, field: `personality.${key}`, value: v, range: PERSONALITY_RANGE },
       });
+    }
+  }
+}
+
+/**
+ * 校验 League（Division）的可选 Phase 1 rules（Step 38E / D38D.8、D38D.13）。
+ * - `rules` 缺失 → 合法（使用 Engine 默认）；
+ * - 若提供：`promotionPlaces` / `relegationPlaces` / `pointsForWin` / `pointsForDraw` / `pointsForLoss`
+ *   （仅这些字段允许；均须为 **非负整数**）。非法值**明确报错**（不静默、不猜测）。
+ */
+function validateLeagueRules(league) {
+  const rules = league?.rules;
+  if (rules == null) return;
+  if (typeof rules !== 'object') {
+    throw new DataError('league.rules 必须是对象', {
+      context: { file: 'leagues.json', entity: 'league', id: league.id, field: 'rules', value: rules },
+    });
+  }
+  const allowed = ['promotionPlaces', 'relegationPlaces', 'pointsForWin', 'pointsForDraw', 'pointsForLoss'];
+  for (const key of Object.keys(rules)) {
+    if (!allowed.includes(key)) {
+      throw new DataError(`league.rules 含未知字段：${key}`, {
+        context: { file: 'leagues.json', entity: 'league', id: league.id, field: `rules.${key}`, allowed },
+      });
+    }
+    const v = rules[key];
+    if (!Number.isInteger(v) || v < 0) {
+      throw new DataError(`league.rules.${key} 需为非负整数`, {
+        context: { file: 'leagues.json', entity: 'league', id: league.id, field: `rules.${key}`, value: v },
+      });
+    }
+  }
+}
+
+/**
+ * 校验 Division 层级结构（Step 38E / D38D.5）：同一 Country 内若存在**多个** Division：
+ * `tier` 必须全部显式提供、为正整数、互不相同，且**连续**（排序后相邻差恒为 1）。
+ * 单 Division（或未分组）不触发；`tier` 缺失仅在有多个同国 Division 时被视为非法。
+ */
+function validateDivisionStructure(leagues) {
+  const byCountry = new Map();
+  for (const league of leagues) {
+    const key = typeof league.countryId === 'string' ? league.countryId : `__solo__:${league.id}`;
+    if (!byCountry.has(key)) byCountry.set(key, []);
+    byCountry.get(key).push(league);
+  }
+  for (const group of byCountry.values()) {
+    if (group.length < 2) continue;
+    const tiers = [];
+    for (const league of group) {
+      const t = league.tier;
+      if (!Number.isInteger(t) || t < 1) {
+        throw new DataError('同一国家的多级联赛必须显式提供正整数 tier', {
+          context: { file: 'leagues.json', entity: 'league', id: league.id, field: 'tier', value: t },
+        });
+      }
+      tiers.push({ id: league.id, tier: t });
+    }
+    tiers.sort((a, b) => a.tier - b.tier);
+    for (let i = 1; i < tiers.length; i += 1) {
+      if (tiers[i].tier === tiers[i - 1].tier) {
+        throw new DataError('同一国家存在重复 tier 的 Division', {
+          context: { file: 'leagues.json', field: 'tier', value: tiers[i].tier, leagues: [tiers[i - 1].id, tiers[i].id] },
+        });
+      }
+      if (tiers[i].tier - tiers[i - 1].tier !== 1) {
+        throw new DataError('同一国家的 Division tier 必须连续', {
+          context: { file: 'leagues.json', field: 'tier', value: [tiers[i - 1].tier, tiers[i].tier] },
+        });
+      }
     }
   }
 }

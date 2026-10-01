@@ -269,6 +269,21 @@ export const FINANCE_FEEDBACK_CONFIG = Object.freeze({
 });
 
 /**
+ * Competition Structure Phase 1 —— Engine 默认规则（Step 38E；D38D.6 / D38D.8）。
+ * 层级归属：Simulation Core / Competition。纯数据，无副作用。
+ *
+ * 语义：`leagues.json` 的**可选** `rules`（World Data Rule）缺失或部分缺失时使用的 Engine 默认。
+ * - `PROMOTION_PLACES` / `RELEGATION_PLACES`：Phase 1 每 Division 默认升降名额（D38D.6）。
+ * - `TIER`：Division 未显式提供 `tier` 时的默认层级（Phase 1 单 Division 语义）。
+ * 注意：top tier 的升级与 bottom tier 的降级**实际效果恒为 0**（由 planner 处理，非本默认值）。
+ */
+export const COMPETITION_RULES_DEFAULTS = Object.freeze({
+  PROMOTION_PLACES: 2,
+  RELEGATION_PLACES: 2,
+  TIER: 1,
+});
+
+/**
  * 转会费参数（Step 28B；DECISIONS D-27 T2/T3）。
  * 说明：**确定性能力定价模型**——`Fee = BASE × AbilityFactor × AgeFactor × PositionFactor`。
  * - 纯函数、无随机（D-27 T23）；**不存储** marketValue；**不读取** cash / transferBudget / squad size（禁止「越有钱越贵」）。

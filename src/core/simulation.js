@@ -28,6 +28,7 @@ import { developPlayers } from './player-growth.js';
 import { runPlayerLifecycle } from './player-lifecycle.js';
 import { replenishTransferBudget } from './finance.js';
 import { runManagedFinanceFeedback } from './finance-feedback.js';
+import { planPromotionRelegation, applyPromotionRelegationTransition } from './competition-transition.js';
 import { runSeasonAI } from './ai/ai-decide.js';
 import { tickInjuries, resolveMatchInjuries } from './player-injury.js';
 import { SCHEDULE_CONFIG, MATCH_LOAD_CONFIG } from './sim-config.js';
@@ -197,6 +198,11 @@ export class SimulationCore {
   #rollFinishedSeasons(state) {
     if (!isSeasonBoundaryReached(state)) return;
     const prevSeason = state.season;
+    // Step 38E / D38D.10：Promotion/Relegation（全局 planner → 校验 → 原子 membership 迁移）。
+    // 必须在创建下一季 competition / 生成 fixtures **之前**（否则 getTeamsByLeague 读到旧 membership）。
+    // 基于"迁移前"的最终 standings 生成完整 Plan，再一次性 apply（禁止 per-Division 链式）。
+    const plan = planPromotionRelegation(state);
+    applyPromotionRelegationTransition(state, plan);
     let maxSeason = state.season;
     for (const comp of Object.values(state.runtime.competitions)) {
       if (comp.status !== 'finished') continue;

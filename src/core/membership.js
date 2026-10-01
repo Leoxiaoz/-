@@ -148,6 +148,37 @@ export function getLeagueClubs(state, leagueId) {
   return Object.keys(m.clubs).filter((c) => m.clubs[c] === leagueId).sort();
 }
 
+/**
+ * 受控写入入口：设置俱乐部当前所属联赛（= Phase 1 的 Division 归属，Step 38E / D38D.9）。
+ * - **本函数是运行期改变 club→league 归属的唯一受控入口**；Promotion/Relegation 等的批量原子
+ *   迁移（`applyPromotionRelegationTransition`）经此写入；**禁止**在别处直接写 `membership.clubs[...]`。
+ * - 只做**结构级**安全校验（clubId / leagueId 为非空字符串、club 存在、目标 league 存在）；
+ *   复杂的 Domain 校验（tier 邻接、country 一致、唯一移动、all-or-nothing 等）由上层 transition 负责。
+ * - **不修改 `state.static`**（静态库只读；禁止以 `teams[].leagueId` 覆盖运行期归属）。
+ * @returns {object} state（原地）
+ */
+export function setClubLeagueMembership(state, clubId, leagueId) {
+  const m = ensureContainer(state);
+  if (!m) {
+    throw new SimulationError('setClubLeagueMembership 需要包含 runtime 的状态', { context: { clubId } });
+  }
+  if (typeof clubId !== 'string' || clubId.length === 0) {
+    throw new SimulationError('setClubLeagueMembership 需要非空字符串 clubId', { context: { clubId } });
+  }
+  if (typeof leagueId !== 'string' || leagueId.length === 0) {
+    throw new SimulationError('setClubLeagueMembership 需要非空字符串 leagueId', { context: { clubId, leagueId } });
+  }
+  if (!state?.runtime?.clubs?.[clubId]) {
+    throw new SimulationError('setClubLeagueMembership 目标俱乐部不存在', { context: { clubId } });
+  }
+  const validLeague = (state?.static?.leagues ?? []).some((l) => l.id === leagueId);
+  if (!validLeague) {
+    throw new SimulationError('setClubLeagueMembership 目标联赛不存在', { context: { clubId, leagueId } });
+  }
+  m.clubs[clubId] = leagueId;
+  return state;
+}
+
 /** active 成员判定（存在有效 club 归属且未退役）。 */
 export function isActiveMember(state, playerId) {
   return getPlayerClub(state, playerId) != null;
