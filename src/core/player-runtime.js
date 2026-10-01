@@ -99,6 +99,34 @@ export function getPlayerStatsView(state, playerId) {
   return { season: toView(rt.stats?.season), career: toView(rt.stats?.career) };
 }
 
+/**
+ * 只读派生：Potential Fulfillment（D39 Phase 1 / Step 39F-A）。
+ * 定义（Owner 冻结）：`fulfillment[attr] = clamp(current[attr] / potential[attr], 0, 1)`；
+ * `potential[attr] <= 0` ⇒ 0；`average` = 六属性均值（内部统一用 0–1，展示层再转百分比）。
+ *
+ * ⚠ 本函数使用 **True Potential**，属 **World Simulation Derived Layer**；
+ *   **AI 决策不得调用**（AI 必须经 Phase 2 的 `estimatePotential` 使用 Estimated Potential，D39C-03）。
+ * - 纯派生、不持久化、不修改任何状态（既不改 Growth 也不改 Potential）。
+ * @returns {{perAttribute: Record<string, number>, average: number}|null} 球员不存在返回 null
+ */
+export function getPotentialFulfillment(state, playerId) {
+  const profile = getPlayerProfile(state, playerId);
+  const eff = getEffectiveAttributes(state, playerId);
+  if (!profile || !eff) return null;
+  const perAttribute = {};
+  let sum = 0;
+  for (const attr of PLAYER_ATTRIBUTES) {
+    const pot = Number(profile.potential?.[attr]);
+    const cur = Number(eff[attr]);
+    const ratio = (Number.isFinite(pot) && pot > 0 && Number.isFinite(cur))
+      ? Math.min(1, Math.max(0, cur / pot))
+      : 0;
+    perAttribute[attr] = ratio;
+    sum += ratio;
+  }
+  return { perAttribute, average: sum / PLAYER_ATTRIBUTES.length };
+}
+
 /** 建立一条空统计线（出场 / 分钟 / 进球 / 助攻 / 黄牌 / 红牌 / 射门 / 射正 / 评分累计）。 */
 export function createStatLine() {
   return {
