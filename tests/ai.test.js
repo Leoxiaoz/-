@@ -202,23 +202,36 @@ test('D. Suitability：位置画像差异 / 角色权重 / 无 OVR / 纯函数 /
   assertEquals(JSON.stringify(state.runtime), snap, '决策/评估函数不得修改 state');
 });
 
-test('D. Suitability：Starter 偏当前能力，Development 偏潜力（角色权重切换）', () => {
+test('D. Suitability：Starter 偏当前能力，Development 偏 AI 可观察的估计潜力（角色权重切换）', () => {
   const files = makeLeagueWorldFiles(2);
   const fws = files.players.filter((p) => p.teamId === 'clb_001' && p.position === 'FW').slice(0, 2);
   const [a, b] = fws;
   const lowAttr = { pace: 40, technique: 40, passing: 40, defending: 10, finishing: 40, goalkeeping: 10 };
   const highAttr = { pace: 80, technique: 80, passing: 80, defending: 10, finishing: 80, goalkeeping: 10 };
-  a.birthDate = '2001-01-15'; b.birthDate = '2001-01-15';
-  Object.assign(a, highAttr, { potential: { ...highAttr } }); // 高当前 / 低潜力
-  Object.assign(b, lowAttr, { potential: { ...lowAttr, finishing: 90, technique: 90, pace: 90 } }); // 低当前 / 高潜力
+  // D39C-03：AI 不得读取 True Potential。因此差异必须来自 **AI 可观察信息**：
+  //   a = 高当前能力 / 高龄（VETERAN）；b = 低当前能力 / 年轻（EMERGING）。
+  // （profile.potential 仍是各球员的真实上限，但 AI 不可见；真值独立性由 ai-potential-estimate I1 覆盖。）
+  a.birthDate = '1993-01-15'; // age 33 → VETERAN
+  b.birthDate = '2009-01-15'; // age 17 → EMERGING
+  Object.assign(a, highAttr, { potential: { ...highAttr } });
+  Object.assign(b, lowAttr, { potential: { ...lowAttr, finishing: 90, technique: 90, pace: 90 } });
   const state = stateFromFiles(files);
+  // 第二个可观察差异：既有 stats 字段（不新增字段）。a 表现差、b 表现好。
+  state.runtime.players[a.id].stats.season.appearances = 20;
+  state.runtime.players[a.id].stats.season.ratingSum = 20 * 40;  // 平均 4.0 → perfSignal −2
+  state.runtime.players[b.id].stats.season.appearances = 20;
+  state.runtime.players[b.id].stats.season.ratingSum = 20 * 100; // 平均 10.0 → perfSignal +2
   const sa = evaluatePlayerSuitability(state, 'clb_001', a.id, { position: 'FW' }, 'Starter').score;
   const sb = evaluatePlayerSuitability(state, 'clb_001', b.id, { position: 'FW' }, 'Starter').score;
   assert(sa > sb, 'Starter 角色应偏当前能力');
   const da = evaluatePlayerSuitability(state, 'clb_001', a.id, { position: 'FW' }, 'Development').score;
   const db = evaluatePlayerSuitability(state, 'clb_001', b.id, { position: 'FW' }, 'Development').score;
-  assert(db > da, 'Development 角色应偏潜力');
-  assert(estimatePotentialHeadroom(state, 'clb_001', b.id) > 0, '估计潜力余量应 > 0');
+  assert(db > da, 'Development 角色应偏 AI 可观察信息推导出的 Estimated Potential');
+  // 估计潜力余量必须 b > a，且完全由可观察信息（Age/Phase + 表现 + 感知偏移）决定。
+  assert(
+    estimatePotentialHeadroom(state, 'clb_001', b.id) > estimatePotentialHeadroom(state, 'clb_001', a.id),
+    '估计潜力余量 b 应高于 a',
+  );
 });
 
 // ===========================================================================
