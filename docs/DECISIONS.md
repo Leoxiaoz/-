@@ -1274,6 +1274,45 @@ ageFactor          = clamp(1.00 − 0.06 × normalizedDistance², 0, 1)
 - 分支条件（OD-39FC-2）：`age < peakAge → GROWTH`；`age >= peakAge → DECLINE`。
 - **Calibration 仍为 LONG-RUN / BEHAVIORAL TARGET，非逐案例硬约束**；不得为命中 Calibration 私自修改 `2.4`、`headroomFactor`、`inputFactor`、weights、decline sensitivity、noise amplitude。
 
+### OD-39FE-1 Growth Resolution Policy `[已定]`
+> 依据：Step 39F-E Growth Resolution Policy / Modifier Observability Review（设计评审 + 数值分析）。
+
+**Decision：OPTION A — KEEP INTEGER RESOLUTION**（保持当前整数分辨率）。
+
+**Rationale：**
+- 保持**属性整数语义**（`ability.deltas` / effective attribute 均为整数），与 Team Strength、UI、校验天然一致。
+- **不新增**跨赛季小数成长状态（无 `players[].growth.residue` 或等价物）。
+- **不改变** Schema / Save Format。
+- 保持当前 deterministic growth 结构（无跨季小数状态，确定性最简）。
+- **明确接受**小幅 modifier 可能在**年度整数化**时被吸收。
+- **Form / Morale 的定位**：主要影响**短期状态 / 出场机会 / 首发·轮换 / AI selection / match performance / squad dynamics** 等系统，**而非直接提供可观测的能力成长增量**。
+- Training / Personality / Severe Injury 的**长期累计差异**属**设计预期**（非 bug）；Match Experience 当前具备单季可观察差异，保持不变。
+- Fitness 不进入 Growth 的既有语义继续保持。
+
+**Step 39F-E 评审结论（登记）：**
+
+| 层级 | 结论 |
+|---|---|
+| LEVEL 1（数学存在） | **所有** modifier 均生效（training / matchExperience / environment / personality / form / morale / severe injury / fitness-excluded） |
+| LEVEL 2（单季可见） | **Match Experience** 可观察；**Training / Personality / Severe Injury** 单季可能不可观察 |
+| LEVEL 3（长期可见） | Training / Personality / Severe Injury / Match Experience **可长期观察**；**Form / Morale 在当前参数下长期也可能完全被整数 resolution 吸收** |
+
+> 上述不是实现错误，而是 **OPTION A 的明确设计取舍**。
+
+**Rejected / Deferred：**
+- **OPTION B — FRACTIONAL RESIDUE**：**当前不实施**。若未来 Owner 决定采用，必须重新评估：
+  `players[].growth.residue` / Schema **10 → 11** / Save migration / `SAVE_SPEC` /
+  `tests/season.test.js` baselines / Growth calibration / long-run invariants /
+  Golden 与 deterministic trajectories / old-save vs new-save behavior。
+- **OPTION C — OTHER**：未采纳。
+
+**不得因 Form / Morale 的 LEVEL 2 / LEVEL 3 不可观察而反向修改 Growth Engine 的 ±0.05 参数。**
+39F-C 冻结参数全部保持原样：`2.4 × ageFactor × headroomFactor`、`0.40/0.40/0.20`、`0.75 + 0.50×inputScore`、
+training `0.75/1.00/1.15`、personality `±0.10`、form `±0.05`、morale `±0.05`、severe injury `−0.15`、
+noise `±0.20`、pre-random clamp `±2.50`、annual bound `±3`、Fitness 不进入 Growth。
+
+**验证**：本记录为**纯文档**；未修改任何生产代码 / 测试 / Schema 10 / Save Format 1 / baseline / Golden / 运行行为。
+
 ---
 
 ## Deferred Issues（登记；不在本步骤处理）
