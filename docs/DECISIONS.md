@@ -1315,6 +1315,162 @@ noise `±0.20`、pre-random clamp `±2.50`、annual bound `±3`、Fitness 不进
 
 ---
 
+## D-40 / OD-39FF — AI Development Decision Loop（Step 39F-F-DECISION；Owner Ruling / Freeze）
+
+> 本条为 **SPEC AMENDMENT / DECISION RECORD**（Step 39F-F-DECISION Owner Ruling）。
+> 依据：Step 39F-F AI Development Decision Loop Design Review（只读审计 / 架构映射 / 决策缺口识别）。
+> **本记录为纯文档**：未修改生产代码 / 测试 / Schema 10 / Save Format 1 / baseline / Golden / 39F-C / 39F-E。
+> 本步骤**不实现** Development Gap / Rotation / Loan Fit / Loan Lifecycle / AI Selection / Match Selection / Growth Engine。
+
+### 背景（39F-F 审计结论）
+- 当前 AI 已具备：AI Potential Estimator（Estimated Potential + Confidence，**不读 True Potential**）、
+  AI Decision Layer（release / FA / buy / sell / lineup，赛季边界执行）、DDTI depth intake、Growth Engine（39F-C）。
+- 当前**缺失**：Development Gap、Rotation / Selection Policy、Loan Fit、Loan Lifecycle、Player Pathway；
+  且 `evaluateDevelopmentValue` / `evaluatePlayingOpportunity` / `getMatchImportance` 等 Phase 1 派生模块
+  **已实现但未接入任何生产路径**（仅 `evaluateDevelopmentEnvironment` 被 Growth Engine 作为 environment input 使用）。
+- 因而闭环在 **Playing Opportunity → Match Minutes** 处**断开**：实际出场由 `selectMatchSquad`
+  （按**当前**有效属性取各线最高者）决定，**不读取任何发展信号**。
+
+### OD-39FF-1 Development Gap `[已定]`
+- **正式采用 MODEL DG-A：`Development Gap = Development Need − Playing Opportunity`。**
+- Development Gap 是 AI 的 **DERIVED / PURE** 概念：
+  - 不直接修改 Growth；不直接增加能力；
+  - **不新增 runtime state**；**不持久化**；**不改变 Schema**；**不改变 Save Format**。
+- **DG-B（Expected Minutes − Actual/Expected Minutes）：暂缓。** 当前系统**不存在可靠的 forward expected-minutes projection**；
+  **不得**为实现 DG-B 而提前引入新的预测系统。
+- **DG-C（Phase-sensitive Opportunity Deficit）：暂缓。** 可作为未来对 DG-A 的 phase-sensitive refinement，
+  但当前**不成为独立核心模型**。
+- **本次只冻结 DG-A 的语义。** **不得**冻结任何尚未设计完成的具体
+  **权重 / 阈值 / clamp / 评分公式 / Loan threshold** —— 这些属后续设计阶段。
+
+### OD-39FF-2 Development Value → Playing Opportunity `[已定]`
+- **正式接受**：Development Value 可作为 Playing Opportunity / Rotation 的 **INDIRECT PRIORITY INPUT**。
+- **硬约束**：Development Value **不得绕过**：
+  当前能力 / 位置竞争 / 阵容深度 / 比赛重要性 / 球员可用性 / 当前竞技需求。
+- **禁止**：`High Development Value → automatic starter`；`High Potential → guaranteed minutes`；`Potential threshold → guaranteed rotation`。
+- **正确语义**：
+  ```
+  Current Ability / Competitive Eligibility
+        ↓
+  基础竞技选择
+        ↓
+  Development Priority
+        ↓
+  在合理轮换窗口内影响机会分配
+        ↓
+  实际 Match Minutes
+  ```
+- Development Value 是「**值得给予发展机会的优先级信号**」，**不是**「强制首发权」。
+
+### OD-39FF-3 Loan Fit `[已定]`
+- **正式接受 Loan Fit 作为独立 DERIVED / PURE 概念**；**本阶段只冻结概念，不实现**。
+- 未来 Loan Fit **至少**需要考虑：
+  - **母队**：parent club opportunity、parent club squad competition、player current ability、player development phase、Development Need、Development Gap；
+  - **目标球队**：target club opportunity、target positional demand、target squad competition、target competition level、target development environment、target club context、expected playing opportunity。
+- **重要**：`Loan Fit ≠ High Potential → Loan`；`Loan Candidate ≠ Development Gap > threshold`。
+  未来必须**同时**考虑「本队机会不足」**与**「外部机会是否真的更适合」。
+- 当前**不冻结**具体 Loan Fit 公式；**不实现** forward opportunity projection；**不实现** Loan Lifecycle。
+
+### OD-39FF-4 AI Re-Evaluation Cadence `[已定]`
+- **SEASON = 长期发展路径重新评估边界**；**MATCH = 比赛选择 / 出场 / 实际分钟**；**DAILY = vitals / injury / availability 等短期状态**。
+- **不得**每场比赛重新计算完整职业发展路径。
+- 赛季级 AI Re-Evaluation 可以重新评估：
+  Estimated Potential / Development Phase / Development Value / Development Need / Playing Opportunity /
+  Development Gap / Loan Candidate tendency / Transfer Candidate tendency / Squad pathway。
+- Match-level AI **只**负责当前比赛相关选择；Daily simulation **不运行**完整 career pathway AI。
+
+### OD-39FF-5 Player Pathway `[已定]`
+- **Player Pathway 保持 DERIVED。**
+- **禁止**创建持久化字段：`player.pathway` / `player.developmentStatus` / `player.developmentRole` 或任何**等价永久字段**。
+- 以下概念均视为 **AI 当前判断**，**不是世界真相**，只能由当前数据动态推导：
+  `CORE_FIRST_TEAM / ROTATION / DEVELOPMENT_ROTATION / RESERVE / LOAN_CANDIDATE / TRANSFER_CANDIDATE / RELEASE_CANDIDATE`。
+- 特别注意：`DEVELOPMENT_ROTATION` 与 `LOAN_CANDIDATE` **都不是永久球员状态**；它们表示「当前 AI 对球员路径的判断」。
+- `LOANED` 属**不同情况**：若未来实现真实租借生命周期（涉及 club membership / registration / contract / return /
+  transfer / loan ownership semantics），届时**可以**成为真实 domain state。**本步骤不实现 LOANED。**
+
+### OD-39FF-6 Development Gap 的合法出口 `[已定]`
+- **正式接受**：未来必须存在一个合法通道
+  `Development Gap → Rotation / Selection Policy → Match Minutes`。这是 39F-F 长期闭环的**核心**。
+- 目标语义：AI 发现「Development Need 高 + Playing Opportunity 低 = Development Gap 高」后，
+  在**不违反竞技能力约束**的前提下：增加合理轮换机会 / 在低重要性比赛中给予机会 /
+  在杯赛 / 低风险比赛中给予机会 / 在合理轮换窗口中优先考虑发展球员。
+- 最终：`实际 Match Minutes → 39F-C Growth Engine → Match Experience → Natural Growth`。
+- **AI 不得直接增加 Growth。禁止新增** `developmentGrowthMultiplier` / `aiGrowthBonus` / `potentialGrowthBonus` /
+  `managerGrowthBonus` 或任何**等价机制**。**39F-C remains the only Growth Engine.**
+
+### OD-39FF-7 Inert AI `UPDATE_LINEUP` `[已定 → TECHNICAL DEBT]`
+- **当前事实**：`ai-decide` / `UPDATE_LINEUP` 会为 AI club 写 `club.lineup`；但 `resolveMatchSquad()`
+  对 AI clubs 实际使用 `selectMatchSquad()` ⇒ 该 AI lineup write **当前不会成为比赛选择的真实输入**。
+- **本次决策：KEEP AS-IS。** 不得在 39F-F-DECISION 中修复。
+- 未来可单独设计 **AI Match Selection / Lineup Architecture**，再决定：删除 inert write / 让 saved lineup 真正生效 /
+  或统一两套 selection path。**本步骤不处理**，登记为 **TECHNICAL DEBT**。
+
+### OD-39FF-8 Phased Activation `[已定]`
+正式冻结以下未来激活顺序：
+- **PHASE 1**：Development concepts enter AI decision layer（Development Value、Development Need、Playing Opportunity、Development Gap）。
+- **PHASE 2**：Rotation / Selection Policy —— 让 Development Gap 真正能够影响 rotation / match selection / match minutes，
+  但**不得绕过**当前竞技能力约束。
+- **PHASE 3**：Loan Fit —— 在拥有足够的 target opportunity / positional demand / squad competition / environment /
+  competition context 之后再实现。
+- **PHASE 4**：Loan Lifecycle —— 未来再处理 loan registration / parent club / loan club / contract / return / membership /
+  save migration 等完整生命周期。**本次不提前实现。**
+
+### 39F-F 核心原则 `[已定]`
+- AI **不**因为「知道球员的真实潜力」而直接给予成长。AI 只能基于 **AI 可观察 / 可估计**的信息做决策：
+  Estimated Potential / Current Ability / Development Phase / Development Value / Playing Opportunity /
+  Squad Competition / Match Importance / Availability / Performance / Team Context 等。
+- AI 通过**合理的出场机会**影响 Match Experience；Growth Engine 再根据**实际 Match Experience**自然产生能力变化。
+- **完整闭环**：
+  ```
+  AI Evaluation → Development Priority → Playing Opportunity / Rotation → Match Minutes
+      → Growth Engine → Effective Ability → Performance → AI Re-Evaluation
+  ```
+  **而不是** `Potential → Growth Bonus`。
+
+### 反馈循环安全原则 `[已定]`
+- **POSITIVE FEEDBACK（允许的自然反馈）**：`Ability → Playing Time → Match Experience → Growth → Ability`。
+- **不允许**：`Potential → Direct Playing Time → Growth`。
+- Development Value **可以**影响轮换优先级，但**不能绕过**当前竞技能力；因此**不能**形成
+  `High Potential → guaranteed starter → accelerated growth → guaranteed starter` 这种**无条件正反馈**。
+- **NEGATIVE FEEDBACK（允许的 AI 认知误差）**：
+  `True Potential 高 → AI Estimate 低 → Playing Opportunity 低 → Match Experience 低 → Growth 较慢`。
+  该路径被定义为 **AI uncertainty / club-local perception risk**，**不是世界级永久锁死**。因为：
+  AI perception offset 是 **club-local**；球员**可能转会**；observable performance **可以变化**；
+  season re-evaluation 会**重新估计**；Growth **不会**因缺少比赛而完全停止。
+  未来如需纠偏机制，**只能单独提出设计**（例如 confidence-weighted re-evaluation / development patience /
+  performance-driven re-evaluation）。**当前不实现。**
+
+### 39F-C / 39F-E Compatibility `[已定]`
+正式确认：**39F-F 不修改任何 39F-C / 39F-E 冻结规则。** 以下全部保持不变：
+- `baseCapacity = 2.4 × ageFactor × headroomFactor`
+- `inputScore = 0.40 × training + 0.40 × matchExperience + 0.20 × environment`
+- `inputFactor = 0.75 + 0.50 × inputScore`
+- training：`LIMITED = 0.75 / NORMAL = 1.00 / STRONG = 1.15`
+- `personality = ±0.10`；`form = ±0.05`；`morale = ±0.05`；`severe injury = −0.15`
+- `noise = ±0.20`；`pre-random clamp = [−2.50, +2.50]`；`annual delta bound = [−3, +3]`
+- **Fitness 不进入 Growth**；Growth resolution **保持 INTEGER**；**OD-39FE-1 OPTION A 保持冻结**。
+- **No AI Growth Multiplier. No new Growth modifier.**
+
+### Schema / Save `[已定]`
+- 本步骤**不修改** `GAME_STATE_SCHEMA_VERSION = 10` 与 `SAVE_FORMAT_VERSION = 1`。
+- **DERIVED / PURE**：Development Gap、Development Value、Playing Opportunity、Player Pathway；
+  Loan Fit 未来为 **DERIVED / PURE**。
+- **不得新增 runtime persistence。** 只有未来真实 Loan Lifecycle 若需要
+  membership / contract / registration / return semantics 时，才重新进行 **Schema / Save Design Review**。
+
+### 未决 / Deferred（不在本步骤处理）`[TBD]`
+- Development Gap **具体公式**（权重 / 阈值 / clamp / 评分）。
+- DG-B forward expected-minutes projection；DG-C phase-sensitive refinement。
+- Rotation / Selection Policy（PHASE 2）。
+- Loan Fit 公式与 forward opportunity projection（PHASE 3）。
+- Loan Lifecycle 与 `LOANED` domain state、Schema / Save migration（PHASE 4）。
+- AI Match Selection / Lineup Architecture（OD-39FF-7 技术债的修复方向）。
+- AI 认知误差纠偏机制（confidence-weighted re-evaluation 等）。
+
+**验证**：本记录为**纯文档**；未修改生产代码 / 测试 / Schema 10 / Save Format 1 / baseline / Golden / 运行行为。
+
+---
+
 ## Deferred Issues（登记；不在本步骤处理）
 
 ### DF-01 Managed Club Cash Concentration / World Finance Feedback `[Resolved → Step 36C 冻结]`
