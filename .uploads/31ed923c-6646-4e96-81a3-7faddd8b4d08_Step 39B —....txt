@@ -1,0 +1,1583 @@
+Step 39B — Player Development & AI Development Decision Freeze Proposal
+
+性质：
+DESIGN / DECISION PROPOSAL ONLY
+NO CODE
+NO IMPLEMENTATION
+NO TEST MODIFICATION
+NO SCHEMA CHANGE
+NO SAVE CHANGE
+NO DIRECT FREEZE WITHOUT OWNER CONFIRMATION
+
+==================================================
+一、STEP 39B 的核心目标
+==================================================
+
+基于 Step 39A 的完整审计结果，为 FE 下一阶段建立：
+
+“Player Development + AI Player Usage + AI Development”
+
+的正式设计方案。
+
+本步骤不是实现。
+
+本步骤也不是让 Agent 自己替项目 Owner 做最终决定。
+
+本步骤必须：
+
+1. 把已经存在并冻结的规则与未来 TBD 完全分开
+2. 把所有会影响长期生态的关键设计决策列完整
+3. 对每个 TBD 给出可选方案
+4. 分析每个方案的优缺点
+5. 分析对 FE 长期世界生态的影响
+6. 给出 Agent 的技术建议，但不能把建议自动变成[已定]
+7. 明确指出哪些决定会影响哪些现有模块
+8. 最后形成 Owner Decision Checklist
+9. 等 Owner 确认后才能进入正式 Decision Freeze
+
+==================================================
+二、绝对禁止
+==================================================
+
+本步骤禁止：
+
+- 修改任何 .js
+- 修改任何 .html
+- 修改任何 .css
+- 修改任何测试
+- 修改任何 .fdb
+- 修改 players.json
+- 修改 teams.json
+- 修改 leagues.json
+- 修改 manifest.json
+- 修改 Schema
+- 修改 Save Format
+- 实现 Training
+- 实现 Potential 新模型
+- 实现 Talent
+- 实现 Development AI
+- 实现 AI Lineup
+- 实现 Rotation
+- 实现 Loan
+- 实现 Scouting
+- 实现 Difficulty
+- 实现 Historical Player Anchor
+- 实现 Real Player Data
+- 修改 NewGen
+- 修改 Retirement
+- 修改 Transfer
+- 修改 Finance
+- 修改 Competition Structure
+- 修改 DDTI
+- 修改 Team Strength
+- 修改 Match Engine
+
+除非明确发现现有实现与 Frozen Rules 冲突，否则只报告，不修复。
+
+不要 commit。
+不要 push。
+
+==================================================
+三、必须阅读
+==================================================
+
+必须先读取：
+
+- docs/DECISIONS.md
+- docs/ROADMAP.md
+- docs/SIMULATION_SPEC.md
+- Step 39A Audit Report
+
+以及重新核对相关代码：
+
+- src/core/player-runtime.js
+- src/core/player-growth.js
+- src/core/player-injury.js
+- src/core/player-lifecycle.js
+- src/core/simulation.js
+- src/core/game-state.js
+- src/core/sim-config.js
+- src/core/team-strength.js
+- src/core/match.js
+- src/core/season.js
+- src/core/ai/ai-config.js
+- src/core/ai/ai-club-policy.js
+- src/core/ai/ai-need.js
+- src/core/ai/ai-candidate.js
+- src/core/ai/ai-suitability.js
+- src/core/ai/ai-decide.js
+- src/core/ai/ai-action.js
+- src/core/ai/ai-depth-intake.js
+- src/save/save-manager.js
+- data-loader
+- 当前 players / teams / leagues schema
+- 相关 tests
+
+不要只看文件名。
+以代码真实行为为准。
+
+==================================================
+四、必须继承的 Frozen Rules
+==================================================
+
+以下不是本步骤重新讨论的对象。
+
+全部视为：
+
+[已定]
+
+包括但不限于：
+
+1. 无单一 OVR
+2. 无单一 CA/PA 总值模型
+3. Player static data 只读
+4. Runtime Overlay 是运行时状态来源
+5. Growth 写 runtime ability.deltas
+6. effective attributes 必须受 1–99 限制
+7. effective attributes 不得超过 per-attribute potential ceiling
+8. Potential 使用 per-attribute ceiling
+9. Growth 年度结算
+10. Growth 使用 deterministic seed
+11. Randomness 只能扰动已建模成长率
+12. 不允许随机替代成长逻辑
+13. no attribute inflation
+14. no player convergence
+15. save migration 必须保留旧值
+16. Schema 10
+17. Save Format 1
+18. DDTI C1
+19. Finance Feedback
+20. Transfer System
+21. Competition Structure
+22. Promotion/Relegation
+23. Membership runtime source of truth
+24. Match System
+25. Team Strength System
+26. Retirement/NewGen population loop
+27. Existing Golden checks
+28. Existing baseline tests
+
+如果 DECISIONS.md / SIMULATION_SPEC.md 有正式编号，
+必须引用正式编号，不要重新创造一个与原编号冲突的版本。
+
+==================================================
+五、39A 已确认的重要事实
+==================================================
+
+必须建立在这些事实之上：
+
+A.
+当前 Growth 已存在：
+
+- 年龄曲线
+- per-attribute potential
+- headroom-based growth
+- personality modifier
+- form
+- morale
+- match minutes
+- severe injury penalty
+- bounded randomness
+- deterministic seed
+- breakthrough
+- per-attribute cap
+
+B.
+Training 目前只有 hook，
+没有真正 Training System。
+
+C.
+Match minutes 会进入 Growth。
+
+D.
+Fitness 当前没有直接进入 Growth modifier。
+
+E.
+AI Transfer / Candidate / Suitability 已经会使用：
+
+- current ability
+- potential
+- age
+- position need
+- squad structure
+- financial constraints
+- club policy
+
+F.
+但是 AI Match Selection 当前实际由：
+
+selectMatchSquad
+
+完成。
+
+它主要按当前 effective ability + position + injury
+选择球员。
+
+G.
+AI 的 decideLineup 目前没有真正控制非 managed AI 球队的比赛选人。
+
+H.
+因此当前存在：
+
+Youth Neglect
+High Potential Never Playing
+Veteran Hoarding
+Potential becoming Destiny
+
+等未来设计风险。
+
+I.
+AI 当前直接读取真实 Potential，
+没有 Scouting / Information Uncertainty。
+
+J.
+AI 当前没有 Difficulty Layer。
+
+K.
+Retirement + NewGen 已经形成稳定人口闭环。
+
+L.
+Historical Player Anchor 当前可以承载：
+
+birthDate
+initial club
+attributes
+potential
+personality
+
+但缺：
+
+nationality
+historical introduction date
+anchor id/source
+explicit development traits
+
+==================================================
+六、设计原则
+==================================================
+
+下一阶段必须遵循：
+
+“不要用一个大公式把所有事情揉在一起。”
+
+建议把系统分成：
+
+Layer 1 — Player Development Model
+Layer 2 — Match Experience
+Layer 3 — Training
+Layer 4 — Player Status
+Layer 5 — AI Player Usage
+Layer 6 — AI Development Planning
+Layer 7 — AI Recruitment / Transfer
+Layer 8 — Information / Scouting
+Layer 9 — AI Difficulty
+Layer 10 — Long-run Ecosystem Validation
+
+这些 Layer 是架构方向，
+不是本步骤直接冻结成代码结构。
+
+==================================================
+七、Decision Area 1：Player Development 总体模型
+==================================================
+
+必须回答：
+
+一个球员一年最终成长多少，
+到底由哪些因素组成？
+
+要求至少分析：
+
+Age
+Potential Headroom
+Attribute Group
+Personality
+Training
+Match Experience
+Environment
+Fitness
+Form
+Morale
+Injury
+Development Traits
+Randomness
+
+提出至少：
+
+Option A — 当前 Growth 扩展
+Option B — Growth Pipeline
+Option C — Development Score + Attribute Allocation
+Option D — 其他合理方案
+
+重点分析：
+
+- 可解释性
+- 稳定性
+- 可调参数数量
+- 长期生态
+- 测试难度
+- AI 与 Growth 耦合程度
+- 是否容易出现 exploit
+
+Agent 可以提出推荐方案，
+但必须标：
+
+[建议]
+
+不得标：
+
+[已定]
+
+==================================================
+八、Decision Area 2：Age Development Phases
+==================================================
+
+当前年龄曲线已经冻结。
+
+不得自行替换现有 PEAK_AGE / Growth Rate。
+
+但是必须讨论：
+
+未来是否需要增加“发展阶段”的概念。
+
+例如：
+
+15–17
+18–20
+21–23
+24–27
+28+
+
+或者其他方案。
+
+注意：
+
+这里的“阶段”不一定意味着修改当前 Growth Rate。
+
+可以只是影响：
+
+Training Focus
+AI Development Planning
+Match Usage
+Loan Recommendation
+Potential Evaluation
+
+必须区分：
+
+“Age Curve”
+
+和
+
+“Development Phase”
+
+避免两个概念混在一起。
+
+输出：
+
+- 当前规则
+- 新增 Phase 是否必要
+- 如果新增，影响哪些系统
+- 推荐方案
+- Owner 必须决定的问题
+
+==================================================
+九、Decision Area 3：Potential vs Talent
+==================================================
+
+这是本次最重要的设计之一。
+
+当前：
+
+Potential = per-attribute ceiling
+
+保持。
+
+现在讨论：
+
+是否需要在 Potential 之外增加：
+
+Talent / Natural Development Capacity
+
+候选方案：
+
+Option A
+Potential 本身承担 Talent
+
+Option B
+Potential + hidden Talent
+
+Option C
+Potential + Development Rate Trait
+
+Option D
+Potential + multiple development traits
+
+必须分析：
+
+Potential 表达什么？
+
+Talent 表达什么？
+
+两者如果同时存在，
+是否造成重复模型？
+
+必须避免：
+
+Current Ability
++ Potential
++ Talent
+
+最终变成三个重复总评分。
+
+重点讨论：
+
+“Potential 是能到哪里”
+vs
+“Talent 是多容易走到那里”
+
+以及：
+
+“潜力高但开发环境差”
+是否仍然可能达不到 ceiling。
+
+==================================================
+十、Decision Area 4：Training
+==================================================
+
+当前 Training [缺失]，
+只保留 hook。
+
+这一步必须真正设计未来 Training，
+但不实现。
+
+必须决定：
+
+1. 是否存在 Club Training
+2. 是否存在 Individual Training
+3. 是否存在 Team Training
+4. 是否存在 Focus
+5. 是否存在 Attribute Focus
+6. 是否存在 Position Focus
+7. 是否存在 Physical / Technical / Mental Focus
+8. Training Quality 是否存在
+9. Club Environment 是否影响 Training
+10. Staff 是否现在加入
+11. Facilities 是否现在加入
+
+注意：
+
+不要为了 Training 强行引入 Staff / Facilities。
+
+如果当前阶段不需要，
+可以：
+
+[Deferred]
+
+必须给出：
+
+Minimal Phase 1 Training Model
+
+和：
+
+Future Full Training Model
+
+避免第一阶段做成巨型系统。
+
+==================================================
+十一、Decision Area 5：Match Experience
+==================================================
+
+当前 Match Minutes 已进入 Growth。
+
+必须决定：
+
+是否继续：
+
+Minutes → Development
+
+还是扩展为：
+
+Minutes
++
+Appearances
++
+Competition Level
++
+Performance Quality
++
+Role Difficulty
+
+必须特别防止：
+
+“比赛分钟数刷成长”。
+
+需要分析：
+
+- 1800 分钟 cap 是否足够
+- 是否需要 quality modifier
+- 是否需要 diminishing return
+- 是否需要年龄权重
+- 是否需要比赛级别
+- 是否需要 position relevance
+
+绝不能设计成：
+
+每踢 1 分钟固定涨能力。
+
+==================================================
+十二、Decision Area 6：Fitness / Form / Morale / Injury
+==================================================
+
+当前：
+
+Form → Growth
+Morale → Growth
+Fitness → Growth [断点]
+Severe Injury → Growth Penalty
+
+必须决定：
+
+Fitness 是否加入 Growth？
+
+候选：
+
+A.
+不直接加入，只影响能否比赛
+
+B.
+轻度加入
+
+C.
+作为 Training / Recovery modifier
+
+必须分析：
+
+为什么 Fitness 不应该简单变成永久能力损失。
+
+同时讨论：
+
+普通伤病
+严重伤病
+长期伤病
+
+分别是否影响：
+
+Growth Rate
+Training
+Match Experience
+Development
+
+注意：
+
+不要把 injury 做成永久惩罚。
+
+==================================================
+十三、Decision Area 7：Environment
+==================================================
+
+必须讨论：
+
+Club Environment
+League Level
+Training Environment
+Playing Opportunity
+Squad Quality
+
+是否影响 Development。
+
+必须避免：
+
+“豪门球员天然成长更快”。
+
+可以考虑：
+
+Development Environment
++
+Playing Opportunity
+
+而不是单纯：
+
+Club Reputation。
+
+分析：
+
+高水平环境
+中等水平环境
+低水平环境
+
+各自可能有什么优势/劣势。
+
+必须防止：
+
+所有高潜球员都堆去豪门。
+
+==================================================
+十四、Decision Area 8：Development Traits / Personality
+==================================================
+
+当前已有：
+
+professionalism
+determination
+ambition
+consistency
+injuryProneness
+
+必须判断：
+
+这些 personality 是否足够。
+
+以及：
+
+是否需要增加：
+
+- adaptability
+- learning
+- resilience
+- development_focus
+- role_acceptance
+- leadership
+
+但是：
+
+不要为了真实感无限增加隐藏属性。
+
+必须输出：
+
+Minimal Trait Set
+
+以及：
+
+Deferred Trait Set
+
+==================================================
+十五、Decision Area 9：AI Match Selection
+==================================================
+
+这是本次最高优先级。
+
+必须设计：
+
+AI 到底如何决定：
+
+“这个球员今天该不该上？”
+
+不能使用：
+
+potential > X
+→ 必上
+
+也不能：
+
+currentAbility highest
+→ 永远必上
+
+建议至少分析这些因素：
+
+Current Ability
+Position / Role Fit
+Tactical Fit
+Fitness
+Form
+Morale
+Injury Risk
+Age
+Development Value
+Match Importance
+Opponent
+Scoreline
+Fixture Congestion
+Squad Depth
+Player Fatigue
+Club Strategy
+
+但必须判断：
+
+Phase 1 到底需要哪些。
+
+不要把所有变量一次性全部实现。
+
+必须提出：
+
+Minimal Decision Model
+
+和：
+
+Full Future Decision Model
+
+==================================================
+十六、Decision Area 10：AI Rotation
+==================================================
+
+必须决定：
+
+AI 是否应该：
+
+- 常规轮换
+- 高强度比赛保护
+- 领先时使用青年
+- 落后时优先强者
+- 连续比赛降低负荷
+- 高 fatigue 休息
+- cup / secondary competition 给年轻人机会
+
+重点：
+
+AI rotation 的目的不仅是“更真实”。
+
+它必须能够：
+
+1. 降低伤病风险
+2. 保持 squad health
+3. 给年轻球员发展机会
+4. 避免 veteran hoarding
+5. 避免 high-potential youth neglect
+
+同时不能导致：
+
+高潜青年只要年龄小就强行出场。
+
+==================================================
+十七、Decision Area 11：Development Value
+==================================================
+
+必须定义：
+
+AI 的“Development Value”到底是什么。
+
+候选：
+
+Development Value =
+Potential Headroom
+× Age Phase
+× Development Environment
+× Expected Playing Time
+× Tactical Fit
+
+或者其他模型。
+
+但是：
+
+不要直接照抄公式。
+
+必须分析：
+
+Development Value 应该影响：
+
+A. Match Selection
+B. Rotation
+C. Transfer In
+D. Transfer Out
+E. Loan
+F. Training
+G. Squad Planning
+
+哪些阶段接入。
+
+尤其注意：
+
+同一个 Development Value 不应该同时决定所有 AI 行为，
+否则 AI 会过于机械。
+
+==================================================
+十八、Decision Area 12：AI Youth Usage
+==================================================
+
+必须解决：
+
+高潜但当前能力偏低的青年球员：
+
+什么时候应该获得机会？
+
+例如：
+
+Scenario 1
+重要比赛 + 对手很强 + 当前主力健康
+
+Scenario 2
+领先 + 70 分钟
+
+Scenario 3
+弱队 + rotation match
+
+Scenario 4
+主力疲劳
+
+Scenario 5
+年轻球员接近主力能力
+
+Scenario 6
+年轻球员长期没有出场
+
+必须设计“机会窗口”。
+
+不是：
+
+Youth = automatic starter
+
+而是：
+
+Youth Development Opportunity
+作为情境决策的一部分。
+
+==================================================
+十九、Decision Area 13：AI Playing-Time Pathway
+==================================================
+
+必须设计：
+
+一个年轻球员得不到比赛时间时，
+AI 的选择顺序应该有哪些。
+
+候选：
+
+留队竞争
+↓
+轮换
+↓
+内部培养
+↓
+租借
+↓
+出售
+↓
+释放
+
+必须明确：
+
+不是固定顺序。
+
+必须根据：
+
+- current ability
+- potential
+- age
+- squad depth
+- club level
+- playing opportunity
+- financial value
+- club strategy
+
+决定。
+
+Loan 当前尚未实现。
+
+因此这里只冻结“决策原则”，
+不能实现 Loan。
+
+==================================================
+二十、Decision Area 14：Loan
+==================================================
+
+Loan 是未来重要系统。
+
+本步骤只决定：
+
+Loan 在 Development Ecology 中承担什么角色。
+
+必须回答：
+
+何时建议租借？
+
+什么水平的球队适合？
+
+租借最核心指标：
+
+- minutes
+- performance
+- competition level
+- training environment
+- position opportunity
+
+是否要求租借目标球队能提供稳定出场？
+
+如何避免：
+
+高潜青年全部被随便出租。
+
+Loan 是否可能：
+
+- 促进成长
+- 延迟成长
+- 伤害成长
+- 产生市场价值
+
+只设计，不实现。
+
+==================================================
+二十一、Decision Area 15：AI Information Asymmetry
+==================================================
+
+当前 AI 能看到真实：
+
+effective attributes
+potential
+
+这是未来必须解决的。
+
+设计候选：
+
+Option A
+AI 永远知道真实数据
+
+Option B
+AI 使用“估计能力”
+
+Option C
+AI 使用“估计能力 + 估计潜力”
+
+Option D
+不同 AI Difficulty 具有不同信息质量
+
+推荐重点分析：
+
+AI 不应该得到玩家 UI 默认看不到的绝对上帝视角。
+
+必须设计：
+
+True Value
+↓
+Knowledge / Estimate
+↓
+Confidence
+↓
+AI Decision
+
+但暂时不实现 Scout。
+
+==================================================
+二十二、Decision Area 16：Scouting
+==================================================
+
+只设计接口原则。
+
+必须决定：
+
+Scout 是否未来负责：
+
+Current Ability Estimate
+Potential Estimate
+Development Trend
+Personality
+Injury Risk
+Suitability
+
+以及：
+
+玩家看到什么
+AI 看到什么
+
+必须防止：
+
+真实数据库值直接泄漏。
+
+Scouting 可标：
+
+[Deferred]
+
+但必须先把 Future Interface Concept 定义出来。
+
+==================================================
+二十三、Decision Area 17：AI Difficulty
+==================================================
+
+冻结未来五级：
+
+1. 休闲
+2. 普通
+3. 进阶
+4. 困难
+5. 大师
+
+不要改变五级结构。
+
+必须设计每级主要改变：
+
+Information Quality
+Decision Quality
+Planning Horizon
+Candidate Evaluation Depth
+Context Awareness
+Risk Management
+Mistake Rate
+
+禁止：
+
++Money
++Attribute
++Probability Cheat
++Hidden Player Boost
+-Player Ability
+等作弊方案。
+
+重点讨论：
+
+五级之间如何保持：
+
+“更聪明”
+而不是：
+
+“更作弊”。
+
+==================================================
+二十四、Decision Area 18：AI Club Strategy
+==================================================
+
+必须讨论不同 AI Club 是否应该拥有不同发展策略。
+
+例如：
+
+Youth Development Club
+Balanced Club
+Win Now Club
+
+但必须注意：
+
+当前已有 3 档 club policy。
+
+因此必须区分：
+
+现有 Club Policy
+
+与未来：
+
+Development Strategy
+
+是否合并？
+是否分层？
+是否扩展？
+
+不能重复造两个互相冲突的 policy 系统。
+
+==================================================
+二十五、Decision Area 19：Historical Player Anchors
+==================================================
+
+未来目标：
+
+Historical Player Anchor
+→ 在历史适当时间进入世界
+→ 初始真实环境
+→ 真实初始能力 / Potential / Personality
+→ 后续完全 FE 模拟
+
+必须决定：
+
+Anchor 必需字段：
+
+- playerId
+- birthDate
+- introductionDate
+- initialClub
+- attributes
+- potential
+- personality
+- nationality
+- sourceId
+
+哪些字段必须进入？
+哪些可选？
+
+必须决定：
+
+Anchor 后：
+
+是否禁止强制真实转会？
+
+答案应该明确区分：
+
+Historical Initialization
+
+与：
+
+Career Simulation
+
+避免变成“现实足球数据库回放”。
+
+==================================================
+二十六、Decision Area 20：Real Player Talent
+==================================================
+
+必须确定：
+
+真实球员数据应该表达：
+
+Current Ability Vector
++
+Potential Ceiling Vector
++
+Personality
++
+Development Characteristics
+
+但不能变成：
+
+OVR + PA
+
+必须讨论：
+
+历史资料不足时怎么办？
+
+Potential 是：
+
+固定历史估计？
+
+还是允许 FE 误差？
+
+Real Player 是否允许模拟成长偏离历史？
+
+原则应明确：
+
+历史数据负责“起点”，
+不是负责强制未来结果。
+
+==================================================
+二十七、Decision Area 21：NewGen 与真实球员的关系
+==================================================
+
+必须明确：
+
+真实球员 Anchor
+和
+NewGen
+
+是两个不同来源。
+
+Historical Anchor：
+用于历史真实人物进入世界。
+
+NewGen：
+负责持续的人口供应。
+
+不能：
+
+为了补一个未来现实球员
+就强制生成一个 NewGen。
+
+也不能：
+
+Historical Anchor 变成一对一“历史复刻”。
+
+必须冻结二者关系。
+
+==================================================
+二十八、Decision Area 22：Long-run Stability
+==================================================
+
+必须先确定未来验证指标。
+
+至少：
+
+Player Population
+Average Age
+Age Distribution
+Attribute Distribution
+Potential Distribution
+Retirement Rate
+NewGen Rate
+Youth Usage
+High-Potential Minutes
+Average Minutes by Age
+AI Squad Age
+AI Squad Strength
+Club Strength Distribution
+Transfer Volume
+Transfer Price Distribution
+Free Agents
+Roster Size
+Player Career Length
+Position Distribution
+Top Club Talent Concentration
+Lower Division Talent
+Finance Stability
+
+同时定义：
+
+哪些指标是：
+
+Invariant
+Target Range
+Diagnostic
+Warning Only
+
+不要现在给具体数值，
+除非已有 DECISIONS.md 正式冻结。
+
+==================================================
+二十九、必须重点讨论的生态反馈
+==================================================
+
+必须分析这些闭环：
+
+Loop 1
+
+Potential
+→ AI Recognition
+→ Minutes
+→ Growth
+→ Current Ability
+→ More Minutes
+
+Loop 2
+
+Low Minutes
+→ Loan
+→ More Minutes
+→ Growth
+→ Return / Sale
+
+Loop 3
+
+Veteran Decline
+→ Youth Opportunity
+→ Youth Growth
+→ Squad Renewal
+
+Loop 4
+
+High Potential Youth
+→ AI Transfer Demand
+→ Market Concentration
+→ Top Club Talent
+
+Loop 5
+
+Retirement
+→ Population Gap
+→ NewGen
+→ Club Assignment
+→ Development
+→ Future Transfer
+
+必须检查每个 Loop 是否可能形成：
+
+Positive Feedback Explosion
+
+或：
+
+Negative Feedback Collapse。
+
+==================================================
+三十、必须提出“最小可实现阶段”
+==================================================
+
+最终不能给出一个巨型系统后直接要求一次做完。
+
+必须拆成：
+
+Phase 1 — Development Foundation
+Phase 2 — AI Match Usage
+Phase 3 — Development AI
+Phase 4 — Loan / Playing-Time Path
+Phase 5 — Information / Scouting
+Phase 6 — Difficulty
+Phase 7 — Historical Anchors
+Phase 8 — Long-run Ecosystem Harness
+
+每个 Phase 必须说明：
+
+- 做什么
+- 不做什么
+- 依赖什么
+- 影响什么
+- 是否需要 Schema
+- 是否需要 Save
+- 是否需要 Migration
+- 是否需要新的数据文件
+- 是否会影响 Golden
+- 是否影响旧 Save
+
+==================================================
+三十一、特别要求：不要过度设计
+==================================================
+
+如果一个设计可以：
+
+“先用现有字段实现”
+
+不要马上增加：
+
+- 新 entity
+- 新数据库
+- 新 Save object
+- 新 schema
+- 新 hidden attribute
+
+优先：
+
+runtime overlay
++
+existing player vector
++
+existing potential
++
+existing personality
++
+existing stats
+
+只有现有模型确实表达不了，
+才提出新增字段。
+
+所有新增字段必须说明：
+
+为什么不能通过现有字段表达。
+
+==================================================
+三十二、特别要求：避免“大一统评分”
+==================================================
+
+绝对不要提出：
+
+Player Development Score
+AI Player Score
+Youth Score
+Potential Score
+Manager Score
+
+然后让所有东西都依赖这个单一分数。
+
+FE 的原则是：
+
+“多维模型 + 情境决策”。
+
+可以存在局部 evaluation component，
+但不能制造新的“隐藏 OVR”。
+
+==================================================
+三十三、Decision Freeze 输出方式
+==================================================
+
+最终报告必须把每个决策分为：
+
+[已定]
+[建议]
+[候选 A]
+[候选 B]
+[候选 C]
+[TBD]
+[Deferred]
+
+不要把：
+
+[建议]
+
+自动写成：
+
+[已定]。
+
+==================================================
+三十四、最终报告结构
+==================================================
+
+必须输出：
+
+# Step 39B — Player Development & AI Development Decision Freeze Proposal
+
+## 1. Executive Summary
+
+## 2. 39A Findings → 39B Design Implications
+
+## 3. Frozen Rules
+
+## 4. Player Development Model
+
+## 5. Age Development Phase
+
+## 6. Potential / Talent
+
+## 7. Training
+
+## 8. Match Experience
+
+## 9. Fitness / Form / Morale / Injury
+
+## 10. Development Environment
+
+## 11. Personality / Development Traits
+
+## 12. AI Match Selection
+
+## 13. AI Rotation
+
+## 14. AI Youth Usage
+
+## 15. AI Development Value
+
+## 16. AI Playing-Time Pathway
+
+## 17. Loan Concept
+
+## 18. AI Information Asymmetry
+
+## 19. Scouting Concept
+
+## 20. AI Difficulty
+
+## 21. AI Club Development Strategy
+
+## 22. Historical Player Anchor
+
+## 23. Real Player Talent
+
+## 24. Historical Player + NewGen Relationship
+
+## 25. Long-run Stability Metrics
+
+## 26. Ecosystem Feedback Loops
+
+## 27. Phase Plan
+
+## 28. Schema / Save Impact Assessment
+
+## 29. Regression Risk Assessment
+
+## 30. Owner Decision Checklist
+
+==================================================
+三十五、Owner Decision Checklist
+==================================================
+
+最后必须生成一张非常明确的决策表。
+
+格式：
+
+| ID | 决策项 | 当前状态 | 候选方案 | Agent建议 | Owner选择 |
+|---|---|---|---|---|---|
+
+至少包含：
+
+D39.01 Development Model
+D39.02 Development Phase
+D39.03 Talent Model
+D39.04 Training
+D39.05 Match Experience
+D39.06 Fitness Effect
+D39.07 Injury Effect
+D39.08 Environment
+D39.09 Development Traits
+D39.10 AI Match Selection
+D39.11 AI Rotation
+D39.12 AI Youth Usage
+D39.13 Development Value
+D39.14 Playing-Time Path
+D39.15 Loan Role
+D39.16 AI Information
+D39.17 Scouting
+D39.18 AI Difficulty
+D39.19 Club Development Strategy
+D39.20 Historical Anchors
+D39.21 Real Player Talent
+D39.22 NewGen / Historical Player Relationship
+D39.23 Long-run Metrics
+D39.24 Phase 1 Scope
+
+每项必须能够让 Owner 直接选择。
+
+==================================================
+三十六、关于 Agent 的“建议”
+==================================================
+
+Agent 可以明确告诉 Owner：
+
+“技术上更适合 A”
+“长期生态更安全的是 B”
+“实现成本最低的是 C”
+
+但必须同时写：
+
+依据
++
+风险
++
+代价
++
+与 FE 原有原则的关系。
+
+严禁：
+
+“必须选 A”
+“最佳方案是 A”
+“这个一定正确”
+
+最终选择权属于 Owner。
+
+==================================================
+三十七、不要执行 Decision Freeze
+==================================================
+
+即使 Agent 认为方案已经非常明确，
+
+也不要：
+
+- 修改 DECISIONS.md
+- 修改 ROADMAP.md
+- 修改 SIMULATION_SPEC.md
+- 创建新的 Decision 编号并标 [已定]
+
+本步骤只生成：
+
+Decision Freeze Proposal
+
+等待 Owner 审核。
+
+Owner 确认后，
+下一阶段再执行：
+
+Step 39C — Formal Decision Freeze
+
+==================================================
+三十八、Regression
+==================================================
+
+本步骤不修改任何内容。
+
+不要求重新运行全套测试。
+
+如果 Agent 已经运行过测试，
+可以在报告中引用 Step 39A：
+
+Baseline:
+362 / 362
+
+Golden:
+143 / 143
+1141 / 1141
+
+否则不用重新跑测试。
+
+==================================================
+三十九、最终停止条件
+==================================================
+
+最后必须输出：
+
+STATE:
+DESIGN PROPOSAL COMPLETE
+
+CHANGES:
+NONE
+
+CODE CHANGES:
+NONE
+
+TEST CHANGES:
+NONE
+
+DATA CHANGES:
+NONE
+
+DOC CHANGES:
+NONE
+
+SCHEMA CHANGES:
+NONE
+
+SAVE FORMAT CHANGES:
+NONE
+
+COMMIT:
+DO NOT COMMIT
+
+NEXT:
+STOP — WAIT FOR OWNER DECISION
+
+不要自动开始 Step 39C。
