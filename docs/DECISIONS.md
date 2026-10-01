@@ -1656,6 +1656,122 @@ Performance
 
 ---
 
+## D-42 / OD-39FG-DECISION-2 — Development Priority / Competitive Proximity Structural Freeze（Step 39F-G-DECISION-3；Owner Ruling / Freeze）
+
+> 本条为 **SPEC AMENDMENT / DECISION RECORD**（Step 39F-G-DECISION-3 Owner Ruling）。
+> 依据：Step 39F-G-IMPLEMENTATION-DESIGN-REVIEW 与 STEP 39F-G-DECISION-2 实证验证报告（真实 fixture world / 能力分布 / proximity 与 influence 形状）。
+> **本记录为纯文档**：未修改生产代码 / 测试 / 数据 / Schema 10 / Save Format 1 / 39F-C / 39F-E / baseline / Golden。
+> 本步骤**只冻结结构**，不实现任何 Selection / Rotation / Development Priority 代码，不新增模块，**不冻结任何具体数值参数**。
+> 既有 D-41 / OD-39FG-1~20 的语义**保持不变**，本记录只在其上追加结构级冻结。
+
+### 保持不变的既有冻结（重申，不改语义）
+OD-39FG-1（Gap = Need − PO，derived/pure，禁 Gap→Growth）；OD-39FG-2（Soft Priority + Rotation Window 分层，本次只冻结 Soft Priority）；OD-39FG-3（DV 仅间接 soft priority，禁 automatic starter / guaranteed minutes）；OD-39FG-4（Current Ability 为竞技主体）；OD-39FG-9（Phase 1 仅 starter XI rotation，无 substitution，分钟仍为 0/90）；OD-39FG-10（Development Opportunity/Priority 一律 derived/pure，无新持久化）；OD-39FG-11（AI 可自动；Managed 不由 AI 自动改阵容，仅建议）；OD-39FG-17（无新持久化状态，Schema 10 / Save 1）；OD-39FG-19（最终 Match Selection 属 player-lineup / selection layer，Development System 不得写 lineup.starters）；OD-39FG-20（39F-C / 39F-E 完全冻结）。
+
+### I1 Soft Priority 结构 `[已定]`
+- **采用 S3 Two-Stage Selection Structure**：
+  - **Stage 1**：先依当前竞技能力做 **Competitive Selection Band** 筛选。
+  - **Stage 2**：**仅允许进入 Competitive Band 的候选人之间**使用 bounded Development Priority 做进一步排序 / tie-break。
+- **Development Priority 不得与 Current Ability 做无限制线性相加。**
+- 结构：
+  ```
+  Current Ability → Competitive Band → Development Priority → Final Competitive Selection
+  ```
+- 必须满足：① Current Ability 始终是 Selection 主体；② 大能力差距球员不得仅因 Development Priority 反超；③ Development Priority 只能影响**竞争接近**的候选人；④ 必须 bounded；⑤ 必须 diminishing；⑥ 不允许 High Potential / High DV 直接强行进入首发；⑦ 不允许 Development Gap 直接生成比赛分钟；⑧ 不允许 Development Priority 绕过位置竞争 / 阵容深度 / 可用性。
+- **只冻结 S3 结构**；Competitive Band 数值 / proximity threshold / priority cap / priority weight / decay scale / 任何公式参数 **全部 [TBD]**。
+
+### I2 Competitive Proximity 结构 `[已定]`
+- **Phase 1 采用 P1 Absolute Gap 作为主要 proximity 概念**：proximity 主要由候选人与当前最佳竞争者之间的**绝对 line-rating gap** 决定（gap 越小 → proximity 越高；gap 越大 → proximity 越低）。
+- **P2 Relative / Normalized Gap**：允许未来作为归一化修正，**不作为本阶段必须实现的结构**。
+- **P3 Rank Proximity：明确不采用。** 原因：无法表达绝对能力差距（例：`84 vs 65` 若仅队内相邻排名，rank proximity 仍可能给较高值，与 Current Ability 主体原则冲突）。
+- **P4 Dynamic Context Proximity：延后至 Phase 2+**，当前 Phase **不得依赖** Match Importance。
+- 不得冻结任何 threshold / scale / normalization formula / GK-specific threshold —— **全部 [TBD]**。
+
+### I3 Development Priority 来源 `[已定]`
+- **现有 Development Value 不得未经处理直接作为 Selection Priority。** 原因：现有 DV 含 **retrospective Playing Opportunity（权重 0.25）**，其中包含历史实际分钟 ⇒ 直接用于 Selection 会形成自我强化反馈：`过去上场多 → PO 高 → DV 高 → Selection Priority 高 → 更易继续上场 → PO 更高`。
+- **Selection Priority 必须优先使用 FORWARD-LOOKING development signals。** 允许复用现有 derived signals。Phase 1 推荐结构：Priority 主要来自 `headroom / development phase / current ability gap / development environment / personality / development need（opportunity deficit）`。
+- **不得把 retrospective Playing Opportunity 作为主要正向 Selection Priority 来源**；可以完全移除 PO 或**大幅降低其权重**，**具体 weight [TBD]**。
+- 本步骤**不创建** `ai-development-priority.js`；最终模块是否独立仍 **[TBD]**。
+
+### I4 Development Need `[已定]`
+- **采用 N-C Hybrid 方向**：`Development Need = phase + headroom + squad/opportunity need + ability-gap context + phase gate`。
+- 它必须回答「**这个球员当前是否存在未满足的发展机会需求？**」，而**不是**「这个球员的潜力高不高？」。
+- 必须能区分：A（High Headroom + 0 Minutes → **High Need**）；B（High Headroom + Stable Starter → **Low Need**）；C（Low Headroom + 0 Minutes → **Low Need**）；D（High Headroom + High Competition → Need 可较高，但**仍必须受 Competitive Proximity 限制**）。
+- 因此：**High Potential ≠ High Development Need**；**High Headroom ≠ Guaranteed Minutes**。
+- Development Need 必须 derived / pure；**不得**新增 `developmentDebt / developmentMinutes / developmentNeedState / persistentPathway / rotationPoints` 等 runtime state。
+- phase threshold / headroom weight / squad-need weight / ability-gap weight / phase gate / clamp / normalization —— **全部 [TBD]**。
+
+### I5 Bounded + Diminishing Influence `[已定]`
+- Development influence 必须满足：① bounded；② diminishing；③ gap 越大影响越弱；④ gap 越小影响越明显；⑤ 大能力差距时影响趋近 0；⑥ 不得因 Development Priority 无限累加而突破 Current Ability 竞争主体。
+- **Phase 1 采用 distance-decay 结构**，概念形态：`proximity = max(0, 1 − gap / scale)`。
+- **只冻结 distance-decay 的结构语义**；`scale / cap / weight / threshold / contextScale` **全部 [TBD]**。
+- 记录：**distance-decay 单独不能保证消除正反馈**。完整安全性来自：`Development Need 随机会被满足而下降` + `Competitive Proximity 随能力差距增加而下降` + `Development Priority bounded` + `Selection 中 Current Ability 保持主体`。
+- 允许合法反馈 `Ability → Minutes → Growth → Ability`；**禁止无界** `Development Priority → Minutes → Growth → Priority → Minutes → …`。
+
+### I8 Deterministic Tie-Break `[已定]`
+- 引入 Development Priority 后必须保持完全确定性；Selection comparator 必须拥有明确 deterministic tie-break：
+  ```
+  Primary   : Current Ability / Competitive ranking
+  Secondary : Development Priority（仅在允许的 Competitive Band 内）
+  Final     : playerId ascending
+  ```
+- **必须保证**：`devPriority = 0` 时，Selection 行为退化为当前竞争选择行为，**唯一差异**是原本依赖插入顺序的 equal-rating tie 改为**显式 deterministic playerId tie-break**。
+- 此点作为未来实现阶段的**重要 regression anchor**。
+
+### 明确禁止的结构 `[已定]`
+1. High Potential → Starter；2. High Development Value → Starter；3. High Development Need → Starter；4. Development Gap → Growth；5. Development Priority → unconditional score addition；6. Development Priority → bypass Current Ability；7. → bypass position eligibility；8. → bypass injury / availability；9. → guaranteed minutes；10. retrospective PO → strong positive Selection Priority；11. AI Development System → directly write `lineup.starters`；12. AI Development System → modify 39F-C growth rate；13. new persistent development debt；14. random selection；15. non-deterministic tie-break；16. Match Importance dependency in Phase 1 proximity；17. P3 rank proximity as primary proximity model。
+
+### 继续保持 [TBD] 的参数（不得冻结）
+Competitive Band threshold；proximity threshold；distance-decay scale；Development Priority cap；Development Priority weight；Development Need weights；age / phase gate threshold；headroom normalization；squad-need calculation；ability-gap calculation；GK-specific proximity；Rotation Window threshold；Match Importance formula；contextScale；expected minutes；substitution；fatigue；Loan Fit；Loan Lifecycle；Managed Club UI；是否最终需要独立 Development Priority 模块。
+
+### 未来实现架构锚点 `[已定]`
+```
+Development Signals
+        ↓
+Development Need
+        ↓
+Development Gap
+        ↓
+Selection-oriented Development Priority
+        ↓
+Competitive Proximity
+        ↓
+Bounded / Diminishing Influence
+        ↓
+Competitive Selection
+        ↓
+Starter XI
+        ↓
+Actual Minutes 0 / 90
+        ↓
+39F-C Growth Engine
+```
+同时保留 **Development Value 作为 diagnostic / reference signal**；**不得**把当前 DV 直接当作最终 Selection Priority。
+
+### 未来实现的 Regression Anchors `[已定]`
+- A. `84 vs 65`：Development factor **不得**反转竞争结果。
+- B. `72 vs 68`：Development factor 可**有限**影响，但不得无限反转。
+- C. `69 vs 68` / D. `66 vs 65`：Development factor 可产生**可观察**影响。
+- E. `55 vs 54` / F. `84 vs 83`：同样遵守 bounded influence。
+- G. High Potential + Low Ability：不得仅因 Potential 成为自动首发。
+- H. High Development Need：不得直接获得 guaranteed minutes。
+- I. High DV + Low Minutes：不得直接绕过 Current Ability。
+- J. Stable High-Headroom Starter：Development Need 应随机会满足而降低。
+- K. `devPriority = 0`：必须退化到当前 selection semantics。
+- L. 相同输入 + 相同 seed：必须得到**完全相同** Selection。
+
+### 长期生态验证要求 `[已定]`
+未来实现后必须重新进行至少 **50 / 100 / 200 seasons** 长期 audit，至少观察：`starterAgeMedian / minutesGini / youngPlayersStartingShare / GK rotationRate / highPotentialLowMinutesCount / abilityDistributionSpread / convergenceIndex`。特别检查：① 年轻球员是否被系统性强推首发；② 老将是否被系统性淘汰；③ GK 是否异常轮换；④ 低能力球员是否利用 Development Priority 获得不合理机会；⑤ 能力分布是否收缩；⑥ AI club 是否出现高度同质化 rotation pattern；⑦ High Potential / Low Minutes 人数是否下降但**未被强制归零**；⑧ **39F-C 原有长期生态是否被破坏**。
+
+### 39F-C / 39F-E Compatibility `[已定]`
+本记录**不修改** 39F-C Growth Engine 与 39F-E Growth Resolution Policy；**无 AI Growth Multiplier / 无 new Growth modifier**；`matchExperience` 仍来自真实比赛 minutes；OD-39FE-1 OPTION A 保持冻结。
+
+### Schema / Save `[已定]`
+本步骤**不修改** `GAME_STATE_SCHEMA_VERSION = 10` 与 `SAVE_FORMAT_VERSION = 1`；**不新增 runtime persistence**；相关概念保持 **DERIVED / PURE**。
+
+**验证**：本记录为**纯文档**；未修改生产代码 / 测试 / 数据 / Schema 10 / Save Format 1 / 39F-C / 39F-E / baseline / Golden / 运行行为。
+
+---
+
 ## Deferred Issues（登记；不在本步骤处理）
 
 ### DF-01 Managed Club Cash Concentration / World Finance Feedback `[Resolved → Step 36C 冻结]`
