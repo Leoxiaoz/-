@@ -1772,6 +1772,94 @@ Actual Minutes 0 / 90
 
 ---
 
+## D-43 / OD-39FH — Rotation / Actual Match Minutes（Step 39F-H-CALIBRATION / ECOLOGY AUDIT → Step 39F-H-DECISION / FREEZE；Owner Ruling / Freeze）
+
+**背景**：39F-H 已实现 AI Club 的 Actual Minutes / Rotation，将比赛分钟从二元 `90 / 0` 升级为结构化离散分钟；Managed Club 保持 `90 / 0`。本记录基于 **39F-H-CALIBRATION / ECOLOGY AUDIT**（只读）结论作出正式冻结。
+
+### OD-39FH-1 — Minute Template `[已定]`
+- **接受当前生产 Rotation Template 中存在 20 分钟档。** 生产配置：`45 / 30 / 20 / 15`，对应主力剩余分钟：`45 / 60 / 70 / 75`。
+- **20 分钟是有意的当前实现差异，不视为 bug，不要求现在修改。** 此前设计目标列表为 `0 / 15 / 30 / 45 / 60 / 70 / 75 / 90`；当前实现额外存在 `20`。
+- 审计确认：`20` 为显式配置项；不破坏 line minute conservation；不影响 candidate sorting；不影响 Team Strength；不影响 deterministic behavior。
+- **因此接受并冻结当前实现。**
+
+### OD-39FH-2 — Rotation Frequency `[已定]`
+- **当前轮换频率暂不调整。** 不修改：rotation frequency / `STARTER_MIN_MINUTES` / `cap` / `distanceScale` / `phaseGate` / personality modifier / Development Opportunity weights / proximity threshold。
+- **理由**：39F-H 已成功把比赛分钟从二元 `90 / 0` 转化为结构化离散分钟；审计**未发现** runaway、convergence、determinism 或守恒问题。
+- **不为了追求更丰富的统计分布而进行参数调节。**
+
+### OD-39FH-3 — Rotation Template `[已定]`
+- **当前 Rotation Template 暂不扩充**，保持 `45 / 30 / 20 / 15`；不新增其他分钟档。
+- 审计中 `30 / 45` 低频出现**不视为实现缺陷**。测试夹具存在 Development Priority 天花板较低的问题，**不足以作为生产参数调整依据**。
+- 未来如使用**真实数据库**进行独立 Calibration Audit，可重新提出参数调整议案。
+
+### OD-39FH-4 — 39F-H Freeze `[已定]`
+正式冻结 39F-H。冻结内容：
+1. Effective XI 与 Appearance Set 分离。
+2. Effective XI 只用于：Team Strength / Expected Goals / Match Result。
+3. Appearance Set 用于实际比赛分钟。
+4. AI Club 才进入 Rotation Minute Allocation。
+5. Managed Club 保持原 `90 / 0`。
+6. GK 保持 `90 / 0`。
+7. Injured player 不参与 rotation allocation。
+8. 每个 position line 按分钟守恒。
+9. 正常 11 人 XI：`GK = 90`，`DF = 360`，`MF = 360`，`FW = 180`，`Team = 990`。
+10. 残阵允许低于 `990`。
+11. `buildInvolvements` 使用实际 `minutesMap`。
+12. `recordAppearance` 使用实际分钟。
+13. Playing Opportunity 公式不变。
+14. Growth Engine 不变。
+15. `matchExperience` 公式不变。
+16. Fitness cost 仍为固定 `-12`。
+17. 不新增 runtime state。
+18. Schema = 10。
+19. Save = 1。
+20. 无 Match Timeline。
+21. 无 Substitution Engine。
+22. 无 Fatigue Engine。
+23. 无 Loan。
+24. 无 Match Importance。
+25. 无实时战术。
+26. 无事件时间戳。
+27. 无红牌动态换人。
+
+### OD-39FH-5 — Ecology Audit Status `[已定]`
+记录以下审计结论：
+- `npm test = 467 passed / 0 failed`
+- `git status = clean`
+- deterministic long-run audit passed
+- minute invariants passed
+- Team Strength unaffected by `minutesMap`
+- Managed boundary passed
+- GK boundary passed
+- Injury exclusion passed
+- no runtime / schema / save changes
+- no runaway feedback observed
+- no convergence observed
+- age ecology discrepancy was caused by previous audit sampling **static players** instead of **active world players**
+- no lifecycle regression found
+
+测试夹具限制（一并记录）：
+- `fixtures.js` 为**均匀能力夹具**
+- DP ceiling 较低
+- close-competition 真实 gap 分布不完整
+- 因此**不能把 fixture 中低频 `30 / 45` 分钟解释为生产生态结论**
+
+### OD-39FH-6 — Next Phase Authorization `[已定]`
+- Owner 明确授权进入 **39F-I**。
+- 但 39F-I **不得自动实现**：Loan / Loan Fit / Loan Lifecycle / Match Timeline / Fatigue Engine / Substitution Engine —— 这些仍保持原有 phased roadmap。
+- 39F-I 必须首先基于已经冻结的 `Selection → Minutes → Playing Opportunity → Growth` 闭环继续设计。
+- **进入 39F-I 前**：先做 **read-only architecture review**；**不直接修改代码**；**不直接实现**；输出设计边界、现有生产路径、依赖关系、可复用模块、风险点、TBD；等 Owner 决策后再实施。
+
+### 39F-C / 39F-E Compatibility `[已定]`
+本记录**不修改** 39F-C Growth Engine / `matchExperience` 公式 / 39F-E Growth Resolution Policy；OD-39FE-1 OPTION A 保持冻结；Fitness cost 仍为固定 `-12`。
+
+### Schema / Save `[已定]`
+本步骤**不修改** `GAME_STATE_SCHEMA_VERSION = 10` 与 `SAVE_FORMAT_VERSION = 1`；**不新增 runtime persistence**。
+
+**验证**：本记录为**纯文档**（仅修改 `docs/DECISIONS.md`）；未修改 `src/**` / `tests/**` / `data/**` / 配置 / Schema 10 / Save Format 1 / baseline / Golden / 运行行为。
+
+---
+
 ## Deferred Issues（登记；不在本步骤处理）
 
 ### DF-01 Managed Club Cash Concentration / World Finance Feedback `[Resolved → Step 36C 冻结]`
