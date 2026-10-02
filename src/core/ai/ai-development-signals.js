@@ -68,6 +68,48 @@ export function getClubCompletedMatches(state, clubId) {
 }
 
 /**
+ * 某俱乐部在**指定赛季**实际可参加的正式比赛规模（Step 39F-J / `teamAvailableMatches`）。
+ * 语义：该赛季该 club 在全部正式 competition 中的比赛场次（去重）。
+ *
+ * 实现说明（代码事实）：Training Decision 只在 **season boundary** 由 `developPlayers` 调用，
+ * 而此时 `state.runtime.competitions` **已被替换为下一赛季**的 fixtures（见 `#rollFinishedSeasons`），
+ * 完赛赛季的 fixtures 不再可读。因此在赛季边界上，唯一完整、确定、可去重的来源是
+ * 该赛季的 `match_played` 事件日志（payload 含 `season` / `fixtureId` / `leagueId` / `homeId` / `awayId`）。
+ * - 赛季已结束 ⇒ 每场已安排的正式比赛均已进行 ⇒ **event 计数 == 该赛季完整比赛规模**。
+ * - 按赛季过滤（跨赛季排除）；按 `fixtureId` 去重（缺失时回退稳定复合键）；覆盖多 competition。
+ *
+ * @param {object} state
+ * @param {string} clubId
+ * @param {number} seasonId
+ * @param {Map<string, number>|null} [cache] 可选：`clubId|season` → 结果（供一次训练决策批量复用）。
+ * @returns {number} 非负整数；**真实为 0**（无比赛）与**数据缺失**均返回 0（调用方不得据此惩罚）。
+ */
+export function getTeamAvailableMatches(state, clubId, seasonId, cache = null) {
+  if (typeof clubId !== 'string' || clubId.length === 0) return 0;
+  const season = Number(seasonId);
+  if (!Number.isFinite(season)) return 0;
+  const key = `${clubId}|${season}`;
+  if (cache && cache.has(key)) return cache.get(key);
+
+  const seen = new Set();
+  let count = 0;
+  for (const e of state?.runtime?.events ?? []) {
+    if (e?.type !== 'match_played') continue;
+    const p = e.payload ?? {};
+    if (Number(p.season) !== season) continue;
+    if (p.homeId !== clubId && p.awayId !== clubId) continue;
+    const dedupKey = (typeof p.fixtureId === 'string' && p.fixtureId.length > 0)
+      ? p.fixtureId
+      : `${p.leagueId ?? ''}|${p.season}|${p.round ?? ''}|${p.homeId}|${p.awayId}`;
+    if (seen.has(dedupKey)) continue;
+    seen.add(dedupKey);
+    count += 1;
+  }
+  if (cache) cache.set(key, count);
+  return count;
+}
+
+/**
  * Actual Minutes Score（Owner §6.2 冻结）：`clamp(seasonMinutes / max(90, completedMatches × 90), 0, 1)`。
  * 表示「截至当前赛季进度的实际出场比例」，**不预测**整季最终分钟。
  * @returns {number} 0–1

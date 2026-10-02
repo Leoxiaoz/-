@@ -159,3 +159,34 @@ export const AI_SELECTION_DEVELOPMENT_CONFIG = Object.freeze({
     Object.freeze({ min: 0.10, minutes: 15 }),
   ]),
 });
+
+/**
+ * AI Training Decision —— Step 39F-J（D-39FJ 冻结设计；实现）。
+ * 层级归属：Simulation Core / AI（纯配置，无副作用）。
+ *
+ * 语义：AI 在赛季边界为**每名 AI club 球员**决定训练投入强度
+ *   `LIMITED / NORMAL / STRONG`，作为既有 `developPlayers(training)` 的 training input 来源。
+ * - 只决定「投入多少」；不决定成长数值 / 属性 / 选择 / 分钟 / 转会。
+ * - 不改 Growth 公式；无 RNG（deterministic）；不持久化。
+ *
+ * ⚠ 以下数值为 **TEMPORARY / 39F-J calibration defaults**，**不是冻结设计参数**；集中于此，禁止散落。
+ */
+export const AI_TRAINING_DECISION_CONFIG = Object.freeze({
+  /** 训练档位（与 `PLAYER_GROWTH_CONFIG.TRAINING_LEVELS` 的键一致）。 */
+  LEVELS: Object.freeze({ LIMITED: 'LIMITED', NORMAL: 'NORMAL', STRONG: 'STRONG' }),
+  /**
+   * 赛季负荷率分界：`load < LOW_MAX` → LOW；`< NORMAL_MAX` → NORMAL；
+   * `< HIGH_MAX` → HIGH（上限 NORMAL）；否则 VERY_HIGH（强制 LIMITED）。
+   */
+  LOAD: Object.freeze({ LOW_MAX: 0.30, NORMAL_MAX: 0.60, HIGH_MAX: 0.80 }),
+  /** STRONG 所需 estimatedHeadroom（0–1）下限，低于视为低 headroom（TEMPORARY）。 */
+  HEADROOM_STRONG_MIN: 0.02,
+  /** environmentInput 下限，低于视为差环境并关闭 STRONG（TEMPORARY）。 */
+  ENVIRONMENT_STRONG_MIN: 0.30,
+  /** personality 归一化均值下限，低于视为明显负向并关闭 STRONG（TEMPORARY）。 */
+  PERSONALITY_STRONG_MIN: 0.20,
+  /** STRONG 综合分权重（bounded signal；TEMPORARY）。 */
+  STRONG_WEIGHTS: Object.freeze({ HEADROOM: 0.40, ENVIRONMENT: 0.30, PERSONALITY: 0.30 }),
+  /** STRONG 综合分阈值（TEMPORARY）。 */
+  STRONG_SCORE_MIN: 0.35,
+});

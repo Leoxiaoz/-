@@ -31,6 +31,7 @@ import { replenishTransferBudget } from './finance.js';
 import { runManagedFinanceFeedback } from './finance-feedback.js';
 import { planPromotionRelegation, applyPromotionRelegationTransition } from './competition-transition.js';
 import { runSeasonAI } from './ai/ai-decide.js';
+import { createTrainingProvider } from './ai/ai-training-decision.js';
 import { tickInjuries, resolveMatchInjuries } from './player-injury.js';
 import { SCHEDULE_CONFIG, MATCH_LOAD_CONFIG } from './sim-config.js';
 
@@ -233,7 +234,9 @@ export class SimulationCore {
     if (maxSeason > prevSeason) {
       developPlayers(state, {
         seasonNumber: prevSeason,
-        training: this.trainingFactor ?? undefined,
+        // Step 39F-J：AI club 使用 Training Decision 作为 training input（Managed 保持默认 NORMAL）；
+        // enableAI 关闭时保持既有默认行为（不启用 Training Decision）。
+        training: this.trainingFactor ?? (this.enableAI ? createTrainingProvider(state) : undefined),
       });
       runPlayerLifecycle(state, { fromSeason: prevSeason, toSeason: maxSeason, ddti: this.ddti });
       // Step 34 / D-33.15：transferBudget 再生（Population 稳定后、AI 决策前；每赛季边界恰好一次）。
