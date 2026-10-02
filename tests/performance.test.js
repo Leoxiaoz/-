@@ -227,13 +227,16 @@ test('schema 8→9 迁移：旧档缺表现字段时补 0 且可继续模拟', (
 // ---------- 9. RNG 隔离：比分/events 黄金指纹（Step 21-A 前后完全一致） ----------
 test('RNG 隔离：homeGoals/awayGoals/goal events 与 Step 21-A 前黄金基线完全一致', () => {
   // 黄金基线：Step 21-A 实施前实测（新增表现流不得改变比分/事件）。
+  // Step 39F-G（D-42 B2+C2）后重新冻结：AI 选择变为 development-aware，仅会重排**同 rating** 球员
+  //   （influence < 1 ⇒ 不跨越整数 rating 差），故 homeGoals/awayGoals 完全不变；
+  //   但同分球员互换会改变 goal events 的 actorId ⇒ 事件哈希需按新实测值重新冻结（明确行为变更）。
   const GOLDEN = {
-    1: { g: 2, ga: 1, h: '368161e4' },
-    2: { g: 2, ga: 2, h: '9c39d9a2' },
-    3: { g: 1, ga: 1, h: 'a21234d1' },
-    4: { g: 3, ga: 4, h: '22c6136a' },
-    5: { g: 1, ga: 0, h: '49adb5bd' },
-    6: { g: 1, ga: 1, h: 'b0348862' },
+    1: { g: 2, ga: 1, h: '9242dcff' },
+    2: { g: 2, ga: 2, h: '5c2b2242' },
+    3: { g: 1, ga: 1, h: 'a046b4a4' },
+    4: { g: 3, ga: 4, h: '4aa74bc7' },
+    5: { g: 1, ga: 0, h: '61eaff8f' },
+    6: { g: 1, ga: 1, h: 'c5690857' },
   };
   for (let round = 1; round <= 6; round += 1) {
     const r = playOnce(leagueState(8), round);
