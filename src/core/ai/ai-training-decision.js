@@ -10,11 +10,15 @@
  *   Production Signals → evaluateTrainingDecision → LIMITED/NORMAL/STRONG
  *     → existing developPlayers(training) → existing Growth Engine → ability delta
  *
+ * Step 39F-J-C：`seasonMatchLoad`（= Match Participation / Playing Exposure）**不再**作为本决策的
+ * Absolute Match Load Gate；`HIGH_MATCH_LOAD` / `VERY_HIGH_MATCH_LOAD` 不再影响 Training Decision。
+ * 比赛暴露保护唯一经 Relative Role Load（39F-J-B）承担。
+ *
  * 红线：
  * - **不修改** Growth Engine / 39F-G / 39F-H / Injury / Match。
  * - **不读取** True Potential（只用 AI-observable `estimateHeadroomScore`）。
  * - 不新增 runtime / schema / save 字段；不写 persistent state。
- * - 比赛经验已由 Growth 的 `matchExperienceInput` 消费 ⇒ **load 只做下行约束，低分钟不产生奖励**。
+ * - 比赛经验已由 Growth 的 `matchExperienceInput` 消费（独立通道）。
  * - 禁止 `Training → Selection`、`Training → Minutes` 反向边。
  */
 
@@ -24,7 +28,6 @@ import { ageOn } from '../date-utils.js';
 import { getDevelopmentPhase, DEVELOPMENT_PHASES } from './ai-development-phase.js';
 import { estimateHeadroomScore } from './ai-potential-estimate.js';
 import { evaluateDevelopmentEnvironment } from './ai-development-environment.js';
-import { getTeamAvailableMatches } from './ai-development-signals.js';
 import { evaluateRelativeRoleLoad } from './ai-relative-role-load.js';
 import { AI_TRAINING_DECISION_CONFIG as C } from './ai-config.js';
 
@@ -58,8 +61,12 @@ function personalityNormalized(profile) {
 }
 
 /**
- * 赛季负荷率 → 档位（纯函数，供决策与测试复用）。
+ * 赛季负荷率 → 档位（纯函数）。
  * `LOW < LOW_MAX`；`< NORMAL_MAX` → NORMAL；`< HIGH_MAX` → HIGH；否则 VERY_HIGH。
+ *
+ * Step 39F-J-C：本函数已**不再被 Training Decision 消费**（Absolute Match Load Gate 已移除）。
+ * 保留为 Match Participation / Playing Exposure 的 **derived classification**（legacy / 未来
+ * Participation / Workload 相关步骤可复用）；无持久化、无 RNG。
  * @returns {'LOW'|'NORMAL'|'HIGH'|'VERY_HIGH'}
  */
 export function classifySeasonLoad(loadRate) {
@@ -73,8 +80,12 @@ export function classifySeasonLoad(loadRate) {
 /**
  * 决定一名球员本赛季的训练投入档位（纯函数，不改 state，无 RNG）。
  *
- * 决策顺序（D-39FJ §十一）：读输入 → 缺失处理 → phase → teamAvailableMatches → load
- * → Hard Gates → STRONG 资格 → headroom → environment → personality → 档位。
+ * 决策顺序（Step 39F-J-C）：读输入 → 缺失处理（MISSING_AGE → NORMAL）→ Development Phase
+ * → Hard Gates（INJURED → LIMITED；INJURY_RECOVERY / VETERAN_PHASE → 封顶 NORMAL）
+ * → base Training Level（phase + headroom + environment + bounded personality）
+ * → Relative Role Load（在 evaluateTrainingDecision 中叠加）→ 最终档位。
+ *
+ * 注意：`seasonMatchLoad` / Match Participation **不再**参与本决策（无 Absolute Match Load Gate）。
  *
  * @param {object} state
  * @param {string} clubId
@@ -83,7 +94,7 @@ export function classifySeasonLoad(loadRate) {
  * @returns {{trainingLevel: 'LIMITED'|'NORMAL'|'STRONG', reasons: string[], limitingFactors: string[]}}
  */
 export function evaluateTrainingDecision(state, clubId, playerId, options = {}) {
-  const base = computeBaseTrainingLevel(state, clubId, playerId, options);
+  const base = computeBaseTrainingLevel(state, clubId, playerId);
   // Step 39F-J-B：Relative Role Load（**保护性叠加**；只允许 base NORMAL → LIMITED）。
   const relativeRoleLoad = clubId
     ? evaluateRelativeRoleLoad(state, clubId, playerId, {
@@ -113,8 +124,8 @@ export function applyRelativeRoleLoad(baseLevel, classification) {
   return baseLevel;
 }
 
-/** 计算 base Training Level（不含 Relative Role Load）。 */
-function computeBaseTrainingLevel(state, clubId, playerId, options = {}) {
+/** 计算 base Training Level（不含 Relative Role Load；Step 39F-J-C 后不读取 Match Participation）。 */
+function computeBaseTrainingLevel(state, clubId, playerId) {
   const reasons = [];
   const limitingFactors = [];
 
@@ -150,32 +161,11 @@ function computeBaseTrainingLevel(state, clubId, playerId, options = {}) {
     reasons.push('veteran_phase');
   }
 
-  // STEP 4/5：teamAvailableMatches → seasonMatchLoad（只做下行约束）。
-  const seasonId = Number.isFinite(Number(options.seasonNumber)) ? Number(options.seasonNumber) : state.season;
-  const available = getTeamAvailableMatches(state, clubId, seasonId, options.availabilityCache ?? null);
-  const minutes = Math.max(0, Math.floor(Number(rt.stats?.season?.minutes) || 0));
-  const loadRate = available > 0 ? minutes / (available * 90) : null;
-  if (loadRate === null) {
-    reasons.push('load_unavailable');
-  } else {
-    const band = classifySeasonLoad(loadRate);
-    if (band === 'VERY_HIGH') {
-      return {
-        level: LEVEL.LIMITED,
-        reasons: [...reasons, 'very_high_match_load'],
-        limitingFactors: uniq([...limitingFactors, 'VERY_HIGH_MATCH_LOAD']),
-      };
-    }
-    if (band === 'HIGH') {
-      if (allowedMax === LEVEL.STRONG) limitingFactors.push('HIGH_MATCH_LOAD');
-      allowedMax = LEVEL.NORMAL;
-      reasons.push('high_match_load');
-    } else {
-      reasons.push(`load_${band.toLowerCase()}`);
-    }
-  }
+  // Step 39F-J-C：`seasonMatchLoad`（Match Participation / Playing Exposure）已从本决策移除，
+  // 不再作为 Absolute Match Load Gate（HIGH / VERY_HIGH 不再影响 Training Decision）。
+  // 比赛暴露保护唯一经 Relative Role Load（evaluateTrainingDecision 中叠加）承担。
 
-  // Hard caps（injury recovery / veteran / high load）：封顶 NORMAL。
+  // Hard caps（injury recovery / veteran）：封顶 NORMAL。
   if (allowedMax !== LEVEL.STRONG) {
     return { level: LEVEL.NORMAL, reasons, limitingFactors: uniq(limitingFactors) };
   }

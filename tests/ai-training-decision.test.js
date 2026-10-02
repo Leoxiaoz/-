@@ -115,30 +115,45 @@ test('T4/T12. VETERAN ⇒ 禁止 STRONG / VETERAN_PHASE', () => {
   assert(r.limitingFactors.includes('VETERAN_PHASE'));
 });
 
-// ---------- T5 HIGH load → not STRONG ----------
-test('T5. HIGH match load ⇒ 最大 NORMAL / HIGH_MATCH_LOAD', () => {
+// ---------- T5 (39F-J-C) HIGH participation 不自动限制 ----------
+test('T5. HIGH match participation 不自动限制（年轻 STRONG-eligible 仍 STRONG）', () => {
   const s = leagueState(8);
   const p = target(s);
   setAge(s, p.id, 18);
   setPersonality(s, p.id, 99);
   seedMatches(s, 'clb_001', 1, 14);
-  setMinutes(s, p.id, Math.round(14 * 90 * 0.65)); // 0.65 → HIGH
+  setMinutes(s, p.id, Math.round(14 * 90 * 0.65)); // participation 0.65（旧语义 HIGH）
   const r = evaluateTrainingDecision(s, 'clb_001', p.id, { seasonNumber: 1 });
-  assertEquals(r.trainingLevel, 'NORMAL');
-  assert(r.limitingFactors.includes('HIGH_MATCH_LOAD'));
+  assertEquals(r.trainingLevel, 'STRONG');
+  assert(!r.limitingFactors.includes('HIGH_MATCH_LOAD'));
 });
 
-// ---------- T6 VERY_HIGH load → LIMITED ----------
-test('T6. VERY_HIGH match load ⇒ LIMITED / VERY_HIGH_MATCH_LOAD', () => {
+// ---------- T6 (39F-J-C) VERY_HIGH participation 不导致 LIMITED ----------
+test('T6. VERY_HIGH match participation 本身不产生 LIMITED', () => {
   const s = leagueState(8);
   const p = target(s);
   setAge(s, p.id, 18);
   setPersonality(s, p.id, 99);
   seedMatches(s, 'clb_001', 1, 14);
-  setMinutes(s, p.id, Math.round(14 * 90 * 0.85)); // 0.85 → VERY_HIGH
+  setMinutes(s, p.id, Math.round(14 * 90 * 0.85)); // participation 0.85（旧语义 VERY_HIGH）
   const r = evaluateTrainingDecision(s, 'clb_001', p.id, { seasonNumber: 1 });
-  assertEquals(r.trainingLevel, 'LIMITED');
-  assert(r.limitingFactors.includes('VERY_HIGH_MATCH_LOAD'));
+  assertEquals(r.trainingLevel, 'STRONG');
+  assert(r.trainingLevel !== 'LIMITED');
+  assert(!r.limitingFactors.includes('VERY_HIGH_MATCH_LOAD'));
+});
+
+// ---------- C1 (39F-J-C) participation 扫描：超高暴露不压低 STRONG ----------
+test('C1. 年轻 STRONG-eligible：participation 20%–100% 均不产生 LIMITED', () => {
+  for (const rate of [0.20, 0.40, 0.60, 0.80, 0.90, 1.00]) {
+    const s = leagueState(8);
+    const p = target(s);
+    setAge(s, p.id, 18);
+    setPersonality(s, p.id, 99);
+    seedMatches(s, 'clb_001', 1, 14);
+    setMinutes(s, p.id, Math.round(14 * 90 * rate));
+    const r = evaluateTrainingDecision(s, 'clb_001', p.id, { seasonNumber: 1 });
+    assertEquals(r.trainingLevel, 'STRONG', `participation ${rate} 不应压低 STRONG`);
+  }
 });
 
 // ---------- T7 LOW load does not create bonus ----------
@@ -212,8 +227,8 @@ test('T13. 高 headroom 不自动 STRONG（低 personality 阻断）', () => {
   assertEquals(r.trainingLevel, 'NORMAL');
 });
 
-// ---------- T14 LIMITED only from INJURED / VERY_HIGH load ----------
-test('T14. LIMITED 仅来自 INJURED / VERY_HIGH_MATCH_LOAD（差环境不产生 LIMITED）', () => {
+// ---------- T14 (39F-J-C) 差环境不产生 LIMITED（LIMITED 仅来自 Hard Gate / Relative Role Load） ----------
+test('T14. 差环境不产生 LIMITED（C 后无 Absolute Match Load Gate）', () => {
   const s = leagueState(8);
   const p = target(s);
   setAge(s, p.id, 24);

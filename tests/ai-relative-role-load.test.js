@@ -60,6 +60,11 @@ function seedMatches(state, clubId, season, count) {
   }
 }
 const setMinutes = (s, id, m) => { getPlayerRuntime(s, id).stats.season.minutes = m; };
+const setPersonalityFor = (s, id, v) => {
+  s.static.players.find((x) => x.id === id).personality = {
+    professionalism: v, determination: v, ambition: v, consistency: v, injuryProneness: 40,
+  };
+};
 
 // ================= A. Role =================
 test('A1. STARTER：DF rank1 → STARTER', () => {
@@ -232,12 +237,23 @@ test('G53/G54. Rotation B expected 仍为 ROTATION；actual 升高 → relLoad �
 });
 test('G55. EXTREME + base NORMAL → LIMITED（bench 超额）', () => {
   const s = buildState(8);
+  s.static.players.find((p) => p.id === 'd8').birthDate = '1999-01-15'; // age 27 → PRIME（base NORMAL，非 STRONG 资格）
   seedMatches(s, 'clb_a', 1, 14);
-  setMinutes(s, 'd8', Math.round(0.60 * 14 * 90)); // actual 0.60，绝对 load HIGH → base NORMAL；bench excess 0.30 → EXTREME
+  setMinutes(s, 'd8', Math.round(0.60 * 14 * 90)); // BENCH upperBound 0.30，actual 0.60 → excess 0.30 → EXTREME
   const r = evaluateTrainingDecision(s, 'clb_a', 'd8', { seasonNumber: 1 });
   assertEquals(r.relativeRoleLoad.classification, 'EXTREME');
   assertEquals(r.trainingLevel, 'LIMITED');
   assert(r.reasons.includes('relative_role_load_extreme'));
+});
+test('G55b. EXTREME + base STRONG → STRONG（冻结：Protective 不覆盖 STRONG-eligible）', () => {
+  const s = buildState(8);
+  s.static.players.find((p) => p.id === 'd8').birthDate = '2008-01-15'; // age 18 → EMERGING（STRONG 资格）
+  setPersonalityFor(s, 'd8', 95);
+  seedMatches(s, 'clb_a', 1, 14);
+  setMinutes(s, 'd8', Math.round(0.60 * 14 * 90)); // BENCH actual 0.60 → EXTREME
+  const r = evaluateTrainingDecision(s, 'clb_a', 'd8', { seasonNumber: 1 });
+  assertEquals(r.relativeRoleLoad.classification, 'EXTREME');
+  assertEquals(r.trainingLevel, 'STRONG');
 });
 test('G56/H57. role 不依赖 minutes（stateless，无同赛季重算）', () => {
   const s = buildState(5);

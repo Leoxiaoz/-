@@ -175,8 +175,12 @@ export const AI_TRAINING_DECISION_CONFIG = Object.freeze({
   /** 训练档位（与 `PLAYER_GROWTH_CONFIG.TRAINING_LEVELS` 的键一致）。 */
   LEVELS: Object.freeze({ LIMITED: 'LIMITED', NORMAL: 'NORMAL', STRONG: 'STRONG' }),
   /**
-   * 赛季负荷率分界：`load < LOW_MAX` → LOW；`< NORMAL_MAX` → NORMAL；
-   * `< HIGH_MAX` → HIGH（上限 NORMAL）；否则 VERY_HIGH（强制 LIMITED）。
+   * 赛季负荷率分档阈值（供 `classifySeasonLoad` 使用）。
+   * `load < LOW_MAX` → LOW；`< NORMAL_MAX` → NORMAL；`< HIGH_MAX` → HIGH；否则 VERY_HIGH。
+   *
+   * Step 39F-J-C：**已不再被 Training Decision 消费**（Absolute Match Load Gate 移除）。
+   * 保留为 Match Participation / Playing Exposure 的 derived classification（legacy），
+   * 供未来 Participation / Workload 相关步骤复用；无持久化、无 RNG。
    */
   LOAD: Object.freeze({ LOW_MAX: 0.30, NORMAL_MAX: 0.60, HIGH_MAX: 0.80 }),
   /** STRONG 所需 estimatedHeadroom（0–1）下限，低于视为低 headroom（TEMPORARY）。 */
