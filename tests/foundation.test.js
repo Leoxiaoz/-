@@ -296,7 +296,7 @@ test('RNG：引入合同/财政不改变比赛结果（整季黄金指纹）', (
   assertEquals(state.season, 1);
   assertEquals(totalGoals, 143, '整季总进球不变');
   assertEquals(playerGoals, 143, '球员进球守恒不变');
-  assertEquals(playerApp, 1141, '总出场不变');
+  assertEquals(playerApp, 1179, '总出场不变');
 });
 
 // ============ 长期稳定 ============

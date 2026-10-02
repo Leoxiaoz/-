@@ -14,6 +14,7 @@ import {
   FORMATIONS,
   DEFAULT_FORMATION,
   LINE_ATTRIBUTES,
+  MATCH_LOAD_CONFIG,
 } from './sim-config.js';
 import { ATTRIBUTE_DEFAULT } from '../shared/football-schema.js';
 import {
@@ -24,7 +25,11 @@ import {
 } from './player-runtime.js';
 import { getClubRuntime, recordEvent } from './game-state.js';
 import { repairSquadForMatch, selectBenchCandidates, LINEUP_LIMITS } from './player-lineup.js';
-import { rankLineCandidates, selectionDevelopmentPriority } from './ai/ai-development-signals.js';
+import {
+  rankLineCandidates,
+  selectionDevelopmentPriority,
+  developmentProximity,
+} from './ai/ai-development-signals.js';
 import { AI_SELECTION_DEVELOPMENT_CONFIG } from './ai/ai-config.js';
 
 /** 阵型各线人数（含 GK 固定 1）。 */
@@ -159,4 +164,108 @@ export function computeTeamStrength(state, teamId, tactics = {}, squad = null) {
     defence: average('DF'),
     goalkeeping: average('GK'),
   };
+}
+
+// =====================================================================================
+// Step 39F-H — Rotation / Actual Match Minutes（纯派生；仅 AI Club；Managed 保持 90/0）
+// 红线：不改 Team Strength / Expected Goals / Match Result / Growth / Fitness cost；
+//       不新增 runtime state；无 RNG（确定性 + playerId tie-break）。
+// =====================================================================================
+
+/** 正常位置线（GK 不参与轮换）。 */
+const ROTATION_POSITIONS = Object.freeze(['DF', 'MF', 'FW']);
+
+/**
+ * 轮换强度 → 离散分钟模板（降序匹配第一个 `strength ≥ min`）；无匹配返回 0。
+ * @returns {number} 0 / 15 / 20 / 30 / 45
+ */
+export function rotationMinutesFor(strength) {
+  const s = Number(strength);
+  if (!Number.isFinite(s) || s <= 0) return 0;
+  for (const t of AI_SELECTION_DEVELOPMENT_CONFIG.ROTATION_TEMPLATES) {
+    if (s >= t.min) return t.minutes;
+  }
+  return 0;
+}
+
+/**
+ * 计算本场 **AI Club** 的分钟分配计划（纯函数，不改 state，无 RNG）。
+ *
+ * 规则（D-39F-H 冻结结构 + Owner N1/N2/N3）：
+ * - 按 **position line** 分区：每条线 90×slotCount 分钟，只在本线 available 球员间重分配（守恒）。
+ * - `Effective XI` 中的球员得到基础 90；每个非 GK 位置线最多发生**一次**有限轮换：
+ *   取本线**最弱主力**（rating asc, playerId asc），在非 XI 的 available 候选中选**轮换强度最大**者
+ *   （`strength = selectionDevelopmentPriority × proximity`，proximity 基于与最弱主力的 rating gap）。
+ * - 轮换分钟 ∈ 离散模板；且主力保留 ≥ `STARTER_MIN_MINUTES`（starter protection）。
+ * - GK 永不轮换；Managed Club 永不轮换（全 XI = 90）。
+ *
+ * @param {object} state
+ * @param {string} teamId
+ * @param {{formation?: string}} [tactics]
+ * @param {object[]} [effectiveXI] `resolveMatchSquad` 的输出（Effective XI，用于 Team Strength）
+ * @returns {{slots: object[], minutesByPlayer: Map<string, number>}}
+ */
+export function planMatchMinutes(state, teamId, tactics = {}, effectiveXI = null) {
+  const cfg = AI_SELECTION_DEVELOPMENT_CONFIG;
+  const base = MATCH_LOAD_CONFIG.MINUTES_PER_MATCH;
+  const counts = lineCounts(tactics.formation);
+  const xi = Array.isArray(effectiveXI) ? effectiveXI.filter(Boolean) : [];
+  const managed = state?.runtime?.managedClubId ?? null;
+  const rotationEnabled = cfg.ROTATION_ENABLED && teamId !== managed;
+  const avail = availablePlayers(state, teamId);
+  const slots = [];
+  const minutesByPlayer = new Map();
+
+  for (const position of ['GK', 'DF', 'MF', 'FW']) {
+    const starters = xi.filter((p) => p.position === position);
+    const starterIds = new Set(starters.map((p) => p.id));
+    const line = starters.map((p) => ({ playerId: p.id, minutes: base }));
+    const total = starters.length * base;
+
+    if (rotationEnabled && ROTATION_POSITIONS.includes(position) && starters.length > 0) {
+      const rated = new Map(starters.map((p) => [p.id, playerLineRating(state, p, LINE_ATTRIBUTES[position])]));
+      const weakest = line
+        .map((l) => ({ playerId: l.playerId, minutes: l.minutes, rating: rated.get(l.playerId) }))
+        .sort((a, b) => a.rating - b.rating || a.playerId.localeCompare(b.playerId))[0];
+      const candidates = avail
+        .filter((p) => p.position === position && !starterIds.has(p.id))
+        .map((p) => ({ playerId: p.id, rating: playerLineRating(state, p, LINE_ATTRIBUTES[position]) }))
+        .sort((a, b) => b.rating - a.rating || a.playerId.localeCompare(b.playerId));
+
+      let best = null;
+      const headroomCap = weakest.minutes - cfg.STARTER_MIN_MINUTES;
+      for (const c of candidates) {
+        const gap = Math.max(0, weakest.rating - c.rating);
+        const proximity = developmentProximity(gap, cfg.DISTANCE_SCALE);
+        if (proximity <= 0) continue;
+        const priority = selectionDevelopmentPriority(state, teamId, c.playerId);
+        const strength = priority * proximity;
+        const minutes = Math.min(rotationMinutesFor(strength), headroomCap);
+        if (minutes <= 0) continue;
+        if (best === null || strength > best.strength) best = { playerId: c.playerId, strength, minutes };
+      }
+      if (best) {
+        const w = line.find((l) => l.playerId === weakest.playerId);
+        w.minutes -= best.minutes;
+        line.push({ playerId: best.playerId, minutes: best.minutes });
+      }
+    }
+
+    for (const l of line) minutesByPlayer.set(l.playerId, (minutesByPlayer.get(l.playerId) || 0) + l.minutes);
+    slots.push({
+      position,
+      slotCount: position === 'GK' ? 1 : (counts[position] ?? 0),
+      total,
+      allocations: line.map((l) => ({ playerId: l.playerId, minutes: l.minutes })),
+    });
+  }
+  return { slots, minutesByPlayer };
+}
+
+/**
+ * `planMatchMinutes` 的便捷包装：仅返回 `playerId → minutes`。
+ * @returns {Map<string, number>}
+ */
+export function allocateMatchMinutes(state, teamId, tactics = {}, effectiveXI = null) {
+  return planMatchMinutes(state, teamId, tactics, effectiveXI).minutesByPlayer;
 }

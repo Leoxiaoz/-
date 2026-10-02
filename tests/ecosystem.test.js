@@ -19,7 +19,7 @@ import {
   initializePlayerRuntime,
   INJURY_STATUS,
 } from '../src/core/player-runtime.js';
-import { computeTeamStrength, selectMatchSquad } from '../src/core/team-strength.js';
+import { computeTeamStrength, resolveMatchSquad, planMatchMinutes } from '../src/core/team-strength.js';
 import { expectedGoals } from '../src/core/match.js';
 import { MemorySaveManager } from '../src/save/save-manager.js';
 import { INJURY_CONFIG, MATCH_LOAD_CONFIG } from '../src/core/sim-config.js';
@@ -38,10 +38,15 @@ function squadOf(state, teamId) {
 // ---------- 1. 出场统计真正生效 ----------
 test('比赛后出场统计真正产生 season/career 数据', () => {
   const state = leagueState(8);
-  // 第 1 轮每队各出场一次：期望出场数 = 开赛前各队出场集合人数之和（用未受伤的干净状态计算）。
+  // 第 1 轮每队各出场一次：期望出场数 = 开赛前各队 **Appearance Set** 人数之和
+  // （Step 39F-H：AI club 分钟分配使 Appearance Set ⊇ Effective XI；用未受伤的干净状态计算）。
   const pristine = leagueState(8);
   const expected = Object.keys(pristine.runtime.clubs)
-    .reduce((sum, id) => sum + selectMatchSquad(pristine, id).length, 0);
+    .reduce((sum, id) => {
+      const tactics = pristine.runtime.clubs[id].tactics ?? {};
+      const xi = resolveMatchSquad(pristine, id, tactics);
+      return sum + planMatchMinutes(pristine, id, tactics, xi).minutesByPlayer.size;
+    }, 0);
 
   new SimulationCore().advanceDays(state, 1); // 第 1 轮即有比赛
   let seasonApp = 0;

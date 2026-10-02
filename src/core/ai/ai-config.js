@@ -145,4 +145,17 @@ export const AI_SELECTION_DEVELOPMENT_CONFIG = Object.freeze({
    *  `mod = FLOOR + RANGE × persNorm`。temporary calibration default; NOT frozen. */
   PERSONALITY_FLOOR: 0.8,
   PERSONALITY_RANGE: 0.2,
+
+  // ---- Step 39F-H：Rotation / Actual Match Minutes（temporary calibration defaults; NOT frozen）----
+  /** 是否启用 AI Club 的 minute allocation（Managed Club 永不启用）。 */
+  ROTATION_ENABLED: true,
+  /** 主力最低分钟保护：rotation 不得把主力压到该值以下。 */
+  STARTER_MIN_MINUTES: 45,
+  /** 轮换强度(strength=priority×proximity) → 离散分钟模板（降序匹配第一个 strength ≥ min）。 */
+  ROTATION_TEMPLATES: Object.freeze([
+    Object.freeze({ min: 0.50, minutes: 45 }),
+    Object.freeze({ min: 0.35, minutes: 30 }),
+    Object.freeze({ min: 0.20, minutes: 20 }),
+    Object.freeze({ min: 0.10, minutes: 15 }),
+  ]),
 });

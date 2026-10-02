@@ -507,7 +507,7 @@ test('N. 长跑 10/50/100/200 赛季（AI 启用）：不变量稳定，无 NaN/
 // ===========================================================================
 // O. Golden regression（AI 接入后基线不变；赛季 1 内无 rollover）
 // ===========================================================================
-test('O. Golden regression：赛季 1 内比分/出场基线不变（143/143/1141）', () => {
+test('O. Golden regression：赛季 1 内比分/出场基线不变（143/143/1179）', () => {
   const state = leagueState(8);
   new SimulationCore().advanceDays(state, 90); // 赛季 1 内，无 rollover（AI 不触发）
   const comp = state.runtime.competitions.lg_a;
@@ -516,7 +516,7 @@ test('O. Golden regression：赛季 1 内比分/出场基线不变（143/143/114
   const playerApp = state.static.players.reduce((s, p) => s + state.runtime.players[p.id].stats.season.appearances, 0);
   assertEquals(totalGoals, 143);
   assertEquals(playerGoals, 143);
-  assertEquals(playerApp, 1141);
+  assertEquals(playerApp, 1179);
   assertEquals(aiEvents(state).length, 0, '赛季 1 内不应触发 AI');
 });
 

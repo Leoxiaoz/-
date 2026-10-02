@@ -27,6 +27,7 @@ import './ai.test.js';
 import './ai-depth-intake.test.js';
 import './ai-potential-estimate.test.js';
 import './ai-selection-development.test.js';
+import './ai-minute-allocation.test.js';
 import './development-derived.test.js';
 import './finance-feedback.test.js';
 import './competition.test.js';

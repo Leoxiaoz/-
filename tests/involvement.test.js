@@ -10,7 +10,7 @@ import { createGameState } from '../src/core/game-state.js';
 import { parseWorld } from '../src/data/data-loader.js';
 import { SimulationCore } from '../src/core/simulation.js';
 import { simulateMatch } from '../src/core/match.js';
-import { resolveMatchSquad, computeTeamStrength } from '../src/core/team-strength.js';
+import { resolveMatchSquad, computeTeamStrength, planMatchMinutes } from '../src/core/team-strength.js';
 import { getEffectiveAttributes, getPlayerRuntime, getPlayerProfile, initializePlayerRuntime } from '../src/core/player-runtime.js';
 import { MATCH_LOAD_CONFIG } from '../src/core/sim-config.js';
 import { serializeState, deserializeState, MemorySaveManager } from '../src/save/save-manager.js';
@@ -126,10 +126,15 @@ test('simulation 赛后只消费 involvements：出场集合不再单独维护 s
   // 侧对象（等价 #buildSide）不含 squadIds
   const s = side(state, 'clb_001');
   assert(!('squadIds' in s), '不再单独维护 squadIds');
-  // 真实推进一场：出场统计应等于双方出场集合人数（用干净状态计算期望，避免赛后伤病干扰）
+  // 真实推进一场：出场统计应等于双方 **Appearance Set** 人数
+  // （Step 39F-H：AI club Appearance Set ⊇ Effective XI；用干净状态计算期望，避免赛后伤病干扰）
   const pristine = leagueState(8);
   const expected = Object.keys(pristine.runtime.clubs)
-    .reduce((sum, id) => sum + resolveMatchSquad(pristine, id, pristine.runtime.clubs[id].tactics).length, 0);
+    .reduce((sum, id) => {
+      const tactics = pristine.runtime.clubs[id].tactics ?? {};
+      const xi = resolveMatchSquad(pristine, id, tactics);
+      return sum + planMatchMinutes(pristine, id, tactics, xi).minutesByPlayer.size;
+    }, 0);
   new SimulationCore().advanceDays(state, 1); // 第 1 轮
   const seasonApp = state.static.players.reduce(
     (s2, p) => s2 + getPlayerRuntime(state, p.id).stats.season.appearances, 0,
@@ -138,8 +143,18 @@ test('simulation 赛后只消费 involvements：出场集合不再单独维护 s
 });
 
 // ---------- 10. season/career 聚合一致 ----------
-test('involvements 驱动 season/career 聚合：11 首发各 +1 出场 +90 分钟', () => {
+test('involvements 驱动 season/career 聚合：实际分钟与出场次数一致', () => {
   const state = leagueState(8);
+  // 期望分钟：用干净状态按同一确定性 Minute Allocation 计算（每队本轮各赛一场）。
+  const pristine = leagueState(8);
+  const expectedMinutes = new Map();
+  for (const id of Object.keys(pristine.runtime.clubs)) {
+    const tactics = pristine.runtime.clubs[id].tactics ?? {};
+    const xi = resolveMatchSquad(pristine, id, tactics);
+    for (const [pid, min] of planMatchMinutes(pristine, id, tactics, xi).minutesByPlayer) {
+      expectedMinutes.set(pid, (expectedMinutes.get(pid) || 0) + min);
+    }
+  }
   new SimulationCore().advanceDays(state, 1);
   const comp = state.runtime.competitions.lg_a;
   const playedCount = comp.fixtures.filter((f) => f.played).length; // 第 1 轮 4 场
@@ -147,10 +162,15 @@ test('involvements 驱动 season/career 聚合：11 首发各 +1 出场 +90 分�
   for (const p of state.static.players) {
     const rt = getPlayerRuntime(state, p.id);
     const app = rt.stats.season.appearances;
-    if (app > 0) {
+    const expMin = expectedMinutes.get(p.id) || 0;
+    if (expMin > 0) {
+      // 每队本轮恰赛一场 ⇒ 实际出场 1 次，分钟 == 本场分配分钟（0 < minutes ≤ 90）。
+      assertEquals(app, 1, `${p.id} 应有 1 次出场`);
       assertEquals(app, rt.stats.career.appearances);
-      assertEquals(rt.stats.season.minutes, app * 90);
+      assertEquals(rt.stats.season.minutes, expMin);
+      assert(expMin > 0 && expMin <= 90, `单球员分钟应在 (0, 90]：${expMin}`);
     } else {
+      assertEquals(app, 0, `${p.id} 不应出场`);
       assertEquals(rt.stats.season.minutes, 0);
     }
   }

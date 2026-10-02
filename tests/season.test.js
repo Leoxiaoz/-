@@ -68,14 +68,14 @@ function fingerprint(state) {
 /**
  * 行为基线指纹（deterministic regression baseline）。
  * 语义：固定输入（同一 .fdb 世界 + 同一推进天数 + `enableAI:false`）下，多个时间点必须产生
- * **稳定、可重复**的运行时指纹；本基线已按 **Step 39F-G（D-42 B2+C2 development-aware selection）
- * 的实测输出**重新冻结（非人工填写），取代 39F-C 基线。
- * 说明：39F-G 使 AI 选择在同 rating 球员间使用 bounded development priority 重排（influence < 1，
- * 不跨越整数 rating 差）⇒ 比分不变但出场分布/事件顺序改变，故全部时点指纹按新实测值重冻结（明确行为变更）。
+ * **稳定、可重复**的运行时指纹；本基线已按 **Step 39F-H（Rotation / Actual Match Minutes，AI club）
+ * 的实测输出**重新冻结（非人工填写），取代 39F-G 基线。
+ * 说明：39F-H 使 AI club 出现 15/20/30/45 等离散轮换分钟（Appearance Set ⊇ Effective XI）⇒
+ * 出场分布与分钟改变（比分/Team Strength 不变），故全部时点指纹按新实测值重冻结（明确行为变更）。
  */
 const BASELINE = {
-  1: 'aafa4bb8', 91: 'c1e97259', 92: '345e2bad', 121: '245ce209',
-  200: 'f83551f9', 400: 'c2752aff', 800: 'c5e76e30',
+  1: '9f016b39', 91: 'cc876cef', 92: 'f2762b0d', 121: '91f073dd',
+  200: '674ca0ea', 400: '26a7ae83', 800: 'cfbd2017',
 };
 
 // ---------- A. SeasonCalendar ----------

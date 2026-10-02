@@ -254,7 +254,7 @@ test('RNG 隔离：homeGoals/awayGoals/goal events 与 Step 21-A 前黄金基线
   assertEquals(state.season, 1);
   assertEquals(totalGoals, 143, '整季总进球不变');
   assertEquals(playerGoals, 143, '球员进球守恒不变');
-  assertEquals(playerApp, 1141, '总出场不变');
+  assertEquals(playerApp, 1179, '总出场不变');
 });
 
 // ---------- 10. 长期 10/50/100 赛季 ----------

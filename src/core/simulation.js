@@ -11,7 +11,7 @@
 
 import { SimulationError } from '../shared/errors.js';
 import { addDays } from './date-utils.js';
-import { computeTeamStrength, resolveMatchSquad } from './team-strength.js';
+import { computeTeamStrength, resolveMatchSquad, planMatchMinutes } from './team-strength.js';
 import { repairManagedLineups } from './player-lineup.js';
 import { simulateMatch } from './match.js';
 import { applyResult } from './standings.js';
@@ -21,6 +21,7 @@ import {
   resetSeasonStats,
   recordAppearance,
   getPlayerRuntime,
+  getPlayerProfile,
   getEffectiveAttributes,
   setVitals,
 } from './player-runtime.js';
@@ -162,21 +163,25 @@ export class SimulationCore {
   #buildSide(state, teamId) {
     const club = getClubRuntime(state, teamId);
     const tactics = club?.tactics ?? {};
-    // 出场集合 = 比赛模拟实际使用的球员（第 20 步统一入口：玩家管理球队用已保存阵容，其余自动选阵）。
-    const squad = resolveMatchSquad(state, teamId, tactics);
+    // Effective XI = 比赛模拟实际使用的首发集合（第 20 步统一入口：玩家管理球队用已保存阵容，其余自动选阵）。
+    const xi = resolveMatchSquad(state, teamId, tactics);
+    // Step 39F-H：Minute Allocation（仅 AI club；Managed 恒 90/0）。Appearance Set 可 ⊇ Effective XI。
+    const plan = planMatchMinutes(state, teamId, tactics, xi);
+    const xiById = new Map(xi.map((p) => [p.id, p]));
+    const players = [];
+    for (const [playerId, minutes] of plan.minutesByPlayer) {
+      if (!(minutes > 0)) continue;
+      const p = xiById.get(playerId) ?? getPlayerProfile(state, playerId);
+      if (!p) continue;
+      players.push({ id: p.id, position: p.position, ...getEffectiveAttributes(state, playerId) });
+    }
     return {
       teamId,
       tactics,
-      // 实力必须基于**本场实际出场集合**，玩家阵容/阵型变化才能真实影响比赛。
-      strength: computeTeamStrength(state, teamId, tactics, squad),
-      // 传给比赛引擎的球员带**有效属性**（基础 + deltas，已夹取潜力上限），
-      // 使 `selectScorer` 按球员当前能力（而非静态基础）判分；
-      // 参与统计改由 match 产出 `involvements`（G1a），本层不再单独维护 squadIds。
-      players: squad.map((p) => ({
-        id: p.id,
-        position: p.position,
-        ...getEffectiveAttributes(state, p.id),
-      })),
+      // 实力必须基于**本场 Effective XI**（分钟分配绝不进入 Team Strength / Expected Goals）。
+      strength: computeTeamStrength(state, teamId, tactics, xi),
+      players,
+      minutesByPlayer: plan.minutesByPlayer,
     };
   }
 

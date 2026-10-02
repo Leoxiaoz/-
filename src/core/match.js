@@ -114,16 +114,22 @@ export function simulateSegments({ teamId, players, expected, seedRng }) {
  * @param {object[]} players 本场实际使用的球员（含 id/position）
  * @param {'home'|'away'} side
  * @param {object[]} events 该方的事件
+ * @param {Map<string, number>|null} [minutesMap] Step 39F-H：`playerId → 本场分钟`；缺省 90（向后兼容）
  * @returns {Record<string, object>} playerId → involvement
  */
-export function buildInvolvements(players, side, events) {
+export function buildInvolvements(players, side, events, minutesMap = null) {
   const involvements = {};
+  const hasMap = minutesMap && typeof minutesMap.get === 'function';
   for (const p of players) {
+    const assigned = hasMap ? Number(minutesMap.get(p.id)) : NaN;
+    const minutes = Number.isInteger(assigned) && assigned >= 0
+      ? assigned
+      : MATCH_LOAD_CONFIG.MINUTES_PER_MATCH;
     involvements[p.id] = {
       side,
       role: 'starter',
       position: p.position,
-      minutes: MATCH_LOAD_CONFIG.MINUTES_PER_MATCH,
+      minutes,
       goals: 0,
       assists: 0,
       yellow: 0,
@@ -282,9 +288,10 @@ export function simulateMatch({ home, away, context, seed }) {
   const events = [...homeSeg.events, ...awaySeg.events].sort((a, b) => a.minute - b.minute);
 
   // G1a：统一比赛参与结构（后处理由 involvements 驱动，不再分别扫描阵容/事件推导统计）。
+  // Step 39F-H：若提供 minutesByPlayer（AI Club），按实际分钟写入；否则回退 90（向后兼容）。
   const involvements = {
-    ...buildInvolvements(home.players, 'home', homeSeg.events),
-    ...buildInvolvements(away.players, 'away', awaySeg.events),
+    ...buildInvolvements(home.players, 'home', homeSeg.events, home.minutesByPlayer ?? null),
+    ...buildInvolvements(away.players, 'away', awaySeg.events, away.minutesByPlayer ?? null),
   };
 
   // Step 21-A：比分与 goal events **已确定**后，用**独立派生 RNG** 生成球员表现并合并进 involvements。
