@@ -24,6 +24,8 @@ import {
 } from './player-runtime.js';
 import { getClubRuntime, recordEvent } from './game-state.js';
 import { repairSquadForMatch, selectBenchCandidates, LINEUP_LIMITS } from './player-lineup.js';
+import { rankLineCandidates, selectionDevelopmentPriority } from './ai/ai-development-signals.js';
+import { AI_SELECTION_DEVELOPMENT_CONFIG } from './ai/ai-config.js';
 
 /** 阵型各线人数（含 GK 固定 1）。 */
 function lineCounts(formation) {
@@ -52,19 +54,43 @@ function playerLineRating(state, player, attrs) {
 }
 
 /**
- * 自动选阵：选出本场**出场集合**（比赛模拟实际使用的球员），按位置取各线评分最高者。
+ * 自动选阵：选出本场**出场集合**（比赛模拟实际使用的球员）。
+ * Step 39F-G：对 AI club（非 managed）在同位置线内使用 B2 Marginal Starter Cutoff + C2
+ * Bounded Effective Competitive Score（current rating + bounded development influence）排序；
+ * managed club / 无 dev context 时退化为 `rating DESC, playerId ASC`。
  * 用于 AI 球队 / 未选择管理球队 / 玩家阵容修复失败时的回退（第 20 步起统一入口见 `resolveMatchSquad`）。
  * @returns {object[]} 静态球员对象数组（GK×1 + 各线按阵型人数）
  */
 export function selectMatchSquad(state, teamId, tactics = {}) {
   const players = availablePlayers(state, teamId);
   const counts = lineCounts(tactics.formation);
-  const pickLine = (position, count) => players
-    .filter((p) => p.position === position)
-    .map((p) => ({ player: p, rating: playerLineRating(state, p, LINE_ATTRIBUTES[position]) }))
-    .sort((a, b) => b.rating - a.rating)
-    .slice(0, Math.max(1, count))
-    .map((x) => x.player);
+  // Step 39F-G：development-aware soft priority 仅作用于 **AI club**（非 managed）。
+  // managed club 的 selectMatchSquad（及 repair 路径）行为保持完全不变。
+  const devCfg = AI_SELECTION_DEVELOPMENT_CONFIG;
+  const devEnabled = devCfg.ENABLED && teamId !== (state?.runtime?.managedClubId ?? null);
+  const pickLine = (position, count) => {
+    const slot = Math.max(1, count);
+    const pool = players
+      .filter((p) => p.position === position)
+      .map((p) => ({ player: p, rating: playerLineRating(state, p, LINE_ATTRIBUTES[position]) }));
+    if (!devEnabled) {
+      pool.sort((a, b) => b.rating - a.rating || a.player.id.localeCompare(b.player.id));
+      return pool.slice(0, slot).map((x) => x.player);
+    }
+    // B2 Marginal Starter Cutoff + C2 Bounded Effective Competitive Score。
+    const candidates = pool.map((x) => ({
+      playerId: x.player.id,
+      rating: x.rating,
+      priority: selectionDevelopmentPriority(state, teamId, x.player.id),
+    }));
+    const ranked = rankLineCandidates(candidates, {
+      slotCount: slot,
+      distanceScale: devCfg.DISTANCE_SCALE,
+      cap: devCfg.CAP,
+    });
+    const byId = new Map(pool.map((x) => [x.player.id, x.player]));
+    return ranked.slice(0, slot).map((x) => byId.get(x.playerId));
+  };
   return [
     ...pickLine('GK', 1),
     ...pickLine('DF', counts.DF),

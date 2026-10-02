@@ -105,3 +105,44 @@ export const AI_CONFIG = Object.freeze({
     Object.freeze({ id: 'Conservative', potentialWeight: 0.35, reserveRatio: 0.40, softNeedEnabled: false, demandBias: 0.8, buyBias: 0.8, sellBias: 1.1 }),
   ]),
 });
+
+/**
+ * AI Match Selection — Development-aware Soft Priority（Step 39F-G 实现；D-42 / OD-39FG-DECISION-2）。
+ * 层级归属：Simulation Core / AI（纯配置，无副作用）。
+ *
+ * 语义：AI 俱乐部在 `selectMatchSquad` 中，对**同一 position line 内**的候选人应用
+ *   B2 = Marginal Starter Cutoff（benchmark） + C2 = Bounded Effective Competitive Score（comparator）：
+ *     competitiveGap      = marginalStarterCutoff − rating（≤0 视为 0）
+ *     proximity           = max(0, 1 − gap / DISTANCE_SCALE)         ∈ [0,1]
+ *     priority            = selectionDevelopmentPriority(...)         ∈ [0,1]
+ *     boundedInfluence    = clamp(priority × proximity × CAP, 0, CAP)
+ *     effectiveScore      = rating + boundedInfluence
+ *
+ * 红线：
+ * - 仅影响 **AI club** 的 `selectMatchSquad`；**不得**影响 managed club / `repairSquadForMatch`。
+ * - 不读 True Potential；不修改 Growth / Schema / Save；无 RNG。
+ * - CAP 直接界定“最多可翻转的 rating gap”上限（cap=2 ⇒ 无法推翻 >2 点差距）。
+ *
+ * ⚠ 以下数值为 **temporary implementation / calibration defaults**，**不是冻结设计参数**；
+ *   最终取值仍为 [TBD]。集中于此，禁止散落 magic number。
+ */
+export const AI_SELECTION_DEVELOPMENT_CONFIG = Object.freeze({
+  /** 是否启用 development-aware selection。 */
+  ENABLED: true,
+  /** Development influence 上限（rating 尺度）。temporary calibration default; NOT frozen. */
+  CAP: 2,
+  /** proximity = max(0, 1 − gap/distanceScale)。temporary calibration default; NOT frozen. */
+  DISTANCE_SCALE: 6,
+  /** Phase 门控（越年轻发展权重越高）。temporary calibration default; NOT frozen. */
+  PHASE_GATE: Object.freeze({
+    EMERGING: 1.0,
+    DEVELOPING: 0.8,
+    ESTABLISHING: 0.5,
+    PRIME: 0.25,
+    VETERAN: 0.1,
+  }),
+  /** Personality modifier（professionalism/determination/ambition 归一后映射）。
+   *  `mod = FLOOR + RANGE × persNorm`。temporary calibration default; NOT frozen. */
+  PERSONALITY_FLOOR: 0.8,
+  PERSONALITY_RANGE: 0.2,
+});

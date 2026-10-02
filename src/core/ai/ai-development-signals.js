@@ -22,6 +22,8 @@ import { getPlayerProfile, getPlayerRuntime, INJURY_STATUS } from '../player-run
 import { ratePlayerByLine } from '../player-lineup.js';
 import { ageOn } from '../date-utils.js';
 import { getDevelopmentPhase, DEVELOPMENT_PHASE_SCORE } from './ai-development-phase.js';
+import { estimateHeadroomScore } from './ai-potential-estimate.js';
+import { AI_SELECTION_DEVELOPMENT_CONFIG } from './ai-config.js';
 
 /** 位置结构最低线（与 ROSTER_CONFIG 一致；GK 单列）。 */
 const STRUCTURAL_MIN = Object.freeze({
@@ -175,4 +177,126 @@ export function squadStructureFit(state, clubId, position) {
  */
 export function positionNeedFit(state, clubId, playerId) {
   return abilityGapFit(state, clubId, playerId);
+}
+
+// =====================================================================================
+// Step 39F-G — AI Selection: B2 Marginal Starter Cutoff + C2 Bounded Effective Score
+// （D-42 / OD-39FG-DECISION-2 已冻结结构；参数为 temporary calibration defaults）
+// =====================================================================================
+
+/** 通用数值夹取（非有限值回退 min）。 */
+function clampRange(v, min, max) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return min;
+  return Math.min(max, Math.max(min, n));
+}
+
+/**
+ * B2 — Marginal Starter Cutoff（[已定 结构]）。
+ * 输入 **降序** 的 line rating 列表与该 position 的 slot 数；
+ * 返回第 `slotCount` 名（0-based: index slotCount−1）的 rating 作为“首发竞争线”；
+ * 若候选人数 ≤ slotCount（所有人都是首发候选）→ 返回 `null`（此后 gap 恒为 0）。
+ * @returns {number|null}
+ */
+export function marginalStarterCutoff(sortedRatingsDesc, slotCount) {
+  const slot = Math.max(1, Math.floor(Number(slotCount) || 1));
+  if (!Array.isArray(sortedRatingsDesc) || sortedRatingsDesc.length <= slot) return null;
+  const value = Number(sortedRatingsDesc[slot - 1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Development Proximity（[已定 结构]）：`max(0, 1 − gap / scale)`，clamp 到 [0,1]。
+ * gap ≤ 0 → 1；gap ≥ scale → 0。
+ * @returns {number} 0–1
+ */
+export function developmentProximity(competitiveGap, distanceScale) {
+  const gap = Number(competitiveGap);
+  if (!Number.isFinite(gap) || gap <= 0) return 1;
+  const scale = Number(distanceScale);
+  if (!Number.isFinite(scale) || scale <= 0) return 0;
+  return clamp01(1 - gap / scale);
+}
+
+/**
+ * Bounded Development Influence（[已定 结构]）：`clamp(priority × proximity × cap, 0, cap)`。
+ * priority 或 proximity 为 0 ⇒ influence = 0。cap 直接界定最大可翻转 rating gap。
+ * @returns {number} 0–cap
+ */
+export function boundedDevelopmentInfluence(priority, proximity, cap) {
+  const p = clamp01(priority);
+  const q = clamp01(proximity);
+  const c = Math.max(0, Number(cap) || 0);
+  return clampRange(Math.min(c, p * q * c), 0, c);
+}
+
+/**
+ * C2 — Effective Competitive Score（[已定 结构]）：`currentRating + boundedInfluence`。
+ * @returns {number}
+ */
+export function effectiveCompetitiveScore(currentRating, boundedInfluence) {
+  const r = Number(currentRating) || 0;
+  return r + Math.max(0, Number(boundedInfluence) || 0);
+}
+
+/**
+ * Selection-oriented Development Priority（[PROPOSED] 派生；forward-looking，不读 True Potential）。
+ * `priority = clamp01( phaseGate(age) × headroom(estimated) × personalityMod )`。
+ * - headroom 来自 AI Potential Estimator（Estimated Potential，非 True Potential）。
+ * - **不使用** retrospective minutes / Playing Opportunity（避免自我强化）。
+ * - 纯派生、无 RNG、deterministic。
+ * @returns {number} 0–1
+ */
+export function selectionDevelopmentPriority(state, clubId, playerId) {
+  const cfg = AI_SELECTION_DEVELOPMENT_CONFIG;
+  if (!cfg.ENABLED) return 0;
+  const profile = getPlayerProfile(state, playerId);
+  if (!profile) return 0;
+  const age = getPlayerAge(state, playerId);
+  const phase = getDevelopmentPhase(age);
+  const gate = Number(cfg.PHASE_GATE[phase]);
+  if (!Number.isFinite(gate) || gate <= 0) return 0;
+  const headroom = clamp01(estimateHeadroomScore(state, clubId, playerId) / 100);
+  const pers = profile.personality ?? {};
+  let sum = 0;
+  let n = 0;
+  for (const key of ['professionalism', 'determination', 'ambition']) {
+    const v = Number(pers[key]);
+    sum += Number.isFinite(v) ? clampRange(v, 1, 99) : 50;
+    n += 1;
+  }
+  const persNorm = clamp01((sum / n - 1) / 98);
+  const mod = cfg.PERSONALITY_FLOOR + cfg.PERSONALITY_RANGE * persNorm;
+  return clamp01(gate * headroom * mod);
+}
+
+/**
+ * 对**同一 position line** 的候选做 development-aware 排序（纯函数）。
+ * 输入候选：`{ playerId, rating, priority ∈[0,1] }`。
+ * 输出按 `effectiveCompetitiveScore DESC → rating DESC → playerId ASC` 排序的评分明细。
+ * 保证：priority 全 0 ⇒ 退化为 `rating DESC, playerId ASC`（regression anchor）。
+ * @returns {Array<{playerId:string, rating:number, gap:number, proximity:number,
+ *                  priority:number, influence:number, effective:number}>}
+ */
+export function rankLineCandidates(candidates, options = {}) {
+  const list = Array.isArray(candidates) ? candidates : [];
+  const slotCount = options.slotCount;
+  const distanceScale = options.distanceScale;
+  const cap = options.cap;
+  const sorted = list.map((c) => Number(c.rating) || 0).sort((a, b) => b - a);
+  const cutoff = marginalStarterCutoff(sorted, slotCount);
+  const scored = list.map((c) => {
+    const rating = Number(c.rating) || 0;
+    const gap = cutoff == null ? 0 : Math.max(0, cutoff - rating);
+    const proximity = developmentProximity(gap, distanceScale);
+    const priority = clamp01(c.priority);
+    const influence = boundedDevelopmentInfluence(priority, proximity, cap);
+    return { playerId: c.playerId, rating, gap, proximity, priority, influence, effective: effectiveCompetitiveScore(rating, influence) };
+  });
+  scored.sort((a, b) => (
+    b.effective - a.effective
+    || b.rating - a.rating
+    || a.playerId.localeCompare(b.playerId)
+  ));
+  return scored;
 }
