@@ -190,3 +190,36 @@ export const AI_TRAINING_DECISION_CONFIG = Object.freeze({
   /** STRONG 综合分阈值（TEMPORARY）。 */
   STRONG_SCORE_MIN: 0.35,
 });
+
+/**
+ * Relative Role Load —— Step 39F-J-B（D-39FJ-B CAL-FREEZE；**参数 FROZEN**）。
+ * 层级归属：Simulation Core / AI（纯配置，无副作用）。
+ *
+ * 语义：在 Training Decision 之上叠加**保护性**角色超额检测：
+ *   Expected Participation（season-boundary，由阵容结构派生） vs Actual Participation（完赛赛季分钟）。
+ *   仅当 `EXTREME` 且 base Training Level = NORMAL 时，`NORMAL → LIMITED`。
+ * - R5 range-excess（R4 normalized-excess 已否决：高 expected 饱和）。
+ * - 不读取 actual minutes 反推 expected；不读取 selectionDevelopmentPriority；无 RNG；不持久化。
+ */
+export const AI_RELATIVE_ROLE_LOAD_CONFIG = Object.freeze({
+  /** 各 role 的 Expected Participation 区间（center ± tolerance；FROZEN）。 */
+  ROLES: Object.freeze({
+    STARTER: Object.freeze({ center: 0.85, tolerance: 0.10 }),
+    ROTATION: Object.freeze({ center: 0.45, tolerance: 0.10 }),
+    BENCH: Object.freeze({ center: 0.20, tolerance: 0.10 }),
+    GK1: Object.freeze({ center: 0.90, tolerance: 0.10 }),
+    GK2: Object.freeze({ center: 0.20, tolerance: 0.10 }),
+    GK3: Object.freeze({ center: 0.10, tolerance: 0.10 }),
+  }),
+  /** excessive 上限：`0 < excess ≤ BAND` → EXCESSIVE；`> BAND` → EXTREME（FROZEN）。 */
+  EXCESSIVE_BAND: 0.15,
+  /** Rotation 名额上限（FROZEN）。 */
+  K_CAP: 3,
+  /** 分类枚举。 */
+  CLASSIFICATION: Object.freeze({
+    NORMAL: 'NORMAL',
+    EXCESSIVE: 'EXCESSIVE',
+    EXTREME: 'EXTREME',
+    NO_RELATIVE_LOAD: 'NO_RELATIVE_LOAD',
+  }),
+});

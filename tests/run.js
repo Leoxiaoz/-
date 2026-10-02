@@ -29,6 +29,7 @@ import './ai-potential-estimate.test.js';
 import './ai-selection-development.test.js';
 import './ai-minute-allocation.test.js';
 import './ai-training-decision.test.js';
+import './ai-relative-role-load.test.js';
 import './development-derived.test.js';
 import './finance-feedback.test.js';
 import './competition.test.js';

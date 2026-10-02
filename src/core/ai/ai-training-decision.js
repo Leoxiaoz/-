@@ -25,6 +25,7 @@ import { getDevelopmentPhase, DEVELOPMENT_PHASES } from './ai-development-phase.
 import { estimateHeadroomScore } from './ai-potential-estimate.js';
 import { evaluateDevelopmentEnvironment } from './ai-development-environment.js';
 import { getTeamAvailableMatches } from './ai-development-signals.js';
+import { evaluateRelativeRoleLoad } from './ai-relative-role-load.js';
 import { AI_TRAINING_DECISION_CONFIG as C } from './ai-config.js';
 
 const LEVEL = C.LEVELS;
@@ -82,27 +83,59 @@ export function classifySeasonLoad(loadRate) {
  * @returns {{trainingLevel: 'LIMITED'|'NORMAL'|'STRONG', reasons: string[], limitingFactors: string[]}}
  */
 export function evaluateTrainingDecision(state, clubId, playerId, options = {}) {
+  const base = computeBaseTrainingLevel(state, clubId, playerId, options);
+  // Step 39F-J-B：Relative Role Load（**保护性叠加**；只允许 base NORMAL → LIMITED）。
+  const relativeRoleLoad = clubId
+    ? evaluateRelativeRoleLoad(state, clubId, playerId, {
+      seasonNumber: options.seasonNumber,
+      availabilityCache: options.availabilityCache ?? null,
+    })
+    : null;
+  const level = applyRelativeRoleLoad(base.level, relativeRoleLoad?.classification ?? null);
+  const reasons = [...base.reasons];
+  if (level !== base.level) reasons.push('relative_role_load_extreme');
+  else if (relativeRoleLoad?.classification === 'EXTREME') reasons.push('relative_role_load_extreme_suppressed');
+  return {
+    trainingLevel: level,
+    reasons,
+    limitingFactors: base.limitingFactors,
+    relativeRoleLoad,
+  };
+}
+
+/**
+ * Relative Role Load 对 Training Decision 的**唯一**影响（纯函数，D-39FJ-B §十一）：
+ * `EXTREME` 且 base = NORMAL → LIMITED；其余（含 base=STRONG / LIMITED）不变。
+ * @returns {'LIMITED'|'NORMAL'|'STRONG'}
+ */
+export function applyRelativeRoleLoad(baseLevel, classification) {
+  if (classification === 'EXTREME' && baseLevel === LEVEL.NORMAL) return LEVEL.LIMITED;
+  return baseLevel;
+}
+
+/** 计算 base Training Level（不含 Relative Role Load）。 */
+function computeBaseTrainingLevel(state, clubId, playerId, options = {}) {
   const reasons = [];
   const limitingFactors = [];
 
   const profile = getPlayerProfile(state, playerId);
   const rt = getPlayerRuntime(state, playerId);
   if (!profile || !rt) {
-    return { trainingLevel: LEVEL.NORMAL, reasons: ['no_player_data'], limitingFactors: [] };
+    return { level: LEVEL.NORMAL, reasons: ['no_player_data'], limitingFactors: [] };
   }
   // STEP 2：缺失年龄 → 保守回退 NORMAL。
   if (!profile.birthDate) {
-    return { trainingLevel: LEVEL.NORMAL, reasons: ['missing_age'], limitingFactors: ['MISSING_AGE'] };
+    return { level: LEVEL.NORMAL, reasons: ['missing_age'], limitingFactors: ['MISSING_AGE'] };
   }
   const age = ageOn(profile.birthDate, state.currentDate);
   if (!Number.isFinite(age)) {
-    return { trainingLevel: LEVEL.NORMAL, reasons: ['missing_age'], limitingFactors: ['MISSING_AGE'] };
+    return { level: LEVEL.NORMAL, reasons: ['missing_age'], limitingFactors: ['MISSING_AGE'] };
   }
   const phase = getDevelopmentPhase(age);
 
   // STEP 6：Hard Gates（优先级最高）。
   if (rt.injury?.status === INJURY_STATUS.INJURED) {
-    return { trainingLevel: LEVEL.LIMITED, reasons: ['injured'], limitingFactors: ['INJURED'] };
+    return { level: LEVEL.LIMITED, reasons: ['injured'], limitingFactors: ['INJURED'] };
   }
 
   let allowedMax = LEVEL.STRONG; // 允许的最高档
@@ -128,7 +161,7 @@ export function evaluateTrainingDecision(state, clubId, playerId, options = {}) 
     const band = classifySeasonLoad(loadRate);
     if (band === 'VERY_HIGH') {
       return {
-        trainingLevel: LEVEL.LIMITED,
+        level: LEVEL.LIMITED,
         reasons: [...reasons, 'very_high_match_load'],
         limitingFactors: uniq([...limitingFactors, 'VERY_HIGH_MATCH_LOAD']),
       };
@@ -144,13 +177,13 @@ export function evaluateTrainingDecision(state, clubId, playerId, options = {}) 
 
   // Hard caps（injury recovery / veteran / high load）：封顶 NORMAL。
   if (allowedMax !== LEVEL.STRONG) {
-    return { trainingLevel: LEVEL.NORMAL, reasons, limitingFactors: uniq(limitingFactors) };
+    return { level: LEVEL.NORMAL, reasons, limitingFactors: uniq(limitingFactors) };
   }
 
   // STEP 7：STRONG 资格（phase gate）。
   if (!STRONG_PHASES.has(phase)) {
     reasons.push('phase_restricted');
-    return { trainingLevel: LEVEL.NORMAL, reasons, limitingFactors: uniq(limitingFactors) };
+    return { level: LEVEL.NORMAL, reasons, limitingFactors: uniq(limitingFactors) };
   }
 
   // STEP 8/9/10：bounded soft signals。
@@ -171,13 +204,9 @@ export function evaluateTrainingDecision(state, clubId, playerId, options = {}) 
   reasons.push(`headroom_${headroomNorm.toFixed(3)}`, `environment_${envNorm.toFixed(3)}`, `personality_${persNorm.toFixed(3)}`);
 
   if (blockers.length > 0 || persNorm < C.PERSONALITY_STRONG_MIN || strongScore < C.STRONG_SCORE_MIN) {
-    return {
-      trainingLevel: LEVEL.NORMAL,
-      reasons,
-      limitingFactors: uniq([...limitingFactors, ...blockers]),
-    };
+    return { level: LEVEL.NORMAL, reasons, limitingFactors: uniq([...limitingFactors, ...blockers]) };
   }
-  return { trainingLevel: LEVEL.STRONG, reasons: [...reasons, 'strong_eligible'], limitingFactors: uniq(limitingFactors) };
+  return { level: LEVEL.STRONG, reasons: [...reasons, 'strong_eligible'], limitingFactors: uniq(limitingFactors) };
 }
 
 /**
