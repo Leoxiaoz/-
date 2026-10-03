@@ -40,6 +40,7 @@ import './match-tactical-context.test.js';
 import './match-team-shape.test.js';
 import './match-movement.test.js';
 import './match-movement-architecture.test.js';
+import './match-movement-harness.test.js';
 import './development-derived.test.js';
 import './finance-feedback.test.js';
 import './competition.test.js';
