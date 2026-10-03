@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Football Manager Sim — 项目骨架</title>
+  <link rel="stylesheet" href="styles/main.css" />
+</head>
+<body>
+  <!-- UI Layer：仅负责呈现与事件转发，不含任何模拟逻辑 -->
+  <div id="app" class="app">
+    <header class="app__header">
+      <h1 class="app__title">Football Manager Sim</h1>
+      <span class="app__badge">骨架 v0.1</span>
+    </header>
+
+    <main id="view-root" class="app__main" aria-live="polite">
+      <p class="muted">正在启动…</p>
+    </main>
+
+    <footer class="app__footer" id="app-actions">
+      <button id="btn-tick" class="btn" type="button" data-action="tick">推进一天</button>
+      <button id="btn-week" class="btn" type="button" data-action="advance-week">推进一周</button>
+      <button id="btn-save" class="btn" type="button" data-action="save">保存</button>
+      <button id="btn-load" class="btn" type="button" data-action="load">读取</button>
+    </footer>
+  </div>
+
+  <!-- 组合根：装配各层，不含业务规则 -->
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

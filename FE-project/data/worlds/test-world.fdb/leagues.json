@@ -1,0 +1,4 @@
+[
+  { "id": "lg_a1", "name": "League A1", "countryId": "cty_a", "tier": 1 },
+  { "id": "lg_b1", "name": "League B1", "countryId": "cty_b", "tier": 1 }
+]

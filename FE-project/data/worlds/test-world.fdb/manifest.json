@@ -1,0 +1,9 @@
+{
+  "id": "test-world",
+  "name": "Test World (Skeleton)",
+  "version": "0.1.0",
+  "format": "fdb-json-0",
+  "startDate": "2026-07-01",
+  "engineCompat": ">=0.1.0",
+  "note": "骨架阶段最小测试数据；名称均为占位，不含任何真实球队/球员信息。"
+}
