@@ -34,6 +34,7 @@ import './ai-development-plan.test.js';
 import './ai-development-philosophy.test.js';
 import './match-decision.test.js';
 import './match-decision-calibration.test.js';
+import './match-pass-resolution.test.js';
 import './development-derived.test.js';
 import './finance-feedback.test.js';
 import './competition.test.js';
