@@ -833,3 +833,17 @@
 - **失败语义（D38D.13）**：Plan 非法 → **整个 transition 失败**（无部分升降级 / 无部分写入 / 无随机修复 / 不改 standings / 不改 static）；非法 Division 配置在 validation 阶段**明确失败**，**禁止运行时静默猜测**。
 - **回归不变量（D38D.14）**：Golden `143/143/1141`、测试基线 `336/336`；单 Division 与单联赛边界行为**等价**；**DDTI C1 / Finance Feedback / Transfer Domain / Match Engine / Team Strength / Schema 10 / Save Format 1 不变**。
 - **Deferred**：Playoff / Domestic Cup / Continental / Qualification / Complex stages / Youth·Reserve / Staff / Scout / Reputation / Revenue·TV·Sponsor·Prize / Loan / Registration / licensing / FFP / promotion history entity / CompetitionSeason persistent entity。
+
+---
+
+## §38 Ball → Tactical Context → Player Situation → Decision 只读因果链（Step 39F-M-C-04）
+
+- **状态**：**READ-ONLY CAUSALITY GATE 已实现并验证**。承接 39F-M-C-03（Ball Physics Foundation，COMPLETE）。
+- **数据流（单向，禁止回流）**：`MatchCore.ball` → Ball Physics facts → Tactical Context → Player Situation → Decision（只读几何）。**Decision 不得反写 BallState；Physics / Context 不得反调 Decision。**
+- **球事实派生层（新增）**：`src/core/match/ball-facts.js`——`deriveBallFacts(matchCore)` 由**唯一来源 `MatchCore.ball`** 派生只读快照（`position / velocity / speed / state / control / possessingTeamId / lastTouchPlayerId / inTransit`）；`deriveBallRelation(ballFacts, playerPos, playerVel)` 派生球员相对球几何（`relativePosition / distance / directionToBall / relativeVelocity / closingSpeed / movingTowardPlayer / movingAwayFromPlayer / timeToArrival`）；`playerVelocityFromMovement(matchCore, playerId)` 由 transient `movement` 派生球员速度。**不是第二套 Ball Truth**：每次调用重新派生、返回一次性快照、不含 `ball` 顶层副本、不写回 MatchCore。
+- **Tactical Context 扩展**：`buildTacticalContext(matchCore, teamId, options?)` 新增 `ballFacts / ballSpeed / ballVelocity / ballState / lastTouchPlayerId`；可选 `options.playerId` 附带 `ballRelation`。既有 `phase / ballZone / ballChannel / blockHeight / buildUpPhase / shapeValidity` 语义不变。
+- **Player Situation 扩展**：`buildPlayerSituation(matchCore, playerId)` 的 `ballState` 增补 `velocity / speed / state / lastTouchPlayerId`；`spatialContext.ballRelation` 增补球员相对球几何。既有字段与 Decision 行为不变。
+- **Decision Geometry**：为**只读几何事实**，即 `PlayerSituation.ballState` + `spatialContext.ballRelation`（决策经 `decidePlayerAction` 只读消费）。**本 Gate 不新增独立 geometry 模块**（避免与既有 `action-definitions` 几何重复形成第二套口径）。
+- **明确 Deferred**：DRIBBLE / TACKLE / PRESS / INTERCEPTION / SECOND_BALL Resolution、FOUL / OFFSIDE / GK Interaction / Set Piece、lofted / bounce / spin、正式 possession transfer、Production Loop、Renderer。
+- **不变**：PASS / SHOT resolution 与 state-update、Save Format 1、Schema 10、Production Loop、Renderer 均**未修改**；无 Math.random；无第三方 physics engine。测试基线：既有 777 + 新增 28 = **805 通过 / 0 失败**。
+- **Deferred**：Playoff / Domestic Cup / Continental / Qualification / Complex stages / Youth·Reserve / Staff / Scout / Reputation / Revenue·TV·Sponsor·Prize / Loan / Registration / licensing / FFP / promotion history entity / CompetitionSeason persistent entity。

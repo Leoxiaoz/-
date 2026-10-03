@@ -11,6 +11,7 @@
 
 import { clamp01, dist } from './player-situation.js';
 import { getTacticalState } from './tactical-state.js';
+import { deriveBallFacts, deriveBallRelation, playerVelocityFromMovement } from './ball-facts.js';
 import {
   TACTICAL_PHASE, POSSESSION_TENURE, BALL_ZONE, BALL_CHANNEL, BLOCK_HEIGHT, BUILD_UP_PHASE,
   ZONE_BOUNDS, TRANSITION, SHAPE,
@@ -139,19 +140,21 @@ function derivePhaseAndTenure(matchCore, teamId, oppTeamId) {
  * 构造某队的只读 Tactical Context。
  * @param {object} matchCore
  * @param {string} teamId
- * @param {{shapeAnchors?:object}} [options]
+ * @param {{shapeAnchors?:object, playerId?:string}} [options] playerId 提供时附带该球员相对球几何
  * @returns {object}
  */
 export function buildTacticalContext(matchCore, teamId, options = {}) {
   const opp = opponentTeamId(matchCore, teamId);
   const tacticalState = getTacticalState(matchCore, teamId);
-  const ballX = Number(matchCore?.ball?.position?.x);
-  const ballY = Number(matchCore?.ball?.position?.y);
-  const progress = ownProgress(matchCore, teamId, Number.isFinite(ballX) ? ballX : 0.5);
+  // 39F-M-C-04：球事实**唯一来源** MatchCore.ball，此处只读派生（不持有、不写回）。
+  const ballFacts = deriveBallFacts(matchCore);
+  const ballX = ballFacts.position.x;
+  const ballY = ballFacts.position.y;
+  const progress = ownProgress(matchCore, teamId, ballX);
   const zone = ballZoneOf(progress);
   const { phase, tenure } = derivePhaseAndTenure(matchCore, teamId, opp);
 
-  return {
+  const context = {
     teamId,
     opponentTeamId: opp,
     phase,
@@ -164,5 +167,27 @@ export function buildTacticalContext(matchCore, teamId, options = {}) {
     ballOwnProgress: Math.round(progress * 1000) / 1000,
     simulationTime: Number(matchCore?.clock?.simulationTime) || 0,
     tacticalState,
+    // 39F-M-C-04：只读球事实快照（derived facts，非第二套 Ball Truth）。
+    ballFacts,
+    ballSpeed: ballFacts.speed,
+    ballVelocity: ballFacts.velocity,
+    ballState: ballFacts.state,
+    lastTouchPlayerId: ballFacts.lastTouchPlayerId,
   };
+
+  // 39F-M-C-04：可选球员相对球几何（仅当显式提供 playerId；仍为只读派生）。
+  if (options.playerId) {
+    const p = (matchCore?.players ?? []).find((x) => x.playerId === options.playerId);
+    if (p) {
+      const px = Number(p?.positionOnPitch?.x);
+      const py = Number(p?.positionOnPitch?.y);
+      context.ballRelation = deriveBallRelation(
+        ballFacts,
+        { x: Number.isFinite(px) ? px : 0.5, y: Number.isFinite(py) ? py : 0.5 },
+        playerVelocityFromMovement(matchCore, options.playerId),
+      );
+    }
+  }
+
+  return context;
 }

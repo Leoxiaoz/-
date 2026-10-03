@@ -11,7 +11,8 @@
  *   teams:  { home: teamId, away: teamId },
  *   clock:  { simulationTime, matchDuration, half, status },
  *   score:  { home, away },
- *   ball:   { position:{x,y}, control:playerId|null, possessingTeamId },
+ *   ball:   { position:{x,y}, velocity?:{x,y}, state?, control:playerId|null,
+ *             possessingTeamId, lastTouchPlayerId? },
  *   players: [{ playerId, teamId, position, positionOnPitch:{x,y}, onPitch, injured, sentOff,
  *               attributes:{pace,technique,passing,defending,finishing,goalkeeping},
  *               fitness, form, morale, matchLoad }],
@@ -22,6 +23,7 @@
  */
 
 import { DECISION_RANGES, GOAL } from './decision-config.js';
+import { deriveBallFacts, deriveBallRelation, playerVelocityFromMovement } from './ball-facts.js';
 
 /** 夹取到 [0,1]；非有限值回退 0。 */
 export function clamp01(v) {
@@ -98,13 +100,15 @@ export function buildPlayerSituation(matchCore, playerId) {
     .filter((p) => p.teamId === oppTeamId)
     .map((p) => snapshotPlayer(p, selfPos));
 
+  const ballFacts = deriveBallFacts(matchCore);
   const ball = {
-    position: {
-      x: Number(matchCore?.ball?.position?.x) || 0,
-      y: Number(matchCore?.ball?.position?.y) || 0,
-    },
-    control: matchCore?.ball?.control ?? null,
-    possessingTeamId: matchCore?.ball?.possessingTeamId ?? null,
+    position: { x: ballFacts.position.x, y: ballFacts.position.y },
+    velocity: { x: ballFacts.velocity.x, y: ballFacts.velocity.y },
+    speed: ballFacts.speed,
+    state: ballFacts.state,
+    control: ballFacts.control,
+    possessingTeamId: ballFacts.possessingTeamId,
+    lastTouchPlayerId: ballFacts.lastTouchPlayerId,
   };
   const hasBall = ball.control === playerId;
   const teamInPossession = ball.possessingTeamId == null ? null : ball.possessingTeamId === teamId;
@@ -112,11 +116,14 @@ export function buildPlayerSituation(matchCore, playerId) {
   const tacticalState = normalizeTactical(matchCore?.tactical?.[teamId]);
   const matchContext = buildMatchContext(matchCore, self, teamId, oppTeamId, teamInPossession);
   const pressure = pressureOn(selfPos, opponents);
+  // 39F-M-C-04：球员相对球的只读几何事实（由 MatchCore.ball 派生，不持有球状态）。
+  const ballRelation = deriveBallRelation(ballFacts, selfPos, playerVelocityFromMovement(matchCore, playerId));
   const spatialContext = {
     distanceToGoal: dist(selfPos, GOAL),
     spaceAhead: spaceAhead(selfPos, opponents),
     pressure,
     nearestOpponentDistance: nearestDistance(selfPos, opponents),
+    ballRelation,
   };
 
   return {

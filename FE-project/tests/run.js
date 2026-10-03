@@ -42,6 +42,7 @@ import './match-movement.test.js';
 import './match-movement-architecture.test.js';
 import './match-movement-harness.test.js';
 import './match-ball-physics.test.js';
+import './match-ball-causality.test.js';
 import './development-derived.test.js';
 import './finance-feedback.test.js';
 import './competition.test.js';
