@@ -1,0 +1,64 @@
+<title>FE足球时代 Football Era 0.2</title>
+<p>项目：单机、移动端优先的足球经理模拟（HTML5 + CSS3 + JS）。本文件为截至 <b>2026-10-03</b> 的阶段性进度留档。</p>
+<callout emoji="📌" background-color="light-blue"><p><b>总体状态：On Track（判据：全部已冻结阶段回归测试通过）。</b> 测试基线 <b>682 通过 / 0 失败</b>；Match Engine 的新「球员决策层 / PASS Resolution / SHOT Resolution」为<b>独立、可测试、尚未接入生产比赛</b>的能力。</p></callout>
+<h1 seq="auto">关键产出（相对上一版本）</h1>
+<p>本次在既有「数据 → 世界 → 比赛 → 长期模拟」闭环之上，完成并冻结了 <b>AI Development Philosophy（39F-K/L）</b> 与 <b>Match Engine 基础设计系列（39F-M）</b>，并把 Match Engine 从「决策」推进到第一个与第二个「Resolution」。</p>
+<h2 seq="auto">Match Engine 系列（39F-M）</h2>
+<ul>
+<li><b>39F-M 总设计</b>：确立「比赛结果来自比赛过程」的蓝图，区分旧 TEAM-LEVEL RESULT SIMULATION 与未来 PLAYER-LEVEL PROCESS SIMULATION。</li>
+<li><b>39F-M-A / A-CAL</b>：冻结 MatchCoreState（主真相）、MatchViewState（投影）、Simulation Time ≠ UI Time、Continuous 2D + Semantic Zone、Phase 为派生态、BallState 为球权真相、Match-local Load ≠ Season Fitness。</li>
+<li><b>39F-M-B / B-CAL / B-FREEZE</b>：冻结 Player Decision 架构；6 个 MVP Action + Intent；Decision Hierarchy v1（12 层）；Candidate Eligibility = Top-K ∧ Preference Band；Decision RNG / Resolution RNG / Event RNG 分离。</li>
+<li><b>39F-M-B-IMPLEMENTATION-01</b>：实现决策层骨架（PlayerSituation / Action Registry / 6 ActionDefinition / Candidate / Hard Constraint / Validity / Preference / RiskIntent / Eligibility / Selection / DecisionResult / ActionInstance / Debug）。</li>
+<li><b>39F-M-B-CAL-01</b>：校准 TOP_K=3、PREFERENCE_BAND=0.10；修复 Candidate Key 碰撞导致的 Eligible 超 K 缺陷；验证能力方向、Soft 修正不越权、1000 次确定性一致。</li>
+<li><b>39F-M-B-RESOLUTION-PASS</b>：实现 PASS Resolution（意图目标 ≠ 最终落点；COMPLETED / INACCURATE / INTERCEPTED / BLOCKED；Ball Transit；State Update）。</li>
+<li><b>39F-M-B-RESOLUTION-SHOT</b>：实现 SHOT Resolution（Shot Execution → GK Reaction → GOAL / SAVE / MISS / BLOCKED；Transit；State Update；不改比分）。</li>
+</ul>
+<h2 seq="auto">前序核心系统（已交付）</h2>
+<table>
+<colgroup><col width="180"/><col width="420"/><col width="120"/></colgroup>
+<thead><tr><th background-color="light-gray"><p>阶段</p></th><th background-color="light-gray"><p>内容</p></th><th background-color="light-gray"><p>状态</p></th></tr></thead>
+<tbody>
+<tr><td><p>MVP</p></td><td><p>赛程、四维实力、时段制模拟、积分榜、赛季滚动、存档往返</p></td><td><p>已交付</p></td></tr>
+<tr><td><p>成长 / 伤病 / 生命周期</p></td><td><p>属性成长衰退、伤病生命周期、退役 + 新生代 + 人口生态平衡</p></td><td><p>已交付</p></td></tr>
+<tr><td><p>阵容 / 战术</p></td><td><p>玩家阵容与战术选择、自动选阵、比赛修复</p></td><td><p>已交付</p></td></tr>
+<tr><td><p>底层结构</p></td><td><p>成员关系层、比赛参与结构、赛季日历、比赛表现、表现消费层</p></td><td><p>已交付</p></td></tr>
+<tr><td><p>合同 / 财政 / 转会</p></td><td><p>合同地基、财政地基、自由球员、转会系统 v1</p></td><td><p>已交付</p></td></tr>
+<tr><td><p>AI 与经济</p></td><td><p>AI 俱乐部决策框架、世界经济 v2、DDTI 供给机制、Managed 财政反馈</p></td><td><p>已交付</p></td></tr>
+<tr><td><p>竞赛结构</p></td><td><p>Competition Phase 1（多层级 / 升降级 / 赛季边界）</p></td><td><p>已交付</p></td></tr>
+<tr><td><p>球员发展（39F-C/E/F/G/H/J）</p></td><td><p>成长曲线、发展价值、发展机会、轮换与分钟、发展信号与计划</p></td><td><p>已冻结 / 已实现</p></td></tr>
+<tr><td><p>发展哲学（39F-K/L）</p></td><td><p>Club Development Philosophy：Family C 双轴（Commitment / Youth Opportunity），非仿射约束，derived / 无持久化 / 无 Consumer</p></td><td><p>已冻结 / C0 已实现</p></td></tr>
+</tbody>
+</table>
+<h1 seq="auto">当前冻结的关键设计约束</h1>
+<ul>
+<li><b>MatchCoreState 是唯一比赛主真相</b>；MatchViewState 仅为 UI 投影；UI 不参与模拟。</li>
+<li><b>Decision ≠ Resolution</b>；<b>Action ≠ Event</b>；<b>Ability ≠ Action Result</b>；<b>Formation ≠ Position</b>。</li>
+<li>6 个 MVP Action：MOVE / PASS / DRIBBLE / SHOT / PRESS / TACKLE；其余以 Intent 或 Resolution 结果表达（CROSS/CLEAR = PASS Intent；INTERCEPT/BLOCK = Resolution 结果；SAVE = SHOT 的 GK Resolution）。</li>
+<li>Candidate Eligibility = <b>Top-K（3）AND Relative Preference Band（0.10）</b>。</li>
+<li>RNG 分层：Decision / Resolution（PASS、SHOT）/ Event 相互隔离，全部 seeded / scoped / stable；禁止 Math.random 与全局流。</li>
+<li>Match Engine 不触碰 Growth / Training / Development / Development Philosophy；不读 Team Strength 作为结果决定器。</li>
+<li>MatchCoreState 默认不持久化；Result 由 Resolution 产出，Event / Stats / Score 由未来 Integration 从 State Transition 派生。</li>
+</ul>
+<h1 seq="auto">质量与回归</h1>
+<ul>
+<li>测试基线：<b>682 通过 / 0 失败</b>（决策层 35 + 校准 23 + PASS 29 + SHOT 33 为本轮新增）。</li>
+<li>确定性：Decision 层 1000 次重复一致；PASS / SHOT Resolution 各 1000 次重复一致。</li>
+<li>长跑：SHOT Resolution 10000 次扫描无 NaN / Infinity / 非法坐标 / 非法 BallState。</li>
+<li>生产兼容：<b>未修改</b> src/core/match.js；simulateMatch / #playFixture 行为不变；未改 Save / Schema（Schema 10 / Save 1）。</li>
+</ul>
+<h1 seq="auto">偏差 / 风险 / 依赖</h1>
+<ul>
+<li><b>[TBD-CAL]</b> SHOT 的 MISS 在「中央、高 finishing」场景偏 0；MISS 只出现在低 finishing / 大角度 / 远距离。属数值校准项，未据此重构。</li>
+<li><b>[WARN]</b> PASS 在极优局面偏好可饱和至 1.0，减弱能力区分度；是否降权待真实场景 CAL。</li>
+<li>真实世界样本仅 8 队（有效球队数偏小）；分布结论以 synthetic 场景佐证。</li>
+<li>新 Match Engine 各层（决策 / PASS / SHOT）尚未接入生产比赛循环，暂无端到端比赛体验。</li>
+<li>Resolution 数值（误差 / 封堵 / 门将反应 / 时长）与 GOAL/SAVE 边界仍为 TBD-CAL。</li>
+</ul>
+<h1 seq="auto">下一步（待 Owner 决策）</h1>
+<ol>
+<li><b>Ask：</b>是否继续实现 DRIBBLE / TACKLE / PRESS Resolution，完成 6 Action 的 Resolution 全集？</li>
+<li><b>Ask：</b>是否授权设计 Match Engine 生产接入路径（用新核心替换 / 并存旧 simulateMatch / 分阶段替换）？</li>
+<li><b>Ask：</b>何时启动真实比赛 Scenario 的数值 CAL（误差、封堵、门将反应、GOAL/SAVE/MISS/BLOCKED 分布）？</li>
+<li><b>Ask：</b>Role 系统与 Manager 领域（Development Philosophy 的 Manager 层、Manager Offset）是否纳入近期阶段？</li>
+<li>持续维持：所有阶段保持测试全绿、Schema / Save 不升级、不引入未批准范围（在线 / 变现 / 3D / 社交）。</li>
+</ol>
