@@ -227,3 +227,43 @@ export const AI_RELATIVE_ROLE_LOAD_CONFIG = Object.freeze({
     NO_RELATIVE_LOAD: 'NO_RELATIVE_LOAD',
   }),
 });
+
+/**
+ * AI Development Plan —— Step 39F-J-LAYER-B（SIGNAL-IMPLEMENTATION；参数已由
+ * 39F-J-LAYER-B-SIGNAL-CAL-LONGRUN 长期生态校准冻结）。
+ * 层级归属：Simulation Core / AI（纯配置，无副作用）。
+ *
+ * 语义分层（严格不可合并）：Need → Gap → Priority → Plan{trainingIntent, playingOpportunityIntent}。
+ * 红线：不读 True Potential；无 RNG；不持久化；不接 Training Decision / Selection / Rotation / Minutes / Growth。
+ *
+ * ⚠ 参数冻结（FROZEN / CONDITIONAL FREEZE）：
+ * - `PRIME_H_MIN` 与 `HEADROOM_REF_SCORE` **强耦合**：若修改 `HEADROOM_REF_SCORE`，
+ *   必须重新 CAL `PRIME_H_MIN`，不得静默沿用。
+ * - `TRAINING_NONE_MAX` / `TRAINING_DEVELOP_MAX` 作用于 **Priority**（与长期 CAL 一致）。
+ * - 忽略/不使用：Gap Band（FUTURE）。
+ */
+export const AI_DEVELOPMENT_PLAN_CONFIG = Object.freeze({
+  /** Headroom 归一化参考分（FROZEN=40）。`H = clamp01(estimateHeadroomScore / HEADROOM_REF_SCORE)`。 */
+  HEADROOM_REF_SCORE: 40,
+  /** Need 权重（FROZEN；Σ=1）。 */
+  NEED_WEIGHTS: Object.freeze({ HEADROOM: 0.50, PHASE: 0.30, ABILITY_GAP: 0.20 }),
+  /** PRIME 进入 growth-oriented Need 的最小 H（CONDITIONAL FREEZE；与 HEADROOM_REF_SCORE=40 绑定）。 */
+  PRIME_H_MIN: 0.40,
+  /** Priority 权重（FROZEN；Σ=1）。 */
+  PRIORITY_WEIGHTS: Object.freeze({ NEED: 0.45, GAP: 0.40, CONTEXT: 0.15 }),
+  /** NEEDS_MORE_OPPORTUNITY 的 Gap 下限（CONDITIONAL FREEZE）。 */
+  GAP_OPP_MIN: 0.35,
+  /** NEEDS_MORE_OPPORTUNITY 的 Supply 上限（CONDITIONAL FREEZE）。 */
+  SUPPLY_LOW: 0.35,
+  /** RECOVERY 的 Priority 衰减下界（FROZEN）。 */
+  REC_MIN: 0.50,
+  /** Environment modifier（FROZEN）：`clamp01(ENV_FLOOR + ENV_RANGE × environmentInput)`。 */
+  ENV_FLOOR: 0.85,
+  ENV_RANGE: 0.15,
+  /** Training Intent 阈值（CONDITIONAL FREEZE；作用于 **Priority**）。 */
+  TRAINING_NONE_MAX: 0.25,
+  TRAINING_DEVELOP_MAX: 0.50,
+  /** 枚举。 */
+  TRAINING_INTENT: Object.freeze({ NONE: 'NONE', DEVELOP: 'DEVELOP', ACCELERATE: 'ACCELERATE' }),
+  PLAYING_OPPORTUNITY_INTENT: Object.freeze({ NORMAL: 'NORMAL', NEEDS_MORE_OPPORTUNITY: 'NEEDS_MORE_OPPORTUNITY' }),
+});
