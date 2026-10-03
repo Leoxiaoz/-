@@ -32,6 +32,7 @@ import './ai-training-decision.test.js';
 import './ai-relative-role-load.test.js';
 import './ai-development-plan.test.js';
 import './ai-development-philosophy.test.js';
+import './match-decision.test.js';
 import './development-derived.test.js';
 import './finance-feedback.test.js';
 import './competition.test.js';
