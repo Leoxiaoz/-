@@ -441,6 +441,24 @@
 - **Deferred**：Playoff / Domestic Cup / Continental / Qualification / Complex stages / Youth·Reserve / Staff / Scout / Reputation / Revenue·TV·Sponsor·Prize / Loan / Registration / licensing / FFP / promotion history entity / CompetitionSeason persistent entity。
 - **下一步**：**Step 38E — Competition Structure Production Implementation**（生产实现 + 回归 + 多 Division 长跑验证）。本步**不自行进入**。
 
+### 2.32 AI Development Philosophy / Club Development Preference 设计冻结（2026-10-03，Step 39F-K-FREEZE）
+
+- **性质**：**DOCS-ONLY DESIGN FREEZE**；未修改代码 / 配置 / 测试 / 数据 / Schema 10 / Save Format 1；未 commit。
+  决策编号 **D-44 / OD-39FK**，详见 [DECISIONS D-44](file:///workspace/docs/DECISIONS.md)。
+- **冻结内容**：
+  - 确立 **Layer C0 Effective Development Philosophy**（**preference contract**，非游戏效果）；
+    层序为 `Layer A Signals → Layer B Plan → Layer C0 Philosophy → Layer C1 Consumers`。
+  - **MVP-2 = Club-level Development Philosophy**，含两轴：`developmentCommitment` + `youthOpportunityPreference`。
+  - 性质：**Club-level / derived / deterministic / non-persistent**；不进 save / 不进 schema / 无 RNG /
+    不使用 season 作为 identity 输入 / 不读 True Potential / 不直接产生游戏效果。
+  - **Club Identity 统一来源**：复用既有 `getAIClubPolicy(clubId)` 先例；Development Philosophy 为其**另一 projection**（本步骤不修改 `getAIClubPolicy`）。
+  - **MVP 不连接任何 Consumer**（**Architecture F = observation only**）⇒ Philosophy 当前不改变任何生产行为。
+- **明确 Deferred**：Manager Philosophy（**当前无 Manager domain entity，禁止伪造**）、Result Priority（Match Importance 仍 NORMAL/PLACEHOLDER）、
+  Development Patience、Internal-vs-Market、Experience Preference、Squad Stability Preference。
+- **状态**：**DESIGN FROZEN / IMPLEMENTATION DEFERRED**。未实现 Development Philosophy；未新增 `ai-development-philosophy.js`；未接 Consumer。
+- **下一步（未开始）**：未来 **Training Consumer** / **Playing Opportunity Consumer** 需**独立设计 + CAL**（须 bounded / soft / AI-only /
+  competitive-floor protected / anti-monopoly / long-run 生态验证 / neutral 可退化）。本步**不自行进入**。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

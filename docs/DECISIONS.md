@@ -1860,6 +1860,205 @@ Actual Minutes 0 / 90
 
 ---
 
+## D-44 / OD-39FK — AI Development Philosophy（Step 39F-K-DESIGN → Step 39F-K-FREEZE；Owner Confirmed / Freeze）
+
+> 本条为 **SPEC AMENDMENT / DECISION RECORD**（Step 39F-K 设计冻结）。
+> 依据：Step 39F-K-AI-DEVELOPMENT-PHILOSOPHY-DESIGN（Owner 已确认）。
+> **本记录为纯文档**：未修改生产代码 / 测试 / 数据 / 配置 / `GAME_STATE_SCHEMA_VERSION` 10 / `SAVE_FORMAT_VERSION` 1 / 39F-C / 39F-E / baseline / Golden。
+> 本步骤**不实现** Development Philosophy；**不新增** `ai-development-philosophy.js`；**不接入**任何 Consumer。
+
+### 背景
+Layer A Signals → Layer B Plan（transient intent）已具备；但所有 AI club 共用同一条 `Need → Gap → Priority → Plan`，缺少"俱乐部 / 主教练多重视发展"的偏好层，长期存在行为趋同（convergence）风险。
+
+### 层次定位 `[已定]`
+```
+Layer A  Development Signals                       （已有）
+Layer B  Development Plan {trainingIntent,
+                           playingOpportunityIntent}（已有，transient intent）
+Layer C0 Effective Development Philosophy          （本次冻结，只定义 preference contract）
+Layer C1 Consumers                                 （未来实现）
+```
+MVP 阶段 C0 **不连接任何 Consumer** ⇒ Philosophy 当前**不改变任何生产行为**。
+
+### Philosophy 定义 `[已定]`
+Development Philosophy 是 **AI 对 Development 信息的消费偏好**，**不是游戏效果**。
+它只回答"愿不愿意、在多大程度上消费 Development Plan 的意图"，**不产生任何游戏效果**。
+
+### Club Identity 来源 `[已定]`
+- **Club Identity 是俱乐部长期身份的统一来源。**
+- 既有 `getAIClubPolicy(clubId)`（D-AI-20；`hashSeed(clubId | 'ai-policy')`）已是 **Club Identity 的确定性派生先例**。
+- 未来 Development Philosophy **必须复用同一 Club Identity 来源**，**不得**重新创建另一套独立随机 / Hash 性格系统。
+- 目标结构：
+  ```
+  Club Identity
+      ├── AI Club Policy
+      ├── Development Philosophy
+      ├── Future Recruitment Philosophy
+      └── Future Squad Philosophy
+  ```
+- 本步骤**不修改** `getAIClubPolicy`；**仅记录架构原则**。
+
+### MVP-2 双轴 `[已定]`
+Club-level Development Philosophy，含两个维度：
+1. `developmentCommitment`
+2. `youthOpportunityPreference`
+
+二者性质：**Club-level / derived / deterministic / non-persistent** / 不进入 save / 不进入 schema /
+不改变 `GAME_STATE_SCHEMA_VERSION` / 不改变 `SAVE_FORMAT_VERSION` / 不使用 RNG /
+**不使用 season 作为 identity 输入** / 不读取 True Potential / **不直接产生游戏效果**。
+
+### Club Philosophy 的身份规则 `[已定]`
+同一 `clubId`，Season 1 / 20 / 50，在无显式长期事件时，Club Development Philosophy **必须保持稳定**。
+**禁止**：每赛季重新随机；`season → philosophy identity`；match result → 每季随机改变 philosophy；
+player population → 反向重算 club identity；development success → 自动改变 club identity。
+未来若 Ownership Change / Club Rebuild / Major Institutional Event 导致 Club Culture 改变，
+**必须单独设计**长期事件 / persistence / migration。**本步骤不实现。**
+
+### Manager Philosophy `[已定 → DEFERRED]`
+- **代码事实**：当前代码库**不存在足球 Manager domain entity**（无 `managerId` / manager lifecycle / manager contract / manager tenure / manager change event）。
+- **MVP 不实现 Manager Philosophy。禁止为了实现"完整性"伪造 Manager**：
+  禁止 `clubId → fake manager personality`；禁止"每队随机生成一个 manager personality"。
+- 未来若真正引入 Manager domain：Manager Philosophy 由 `managerId` **确定性派生**。
+- 关系：**Club Culture = long-term baseline**；**Manager Philosophy = bounded execution offset**。
+  概念形式：`Effective Philosophy = clamp(Club Culture + Manager Offset, 0, 1)`。
+- **Manager Offset 当前完全不存在，不实现**；δ 仍 **`[TBD]`**。
+
+### Archetype vs Continuous `[已定 方向]`
+- 采用 **Archetype + 少量 Continuous Axis** 架构方向；**具体数值不冻结**。
+- 既有 Club Identity（`Balanced` / `YouthFocus` / `Conservative`）可作为未来 Development Philosophy 的身份来源。
+- 以下全部 **`[TBD]`**：archetype → `developmentCommitment` 映射；archetype → `youthOpportunityPreference` 映射；
+  bounded jitter；jitter 范围；clamp 边界；是否最终保留 jitter；是否最终只使用离散值。
+- **没有 CAL 前不得实现 jitter。**
+
+### Persistence `[已定]`
+MVP 使用**完全 derived**。**不新增**：save 字段 / schema 字段 / player 字段 /
+club persistent philosophy 字段 / manager persistent philosophy 字段。
+保持 `GAME_STATE_SCHEMA_VERSION = 10`、`SAVE_FORMAT_VERSION = 1`；**不允许因 Philosophy 提前修改版本**。
+理由：`clubId` 已是稳定身份；稳定 hash / derived model 可提供长期稳定性。
+
+### Philosophy 的信息边界 `[已定]`
+- **可以**：表达 AI 对 Development 信息的偏好。
+- **不可以重新计算**：Development Phase / Headroom / Ability Gap / Development Need / Development Gap /
+  Development Priority / Selection Development Priority / Expected Playing Opportunity / Growth / Potential / True Potential。
+- **特别禁止**：Philosophy 自己重新计算一个"潜力"；**禁止读取 True Potential**。
+
+### 绝对禁止的直接效果 `[已定]`
+Philosophy 不得直接：增加 Growth / Training Strength / Match Minutes / Selection Score / Rotation Minutes；
+修改 Ability / Fitness / Form / Morale / Injury / Transfer Budget；
+强制购买年轻球员 / 强制出售老球员 / 强制保留年轻球员 / 强制 Loan / 强制 Squad Planning / 强制 Pathway。
+**尤其禁止**：`Youth Focus → young player +20 minutes`；`Youth Focus → Growth ×1.2`；`Development Commitment → STRONG Training`。
+
+### 当前 Consumer 状态 `[已定]`
+MVP 阶段：**Philosophy 不连接任何 Consumer**（观察层）。
+即 `Philosophy ↓ 观察层`，而非 `Philosophy → Training / Selection / Rotation / Transfer / Squad Planning`。
+依据 Layer B Consumer Design 的 **Architecture F = Plan / Philosophy observation only**；未来第一次行为接入须**单独设计**。
+
+### 未来 Training Consumer 方向 `[建议；未实现]`
+- 形态：`Development Philosophy + Development Plan + Training Decision → bounded soft consumer`。
+- `ACCELERATE ≠ STRONG`；`Development Commitment ≠ Training Strength`。
+- Training Decision 的 **hard gates 永远优先**：`INJURED` / `INJURY_RECOVERY` / `VETERAN` / Relative Role Load / 既有 STRONG gates；未来 Consumer **不得绕过**。
+- impact / weighting / precedence / thresholds 全部 **`[TBD]`**，必须未来单独 CAL。
+
+### 未来 Playing Opportunity Consumer 方向 `[建议；未实现]`
+- `Youth Opportunity Preference` **不是** guaranteed minutes / starter guarantee / rotation guarantee。
+- 未来只能作为 **soft preference**，输入既有：competitive floor / position competition / availability /
+  `selectionDevelopmentPriority` / `boundedDevelopmentInfluence` / rotation constraints。
+- **禁止**：`Preference → automatic starter`；`Preference → guaranteed minutes`；`Preference → bypass current ability`。
+- 具体 Consumer 未来**单独设计 + CAL**。
+
+### Result Priority `[已定 → DEFERRED]`
+当前 Match Importance 仍为 **NORMAL / PLACEHOLDER**，**没有真正 Consumer**。
+因此 Short-term Result Priority **当前不进入 MVP**；不得为提前支持它而增加无消费者参数。未来 Match Importance 完成后再重新设计。
+
+### Development Patience `[已定 → DEFERRED]`
+真正的 Patience 需要**跨赛季项目记忆**；**不得**把 `developmentProjectAge` / `consecutivePlanSeasons` 塞进 Development Plan。
+Development Plan 当前必须继续 **derived / transient / non-persistent**。
+未来若实现 Patience，必须归属 **Squad Planning / Career Planning / Long-term Development Planning**，并进行**独立 persistence / schema review**。
+
+### Internal vs Market `[已定 → DEFERRED]`
+未来可能影响 Recruitment / Transfer / Squad Planning；当前不实现。
+**禁止**：`Youth Focus → 强制买年轻人`；`Youth Focus → 强制不卖年轻人`。
+
+### Experience Preference `[已定 → DEFERRED / 不单独建模]`
+容易与 `Youth Opportunity Preference` / `Result Priority` 产生**重复信号**。
+未来如需要，必须**证明其独立行为消费者**。
+
+### Squad Stability Preference `[已定 → DEFERRED]`
+与 Selection / Rotation / Match Minutes **高度重叠**。
+未来若实现，必须由 **Rotation / Squad Planning 层**消费；Philosophy 只能提供 preference。
+
+### Pathway `[已定]`
+继续保持 **Pathway = DERIVED**；**禁止** `player.pathway` persistence；**禁止** Philosophy 直接设置 Pathway。
+Philosophy 只可经 `Consumer → Squad / Opportunity behavior` **间接**影响 Pathway。
+
+### Loan `[已定 → DEFERRED]`
+未来 Philosophy 可作为 Loan Decision 的 **soft bias**（如 Development-focused club 可能更愿意考虑 Loan）。
+但 `Youth Focus` **不能强制 Loan**；**当前不实现 Loan**。
+
+### Failure / Exit `[已定 结构]`
+**不得**出现 `Need 高 → Priority 高 → ACCELERATE → 永久持续`。Development Plan **每赛季重新 derived**。
+若未来需要"连续 N 季失败"的记忆，必须属于 **Squad / Career Planning**，而**不是** Development Plan。
+未来可能状态：`CONSUME → DE-PRIORITIZE → RE-PATHWAY → LOAN / TRANSFER / SQUAD RESTRUCTURE`。
+`N` / threshold / state transitions 全部 **`[TBD]`**。
+
+### Anti-Monopoly `[已定]`
+- Philosophy 是 **preference / modifier**，**不是 hard gate**。
+- 必须继续尊重：Need / Gap / Priority / Competitive Floor / Position Competition / Availability / Squad Constraints。
+- 未来 Consumer 必须考虑：bounded influence / competitive threshold / position competition / availability / role constraints / anti-monopoly。
+- "每队每季发展配额"仅为**候选方案**，当前 **`[TBD]`**。
+
+### Positive Feedback `[已定]`
+- **允许**自然反馈：`Ability → Selection / Minutes → Growth → Ability`。
+- **禁止无界**：`Philosophy → direct Growth`；`Development Priority → Minutes → Growth → Priority → 无限强化`。
+- 未来 Philosophy Consumer 必须：**bounded / soft / AI-only / competitive-floor protected / role constrained / anti-monopoly / long-run CAL**。
+- 并且必须有：**Philosophy disabled / neutral → 行为可退化到当前 baseline**（回归锚点）。
+
+### NewGen `[已定]`
+Philosophy **不决定球员来源**。NewGen 与旧球员**走同一 Development Plan / Philosophy pipeline**。
+**禁止**：`Youth-focused Club → only develop NewGen`；NewGen **不应该获得隐藏 bonus**。
+
+### Club Strength `[已定]`
+**Club Strength ≠ Development Philosophy。**
+**禁止**：`Elite → automatically Youth Focus`；`Small club → automatically Youth Focus`。
+**Resource Capacity** 与 **Development Philosophy** 必须分离。未来 Strength 最多作为 Competitive Context / Consumer 的**弱输入**。
+
+### Finance `[已定]`
+Philosophy **不改变** Training Budget / Transfer Budget / Finance Feedback。
+未来若影响 investment preference，必须作为**独立 Consumer** 设计。
+
+### 正式 TBD 清单（不得提前实现）
+1. `developmentCommitment` 数值映射；2. `youthOpportunityPreference` 数值映射；3. Archetype → 连续值；
+4. bounded jitter；5. jitter amplitude；6. clamp boundary；7. Manager Offset δ；8. Manager domain；
+9. Competitive Context metric；10. Competitive Context thresholds；11. Philosophy consumer impact；
+12. Training Consumer weighting；13. Playing Opportunity Consumer weighting；14. Anti-monopoly quota；
+15. Competitive floor interaction parameters；16. Failure N；17. Failure state thresholds；
+18. 是否使用独立 `ai-development-philosophy.js`；19. 是否未来转 `.fdb` 显式数据驱动；
+20. Club Culture 长期变化事件；21. Ownership / Rebuild culture transition。
+
+### 正式建议清单 `[建议]`
+1. MVP-2：`developmentCommitment` + `youthOpportunityPreference`。
+2. Club Identity 作为统一身份源。
+3. 现有 `getAIClubPolicy` 作为已有 identity projection。
+4. Development Philosophy 作为另一 projection。
+5. MVP 完全 derived。
+6. 不新增 persistence。
+7. 不实现 Manager Philosophy。
+8. 不接 Consumer。
+9. 未来 Consumer 使用 bounded soft preference。
+10. Neutral / disabled Philosophy 必须能够退化到当前行为。
+
+### 未来 Consumer Gate `[已定]`
+任何 Consumer 接入前必须满足：**独立设计 + CAL + bounded / soft / AI-only / competitive-floor protected +
+anti-monopoly + long-run（≥ 50 / 100 / 200 赛季）生态验证 + neutral / disabled 可退化 +
+不新增 persistence（除非单独 Schema / Save review）**。
+
+### Schema / Save `[已定]`
+本步骤**不修改** `GAME_STATE_SCHEMA_VERSION = 10` 与 `SAVE_FORMAT_VERSION = 1`；**不新增 runtime persistence**；相关概念保持 **DERIVED / PURE**。
+
+**验证**：本记录为**纯文档**（仅修改 `docs/DECISIONS.md` 与 `docs/ROADMAP.md`）；未修改 `src/**` / `tests/**` / `data/**` / 配置 / Schema 10 / Save Format 1 / baseline / Golden / 运行行为。
+
+---
+
 ## Deferred Issues（登记；不在本步骤处理）
 
 ### DF-01 Managed Club Cash Concentration / World Finance Feedback `[Resolved → Step 36C 冻结]`
