@@ -227,37 +227,3 @@ export const AI_RELATIVE_ROLE_LOAD_CONFIG = Object.freeze({
     NO_RELATIVE_LOAD: 'NO_RELATIVE_LOAD',
   }),
 });
-
-/**
- * Development Signals —— Layer B（Development Need / Gap / Priority / Plan）。
- * 层级归属：Simulation Core / AI（纯配置，无副作用）。
- *
- * 语义：AI 在赛季层为球员派生「发展需求 → 缺口 → 紧迫度 → 发展计划意图」。
- * - **不读 True Potential**（只用 AI-observable `estimateHeadroomScore`）。
- * - 不改写 state / runtime；不持久化；无 RNG；deterministic。
- * - 只做「意图」（Training Intent / Playing Opportunity Intent），**不决定** Training Level / Selection / Minutes / Growth。
- *
- * ⚠ 以下数值为 **39F-J Layer B CAL-FREEZE 冻结值（FROZEN / CONDITIONAL FREEZE）**；禁止散落 magic number。
- * 注意：`PRIME_H_MIN` 与 `HEADROOM_REF_SCORE` 绑定；若改 `HEADROOM_REF_SCORE`，必须重新 CAL `PRIME_H_MIN`。
- */
-export const AI_DEVELOPMENT_SIGNALS_CONFIG = Object.freeze({
-  /** Headroom 归一化参考分（AI-observable score 0–100 → Hn∈[0,1]）。CONDITIONAL FREEZE 与 PRIME_H_MIN 绑定。 */
-  HEADROOM_REF_SCORE: 40,
-  /** Need 权重（Σ=1）。FROZEN。 */
-  NEED_WEIGHTS: Object.freeze({ headroom: 0.50, phase: 0.30, abilityGapFit: 0.20 }),
-  /** PRIME 进入 growth-oriented Need 的 Hn 门槛（与 HEADROOM_REF_SCORE 绑定）。CONDITIONAL FREEZE。 */
-  PRIME_H_MIN: 0.40,
-  /** Priority 权重（Σ=1）。FROZEN。 */
-  PRIORITY_WEIGHTS: Object.freeze({ need: 0.45, gap: 0.40, competition: 0.15 }),
-  /** Playing Opportunity Intent 触发：`Gap ≥ GAP_OPP_MIN && Supply ≤ SUPPLY_LOW`。CONDITIONAL FREEZE。 */
-  GAP_OPP_MIN: 0.35,
-  SUPPLY_LOW: 0.35,
-  /** Recovery 状态下 Priority 的有界衰减因子。FROZEN。 */
-  REC_MIN: 0.50,
-  /** Environment 仅作为 Priority 的有界 modifier：`ENV_FLOOR + ENV_RANGE × environmentInput`。TBD-CAL（低影响）。 */
-  ENV_FLOOR: 0.85,
-  ENV_RANGE: 0.15,
-  /** Training Intent 阈值：`< NONE_MAX → NONE`；`< DEVELOP_MAX → DEVELOP`；否则 ACCELERATE。CONDITIONAL FREEZE。 */
-  TRAINING_NONE_MAX: 0.25,
-  TRAINING_DEVELOP_MAX: 0.50,
-});
