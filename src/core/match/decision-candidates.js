@@ -17,7 +17,8 @@ const GOAL_ZONES = Object.freeze(['CENTER', 'LEFT', 'RIGHT']);
 export function candidateKey(c) {
   const t = c?.target ?? {};
   const tail = t.playerId ?? t.zone ?? `${Number(t.x) || 0},${Number(t.y) || 0}`;
-  return `${c?.actionType}|${t.type ?? ''}|${tail}`;
+  // 含 intent：不同 intent 即使 target 相同也是不同候选（避免 Top-K 判定因键碰撞而失效）。
+  return `${c?.actionType}|${c?.intent ?? ''}|${t.type ?? ''}|${tail}`;
 }
 
 /** 目标在当前 Situation 下是否有效（Situation Validity Filter）。 */
@@ -57,10 +58,10 @@ export function generateCandidates(situation, registry) {
     return { candidates, rejected };
   }
 
+  const seen = new Set();
   for (const type of registry.list()) {
     const def = registry.get(type);
     if (!def) continue;
-    // Hard Constraint #1：Action 当前是否可用（是否持球 / 是否在场等）。
     if (!def.availability(situation)) {
       rejected.push({ actionType: type, reason: REJECTION_REASONS.ACTION_UNAVAILABLE });
       continue;
@@ -71,14 +72,18 @@ export function generateCandidates(situation, registry) {
       rejected.push({ actionType: type, reason: REJECTION_REASONS.NO_TARGET });
       continue;
     }
-    // Hard Constraint #2 + Situation Validity：目标必须真实有效。
+    // Hard Constraint #2 + Situation Validity：目标必须真实有效；重复候选去重。
     let acceptedForType = 0;
     for (const c of raw) {
       if (!isTargetValid(c, situation)) {
         rejected.push({ actionType: type, reason: REJECTION_REASONS.INVALID_TARGET, target: c.target });
         continue;
       }
-      candidates.push({ actionType: c.actionType, target: c.target, intent: c.intent });
+      const candidate = { actionType: c.actionType, target: c.target, intent: c.intent };
+      const key = candidateKey(candidate);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push(candidate);
       acceptedForType += 1;
     }
     if (acceptedForType === 0) {

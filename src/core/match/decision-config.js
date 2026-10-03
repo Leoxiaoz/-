@@ -20,11 +20,15 @@ export const ACTION_TYPES = Object.freeze(['MOVE', 'PASS', 'DRIBBLE', 'SHOT', 'P
 
 /**
  * Candidate Eligibility 配置（冻结机制：Top-K ∧ Relative Preference Band）。
- * ⚠ `TOP_K` / `PREFERENCE_BAND` 为 **TBD-CAL**，仅提供可运行的 MVP 默认值。
+ * ⚠ 数值来自 39F-M-B-CAL-01 校准（仍非永久冻结，需后续真实场景 CAL）。
+ * - `TOP_K = 3`：校准证据——K=1 选择过僵（stability 100%、eligible action-types 1.0）；
+ *   K=5 噪声偏大（stability 64.9%）；K=3 在 stability(77.9%) 与动作多样性(1.76) 间平衡。
+ * - `PREFERENCE_BAND = 0.10`：校准证据——Band 0.25 会让 gap=0.18 的候选（0.90 vs 0.72）
+ *   进入竞争；Band 0.10 使「0.90/0.89/0.70 → {0.90,0.89}」「0.90/0.72 → {0.90}」符合设计。
  */
 export const DECISION_SELECTION_CONFIG = Object.freeze({
-  TOP_K: 3,             // [TBD-CAL]
-  PREFERENCE_BAND: 0.25, // [TBD-CAL]
+  TOP_K: 3,              // [CAL-01] evidence-based
+  PREFERENCE_BAND: 0.10, // [CAL-01] evidence-based
 });
 
 /** 单动作候选数量上限（防止候选爆炸）。 */
