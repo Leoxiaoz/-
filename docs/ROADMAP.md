@@ -459,6 +459,23 @@
 - **下一步（未开始）**：未来 **Training Consumer** / **Playing Opportunity Consumer** 需**独立设计 + CAL**（须 bounded / soft / AI-only /
   competitive-floor protected / anti-monopoly / long-run 生态验证 / neutral 可退化）。本步**不自行进入**。
 
+### 2.33 AI Development Philosophy — Family C 轴映射冻结（2026-10-03，Step 39F-L-FREEZE）
+
+- **性质**：**DOCS-ONLY DESIGN FREEZE**；未修改代码 / 配置 / 测试 / 数据 / Schema 10 / Save Format 1；未 commit。
+  决策编号 **D-45 / OD-39FL**，详见 [DECISIONS D-45](file:///workspace/docs/DECISIONS.md)。
+- **冻结内容**：
+  - **Family C 已冻结**（MVP-2 具体 mapping，具体化 D-44）：
+    - `developmentCommitment`：Conservative **0.30** / Balanced **0.50** / YouthFocus **0.70**
+    - `youthOpportunityPreference`：Conservative **0.30** / Balanced **0.50** / YouthFocus **0.60**
+  - **非仿射约束**（核心）：两轴必须独立 mapping，且**不得形成 affine relationship**（三点不得共线）；
+    否则两轴坍缩为同一信号（CAL：A/B/D 仿射 → corr=1.0 FAIL；C 非仿射 → PASS）。
+  - 可达组合：`Low/Low`（Conservative）、`Medium/Medium`（Balanced）、`High/Medium`（YouthFocus）。
+  - **Neutral = 0.50**（Balanced baseline，属未来 Consumer contract）；**J0（无 jitter）**；
+    **fully derived**（复用 `getAIClubPolicy(clubId).id`，不建第二套 identity hash）；deterministic；non-persistent。
+- **状态**：**DESIGN FROZEN / C0 IMPLEMENTATION DEFERRED / Consumer DEFERRED**。
+  **当前没有任何 production behavior**；未创建 `ai-development-philosophy.js`；未接任何 Consumer；无任何生产行为改变。
+- **下一步（未开始）**：C0 实现与任何 Consumer 均**另开独立设计与 CAL**；Consumer 参数（K / weight / impact / floor / anti-monopoly 等）全部 `[TBD]`。本步**不自行进入**。
+
 ---
 
 ## 3. 第三阶段：完整足球世界

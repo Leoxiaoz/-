@@ -2059,6 +2059,136 @@ anti-monopoly + long-run（≥ 50 / 100 / 200 赛季）生态验证 + neutral / 
 
 ---
 
+## D-45 / OD-39FL — AI Development Philosophy — Family C Axis Mapping Freeze（Step 39F-L-FREEZE；Owner Confirmed / Freeze）
+
+> 本条为 **SPEC AMENDMENT / DECISION RECORD**（Step 39F-L 设计冻结）。
+> 依据：39F-K-AI-DEVELOPMENT-PHILOSOPHY-DESIGN / 39F-K-FREEZE（D-44）、39F-L-AI-DEVELOPMENT-PHILOSOPHY-CAL-DESIGN、39F-L-AXIS-MAPPING-DESIGN。
+> **本记录为纯文档**：未修改生产代码 / 测试 / 数据 / 配置 / Schema 10 / Save Format 1 / 39F-C / 39F-E / baseline / Golden。
+> **本步骤不实现 C0**；未创建 `ai-development-philosophy.js`；未接任何 Consumer。
+> **D-45 是 39F-L 对 D-44 MVP-2 参数的具体化冻结**：D-44 定义 MVP-2，D-45 冻结 MVP-2 的具体 mapping。**不修改、不重写 D-44**。
+
+### 背景（39F-L CAL 核心结论）
+39F-L CAL 发现：Development Philosophy 两轴**若共用同一 archetype→value 映射**（或任何**仿射**关系 `Opportunity = a×Commitment + b`），
+两轴会**坍缩为同一信号**（`corr = 1.0`，`C==O = 100%`，只有对角组合）。jitter 无法解决该问题
+（±0.10 时 overall corr 仍 ≈0.89）。因此本步引入**两轴独立、且非仿射**的映射。
+
+### 一、MVP-2 `[已定]`
+Club-level Development Philosophy，含两个**独立**轴：`developmentCommitment`、`youthOpportunityPreference`。
+性质：Club-level / derived / deterministic / non-persistent / no RNG / no season input /
+no Manager / no Consumer / no direct game effect。
+
+### 二、两轴定义 `[已定]`
+- **developmentCommitment**："俱乐部愿意投入多少长期资源与组织注意力去培养球员。"
+  **不代表**：Growth bonus / 比赛分钟 / 自动首发 / Selection bypass。
+- **youthOpportunityPreference**："在竞技条件允许时，俱乐部有多倾向于给年轻球员一线队机会。"
+  **不代表**：Growth bonus / 无视能力 / 保证分钟 / 自动首发 / 牺牲竞技结果。
+- **正式冻结：`Commitment ≠ Opportunity`。**
+
+### 三、Club Identity 来源 `[已定]`
+Development Philosophy **必须复用**现有 `getAIClubPolicy(clubId).id`（当前 `Balanced` / `YouthFocus` / `Conservative`，
+identity 源 = `hashSeed(clubId + "|ai-policy") % 3`）。
+**不得**建立 `hashSeed(clubId + "|ai-dev-philosophy")` 或**任何第二套独立 Identity hash**。
+理由：Club Identity 是**统一来源**；Development Philosophy 只是 `Club Identity → Development Philosophy Projection`，不是新 Identity。
+本步骤**不修改** `getAIClubPolicy` / `Club Identity hash` / `AI_CONFIG.POLICIES`。
+
+### 四、Family C（正式冻结）`[已定]`
+| Archetype | developmentCommitment | youthOpportunityPreference |
+|---|---|---|
+| Conservative | **0.30** | **0.30** |
+| Balanced | **0.50** | **0.50** |
+| YouthFocus | **0.70** | **0.60** |
+
+即三点：(Conservative `(0.30, 0.30)` / Balanced `(0.50, 0.50)` / YouthFocus `(0.70, 0.60)`)。
+
+### 五、非仿射约束（核心设计约束，正式写入）`[已定]`
+- **仅仅"两个 mapping table 不相同"是不够的。**
+- 若 `Opportunity = a × Commitment + b`，两轴仍只是同一 Archetype 信号的**线性变换**。
+- 因此正式要求：两轴**使用独立 mapping**，且**不得形成简单 affine relationship**；
+  对当前三档 Archetype，三个 `(Commitment, Opportunity)` 点**不得共线**。
+- Family C 三点**非共线** ⇒ 两轴在语义上真正可区分。**这是 39F-L CAL 的核心设计结论。**
+
+### 六、二维语义（可达组合）`[已定]`
+可达：`Low/Low`（Conservative）、`Medium/Medium`（Balanced）、`High/Medium`（YouthFocus）。
+其中 **YouthFocus = High Commitment + Medium Opportunity**，语义为
+"长期培养投入较高，但一线队机会仍受竞技条件约束" —— 该组合**正式成立**。
+
+### 七、明确不允许的语义方向 `[已定]`
+- **不采用** `High Commitment + Low Opportunity`（对当前 YouthFocus 会与身份语义冲突）。
+- **不采用** `Low Commitment + High Opportunity`（缺少稳定、清晰的 MVP 语义支撑）。
+- **禁止**为了数学解耦而**完全反向映射**（禁止制造 `YouthFocus = High Commitment + Low Opportunity` 这类人为反转）。
+- 设计目标 = **语义解耦**，而非数学上最大程度降低 correlation。
+
+### 八、Neutral `[已定]`
+`0.50` 为 **Neutral Reference Candidate**。Balanced = `(0.50, 0.50)` ⇒ 当前 **Neutral Philosophy baseline**。
+但 **Balanced ≠ "没有发展理念"**；Balanced 表示**中性偏好**。
+`Neutral = 0.50` 主要属于**未来 Consumer contract**：未来 `axis == 0.50` 应代表 **no-op reference**，
+而**不是**该轴永远必须等于 0.50。Consumer 的 `K` / impact / competitive floor / weighting **全部继续 [TBD]**。
+
+### 九、Jitter `[已定]`
+MVP = **J0（无 jitter）**。**不得**增加 clubId jitter / season jitter / player jitter / random jitter。
+理由：① 三档固定值已足够产生身份差异；② jitter 增加参数量；③ jitter 无法真正解决 affine collapse；
+④ 同档内差异不是当前 MVP 必需品。未来如需同档差异须**另开独立 CAL**，本阶段不实现。
+
+### 十、值域与极端值 `[已定]`
+当前 MVP 取值保持在 **[0.30, 0.70]**；不出现 `0` / `1` / `<0.10` / `>0.90`。
+**禁止**实现时自行扩大范围；如需调整必须**重新 CAL**。
+
+### 十一、Fully Derived `[已定]`
+Development Philosophy 为 **fully derived**：输入 = Club Identity，输出 = 两轴。
+**不持久化**；不写 save；不增加 schema；不写 player / runtime / season state / manager state / transfer state / finance state。
+
+### 十二、Determinism `[已定]`
+同一 `clubId` 的 Development Philosophy **必须始终相同**。
+不允许 `Math.random` / `Date.now` / season / match result / player population / NewGen / retirement 影响 Philosophy。
+因此同一 club 的 Season 1 / 50 / 100 理论上**完全一致**；**NewGen 不改变** Club Philosophy；**Retirement 不改变** Club Philosophy。
+
+### 十三、Club Strength Independence `[已定]`
+Club strength **不决定** Philosophy。**不得** `Elite → YouthFocus`、`Weak → YouthFocus`、`Small → YouthFocus`、`Rich → Conservative`。
+Philosophy 与 strength / finance / squad age / player quality **保持结构独立**；未来这些只能作为 Consumer / Squad Planning 等层的 context。
+
+### 十四、无 Consumer（最重要边界）`[已定]`
+当前 Development Philosophy 只能存在于 `Club Identity → Development Philosophy`，**到此为止**。
+**不得** `Philosophy → Training Decision / Selection / Rotation / Minutes / Growth / Transfer / Loan / Squad Planning`。
+当前完全 **NO CONSUMER**。
+
+### 十五、正反馈保护 `[已定]`
+未来若接 Consumer，仍必须保持 `Philosophy → bounded soft preference → consumer behavior`。
+**禁止** `Philosophy → direct Growth` / `unlimited Minutes` / `guaranteed Selection` / `guaranteed youth promotion`。
+必须保留：current ability / position competition / availability / squad constraints / competitive floor /
+match importance / bounded influence / anti-monopoly。具体 Consumer 规则**全部另开设计与 CAL**。
+
+### 十六、未来 Consumer 参数 `[TBD]`
+以下全部继续 **`[TBD]`**：Consumer `K` / axis weighting / impact / competitive floor / quota / anti-monopoly /
+match importance interaction / season memory / Squad Planning interaction / Loan interaction / Pathway interaction。
+**不得**因 C0 已冻结而自动决定这些参数。
+
+### 十七、Manager `[已定 → DEFERRED]`
+当前**没有 Manager domain** ⇒ **不创建** fake `managerId` / Manager Philosophy / Manager Offset。
+未来若增加 Manager，需独立设计 `Club Culture + Manager Offset`；Manager **不得直接替换** Club Identity。
+
+### 十八、数据驱动 `[已定]`
+当前 Development Philosophy **不进入 `.fdb`**，继续 derived from Club Identity。
+未来若需要 `.fdb` explicit philosophy，必须重新进行 schema design / migration design / CAL。当前不做。
+
+### 十九、NewGen / Retirement Invariants `[已定]`
+NewGen（`ply_g_<seq>`）不改变 `clubId`，Retirement 不写 club 身份 ⇒ 二者**均不改变** Club Philosophy。
+
+### 二十、Implementation `[已定 → DEFERRED]`
+C0 **当前 Implementation Deferred**。任何 Consumer 接入前必须满足 D-44 的 Future Consumer Gate
+（独立设计 + CAL + bounded / soft / AI-only / competitive-floor protected + anti-monopoly +
+long-run ≥50/100/200 赛季生态验证 + neutral/disabled 可退化 + 不新增 persistence）。
+
+### 二十一、历史依据（CAL 记录，简）`[已定]`
+Family A（identical）→ **FAIL**（corr=1.0）；Family B（affine）→ **FAIL**（corr=1.0）；Family D（affine）→ **FAIL**（corr=1.0）；
+Family C（non-affine）→ **PASS**（corr≈0.9821，1 个非对角组合 High/Medium，无极端值，deterministic）。
+
+### Schema / Save `[已定]`
+本步骤**不修改** `GAME_STATE_SCHEMA_VERSION = 10` 与 `SAVE_FORMAT_VERSION = 1`；**不新增 runtime persistence**；相关概念保持 **DERIVED / PURE**。
+
+**验证**：本记录为**纯文档**（仅修改 `docs/DECISIONS.md` 与 `docs/ROADMAP.md`）；未修改 `src/**` / `tests/**` / `data/**` / 配置 / Schema 10 / Save Format 1 / baseline / Golden / 运行行为。
+
+---
+
 ## Deferred Issues（登记；不在本步骤处理）
 
 ### DF-01 Managed Club Cash Concentration / World Finance Feedback `[Resolved → Step 36C 冻结]`
