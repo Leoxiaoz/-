@@ -157,6 +157,7 @@ export function runMatchTick(matchCore, tickInput = {}, options = {}) {
       seed: tickInput.seed ?? null,
       sequence: tickInput.interactionSequence ?? tickIndex,
       ruleVersion: options.interactionRuleVersion,
+      calibrationProfile: options.calibrationProfile, // C-09：Calibration 透传（纯参数注入，不改生命周期）
     });
     stages.push(TICK_STAGES.INTERACTION_RESOLVE);
     events.push({
@@ -187,6 +188,7 @@ export function runMatchTick(matchCore, tickInput = {}, options = {}) {
         range: options.secondBallRange,
         sequence: tickIndex,
         ruleVersion: options.secondBallRuleVersion,
+        calibrationProfile: options.calibrationProfile, // C-09：Calibration 透传（纯参数注入，不改生命周期）
       });
       const sbEnv = integrateSecondBallResolution(current, secondBallResult);
       current = sbEnv.matchCore;
