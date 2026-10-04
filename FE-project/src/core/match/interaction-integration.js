@@ -23,6 +23,7 @@
 
 import { applyInteractionStateUpdate } from './interaction-state-update.js';
 import { resolveInteraction } from './interaction-resolution.js';
+import { resolveSecondBall } from './second-ball-resolution.js';
 import { INTERACTION_BALL_STATE as BS } from './interaction-resolution-config.js';
 
 /** 集成结果原因枚举。 */
@@ -161,5 +162,68 @@ export function integrateInteractionResolution(matchCore, result, options = {}) 
 export function resolveAndIntegrateInteraction(actionInstance, matchCore, options = {}) {
   const result = resolveInteraction(actionInstance, matchCore, options);
   const envelope = integrateInteractionResolution(matchCore, result);
+  return { ...envelope, result };
+}
+
+// ===========================================================================
+// Second-Ball Integration（Step 39F-M-C-07 薄适配）
+// ===========================================================================
+
+/**
+ * 将 `SecondBallResolutionResult` 集成进 MatchCore（C-07 薄适配）。
+ *
+ * 语义与 `integrateInteractionResolution` 完全一致，**复用同一 mutation 层**
+ * （`applyInteractionStateUpdate`）与同一幂等判定（目标状态收敛）：
+ * - 唯一 mutation 路径 = `applyInteractionStateUpdate`（本函数不自行拼 ball）。
+ * - 非法 / 不适用 → 原样返回输入 matchCore，`applied:false`。
+ * - 球已处于 Result 的确定性目标状态 → `ALREADY_APPLIED`（幂等，无二次转移）。
+ *
+ * 边界：本层**不重算** Second-Ball Resolution（不重新竞争 / 不读 RNG）；
+ * 不保存第二份 ball / possession truth；不新建 mutation 层。
+ *
+ * @param {object} matchCore MatchCore Truth（只读）
+ * @param {object} result SecondBallResolutionResult（只读）
+ * @returns {{matchCore:object, applied:boolean, reason:string, applicationKey:string|null, invariantIssues:string[]}}
+ */
+export function integrateSecondBallResolution(matchCore, result) {
+  if (!matchCore || !result || typeof result !== 'object') {
+    return {
+      matchCore, applied: false, reason: INTEGRATION_REASONS.INVALID_RESULT,
+      applicationKey: null, invariantIssues: matchCore ? checkMatchInvariants(matchCore) : [],
+    };
+  }
+  const applicationKey = deriveApplicationKey(matchCore, result);
+
+  if (result.type !== 'SECOND_BALL_RESOLUTION' || !result.ok || !result.ball || !result.ball.state) {
+    return {
+      matchCore, applied: false, reason: INTEGRATION_REASONS.RESULT_NOT_APPLICABLE,
+      applicationKey, invariantIssues: checkMatchInvariants(matchCore),
+    };
+  }
+
+  // 唯一 authoritative mutation 层（与 C-06 同一实现）。
+  const candidate = applyInteractionStateUpdate(matchCore, result);
+  const changed = ballJson(candidate?.ball) !== ballJson(matchCore.ball);
+  const next = changed ? candidate : matchCore;
+  return {
+    matchCore: next,
+    applied: changed,
+    reason: changed ? INTEGRATION_REASONS.APPLIED : INTEGRATION_REASONS.ALREADY_APPLIED,
+    applicationKey,
+    invariantIssues: checkMatchInvariants(next),
+  };
+}
+
+/**
+ * 编排入口：MatchCore(FREE) → Second-Ball Resolution → Integration → State Update。
+ * 仅组合 C-07 `resolveSecondBall` 与上面的集成函数；**不新增任何 Resolution 规则**。
+ *
+ * @param {object} matchCore
+ * @param {{range?:number, sequence?:number, ruleVersion?:string, debug?:boolean}} [options]
+ * @returns {{matchCore:object, applied:boolean, reason:string, applicationKey:string|null, invariantIssues:string[], result:object}}
+ */
+export function resolveAndIntegrateSecondBall(matchCore, options = {}) {
+  const result = resolveSecondBall(matchCore, options);
+  const envelope = integrateSecondBallResolution(matchCore, result);
   return { ...envelope, result };
 }

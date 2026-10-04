@@ -45,6 +45,7 @@ import './match-ball-physics.test.js';
 import './match-ball-causality.test.js';
 import './match-interaction-resolution.test.js';
 import './match-interaction-integration.test.js';
+import './match-second-ball-resolution.test.js';
 import './development-derived.test.js';
 import './finance-feedback.test.js';
 import './competition.test.js';
