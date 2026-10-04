@@ -28,11 +28,28 @@ import { clamp01, isAvailable } from './player-situation.js';
 import { deriveBallFacts, deriveBallRelation, playerVelocityFromMovement } from './ball-facts.js';
 import { INTERACTION_BALL_STATE as BS, FOLLOW_UP_KIND } from './interaction-resolution-config.js';
 import {
-  SECOND_BALL_RESOLUTION_CONFIG as C,
+  SECOND_BALL_RESOLUTION_CONFIG,
+  buildSecondBallResolutionConfig,
   SECOND_BALL_RESOLUTION_RULE_VERSION,
   SECOND_BALL_OUTCOMES,
   SECOND_BALL_ELIGIBILITY,
 } from './second-ball-resolution-config.js';
+import { resolveCalibrationProfile, isDefaultCalibrationProfile } from './resolution-calibration.js';
+
+/**
+ * 解析本次调用的生效配置 + Calibration 版本（Override 只在 Resolution 边界生效）。
+ * - 无 override → 复用冻结的默认配置（不分配）。
+ * - 有 override → 校验后派生（不修改全局 / 不产生 hidden state）。
+ */
+function effectiveResolution(options) {
+  const profile = resolveCalibrationProfile(options?.calibrationProfile);
+  return {
+    config: isDefaultCalibrationProfile(profile)
+      ? SECOND_BALL_RESOLUTION_CONFIG
+      : buildSecondBallResolutionConfig(profile),
+    calibrationVersion: profile.calibrationVersion,
+  };
+}
 
 /** 取球员坐标（缺失回退球场中心）。 */
 function posOf(p) {
@@ -95,7 +112,7 @@ function isBallFree(ballFacts) {
  * @returns {{ballFree:boolean, ballPosition:{x:number,y:number}, range:number, candidates:object[]}}
  */
 export function deriveSecondBallCandidates(matchCore, options = {}) {
-  const range = Number.isFinite(Number(options.range)) ? Number(options.range) : C.RANGE;
+  const range = Number.isFinite(Number(options.range)) ? Number(options.range) : SECOND_BALL_RESOLUTION_CONFIG.RANGE;
   const ballFacts = deriveBallFacts(matchCore);
   const ballFree = isBallFree(ballFacts);
   const ballPosition = { x: ballFacts.position.x, y: ballFacts.position.y };
@@ -148,9 +165,10 @@ export function deriveSecondBallCandidates(matchCore, options = {}) {
 /**
  * 计算单个候选人的竞争分数及其可解释分量。
  * score = arrivalAdvantage(proximity + closing) + relevantAbility + contextModifier
+ * @param {object} C 生效的 Second-Ball 配置（默认或 override 派生）
  * @returns {{proximity:number, closing:number, ability:number, context:number, score:number}}
  */
-function computeCompetitionScore(cand, range) {
+function computeCompetitionScore(cand, range, C) {
   const proximity = clamp01(1 - cand.distanceToBall / Math.max(1e-9, range));
   const closing = clamp01(cand.closingSpeed / C.CLOSING_SPEED_NORM);
   const ability = C.ABILITY_DEFENDING_WEIGHT * cand.attributes.defending
@@ -194,9 +212,9 @@ function makeResult({ ok, outcome, reason, ball, winner, control, possession, ca
 }
 
 /** 把候选（含分数）整理为 Result.candidates（稳定序，纯数据）。 */
-function toResultCandidates(discovery) {
+function toResultCandidates(discovery, C) {
   return discovery.candidates.map((c) => {
-    const scored = c.eligible ? computeCompetitionScore(c, discovery.range) : null;
+    const scored = c.eligible ? computeCompetitionScore(c, discovery.range, C) : null;
     return {
       playerId: c.playerId,
       teamId: c.teamId,
@@ -223,7 +241,8 @@ function toResultCandidates(discovery) {
  */
 export function resolveSecondBall(matchCore, options = {}) {
   const ruleVersion = options.ruleVersion ?? SECOND_BALL_RESOLUTION_RULE_VERSION;
-  const meta = { ruleVersion, sequence: options.sequence ?? 0 };
+  const { config: C, calibrationVersion } = effectiveResolution(options);
+  const meta = { ruleVersion, sequence: options.sequence ?? 0, calibrationVersion };
 
   if (!matchCore || typeof matchCore !== 'object') {
     return makeResult({
@@ -236,8 +255,8 @@ export function resolveSecondBall(matchCore, options = {}) {
   }
 
   const ballFacts = deriveBallFacts(matchCore);
-  const discovery = deriveSecondBallCandidates(matchCore, { range: options.range });
-  const resultCandidates = toResultCandidates(discovery);
+  const discovery = deriveSecondBallCandidates(matchCore, { range: options.range ?? C.RANGE });
+  const resultCandidates = toResultCandidates(discovery, C);
   const ballPosition = { x: discovery.ballPosition.x, y: discovery.ballPosition.y };
 
   // 非 FREE / loose-ball → 不启动 Second-Ball Resolution，不改状态。

@@ -24,12 +24,32 @@
 import { dist, clamp01 } from './player-situation.js';
 import { buildDecisionScope, createDecisionRng } from './decision-rng.js';
 import {
-  INTERACTION_RESOLUTION_CONFIG as C, INTERACTION_RESOLUTION_RULE_VERSION,
+  INTERACTION_RESOLUTION_CONFIG, buildInteractionResolutionConfig,
+  INTERACTION_RESOLUTION_RULE_VERSION,
   DRIBBLE_OUTCOMES, TACKLE_OUTCOMES, PRESS_OUTCOMES, INTERCEPTION_OUTCOMES,
   INTERACTION_BALL_STATE as BS, FOLLOW_UP_KIND,
 } from './interaction-resolution-config.js';
+import { resolveCalibrationProfile, isDefaultCalibrationProfile } from './resolution-calibration.js';
 
-const clampPitch = (v) => Math.min(C.PITCH_MAX, Math.max(C.PITCH_MIN, Number.isFinite(Number(v)) ? Number(v) : 0.5));
+/** 结构性 pitch 边界（Calibration 无关）。 */
+const PITCH_MIN = INTERACTION_RESOLUTION_CONFIG.PITCH_MIN;
+const PITCH_MAX = INTERACTION_RESOLUTION_CONFIG.PITCH_MAX;
+const clampPitch = (v) => Math.min(PITCH_MAX, Math.max(PITCH_MIN, Number.isFinite(Number(v)) ? Number(v) : 0.5));
+
+/**
+ * 解析本次调用的生效配置 + Calibration 版本（Override 只在 Resolution 边界生效）。
+ * - 无 override → 复用冻结的默认配置（不分配）。
+ * - 有 override → 校验后派生（不修改全局 / 不产生 hidden state）。
+ */
+function effectiveResolution(options) {
+  const profile = resolveCalibrationProfile(options?.calibrationProfile);
+  return {
+    config: isDefaultCalibrationProfile(profile)
+      ? INTERACTION_RESOLUTION_CONFIG
+      : buildInteractionResolutionConfig(profile),
+    calibrationVersion: profile.calibrationVersion,
+  };
+}
 
 /** 取球员坐标（缺失回退球场中心）。 */
 function posOf(p) {
@@ -63,9 +83,9 @@ export function resolveInteractionPressure(matchCore, origin, actorId) {
   for (const p of players) {
     if (p.teamId === actorTeam || p.playerId === actorId) continue;
     if (!isUsable(p)) continue;
-    if (dist(posOf(p), origin) <= C.PRESSURE_RANGE) n += 1;
+    if (dist(posOf(p), origin) <= INTERACTION_RESOLUTION_CONFIG.PRESSURE_RANGE) n += 1;
   }
-  return clamp01(n / C.PRESSURE_NORM);
+  return clamp01(n / INTERACTION_RESOLUTION_CONFIG.PRESSURE_NORM);
 }
 
 /** 最近的可用对手（range 内；无则 null）。 */
@@ -88,7 +108,7 @@ function nearestOpponent(matchCore, actor, range) {
 /** 确定性散布点（消耗 2 次 RNG；有界；bounce/spin 属 Deferred）。 */
 function scatterPoint(origin, rng) {
   const angle = rng.next() * Math.PI * 2;
-  const radius = C.SCATTER_MAX * clamp01(rng.next());
+  const radius = INTERACTION_RESOLUTION_CONFIG.SCATTER_MAX * clamp01(rng.next());
   return { x: clampPitch(origin.x + Math.cos(angle) * radius), y: clampPitch(origin.y + Math.sin(angle) * radius) };
 }
 
@@ -120,8 +140,8 @@ export function buildInteractionResolutionScope(matchCore, actionType, actorId, 
 // Result 构造（纯数据）
 // ===========================================================================
 
-function mkMeta(options, ruleVersion) {
-  return { ruleVersion, sequence: options.sequence ?? 0 };
+function mkMeta(options, ruleVersion, calibrationVersion) {
+  return { ruleVersion, sequence: options.sequence ?? 0, calibrationVersion };
 }
 
 /** 统一结果骨架（纯数据；不持有 authoritative state）。 */
@@ -189,7 +209,8 @@ function markFollowUp(result) {
  */
 export function resolveDribble(actionInstance, matchCore, options = {}) {
   const ruleVersion = options.ruleVersion ?? INTERACTION_RESOLUTION_RULE_VERSION;
-  const meta = mkMeta(options, ruleVersion);
+  const { config: C, calibrationVersion } = effectiveResolution(options);
+  const meta = mkMeta(options, ruleVersion, calibrationVersion);
   const T = 'DRIBBLE';
 
   if (!actionInstance || actionInstance.actionType !== T) {
@@ -266,7 +287,8 @@ export function resolveDribble(actionInstance, matchCore, options = {}) {
  */
 export function resolveTackle(actionInstance, matchCore, options = {}) {
   const ruleVersion = options.ruleVersion ?? INTERACTION_RESOLUTION_RULE_VERSION;
-  const meta = mkMeta(options, ruleVersion);
+  const { config: C, calibrationVersion } = effectiveResolution(options);
+  const meta = mkMeta(options, ruleVersion, calibrationVersion);
   const T = 'TACKLE';
 
   if (!actionInstance || actionInstance.actionType !== T) {
@@ -348,7 +370,8 @@ export function resolveTackle(actionInstance, matchCore, options = {}) {
  */
 export function resolvePress(actionInstance, matchCore, options = {}) {
   const ruleVersion = options.ruleVersion ?? INTERACTION_RESOLUTION_RULE_VERSION;
-  const meta = mkMeta(options, ruleVersion);
+  const { config: C, calibrationVersion } = effectiveResolution(options);
+  const meta = mkMeta(options, ruleVersion, calibrationVersion);
   const T = 'PRESS';
 
   if (!actionInstance || actionInstance.actionType !== T) {
@@ -435,7 +458,8 @@ export function resolvePress(actionInstance, matchCore, options = {}) {
  */
 export function resolveInterception(actionInstance, matchCore, options = {}) {
   const ruleVersion = options.ruleVersion ?? INTERACTION_RESOLUTION_RULE_VERSION;
-  const meta = mkMeta(options, ruleVersion);
+  const { config: C, calibrationVersion } = effectiveResolution(options);
+  const meta = mkMeta(options, ruleVersion, calibrationVersion);
   const T = 'INTERCEPTION';
 
   if (!actionInstance || actionInstance.actionType !== T) {
@@ -522,7 +546,8 @@ export function resolveInteraction(actionInstance, matchCore, options = {}) {
   const ruleVersion = options.ruleVersion ?? INTERACTION_RESOLUTION_RULE_VERSION;
   const handler = HANDLERS[actionInstance?.actionType];
   if (!handler) {
-    const meta = mkMeta(options, ruleVersion);
+    const { calibrationVersion } = effectiveResolution(options);
+    const meta = mkMeta(options, ruleVersion, calibrationVersion);
     const r = makeResult(actionInstance?.actionType ?? 'UNKNOWN', {
       ok: false, outcome: 'INTERACTION_UNSUPPORTED', reason: 'UNSUPPORTED_ACTION_TYPE',
       actorId: actionInstance?.actorId ?? null, targetId: null, meta,

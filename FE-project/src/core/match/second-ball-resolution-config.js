@@ -11,7 +11,13 @@
  *
  * 红线：不改 Save / Schema；不接 Renderer / Production Loop；无 Math.random；
  * 不建立第二套 Ball / Possession / Geometry Truth。
+ *
+ * Step 39F-M-C-09：平衡参数（RANGE / MIN_SCORE / 各 weight / normalizer）已改为由
+ * `resolution-calibration-config.js` 的 Calibration Profile **派生**（单一 Calibration Truth）；
+ * 结构性常量（pitch 边界）仍在此声明，不进入 Calibration。
  */
+
+import { DEFAULT_CALIBRATION_PROFILE } from './resolution-calibration-config.js';
 
 /** Second-Ball Resolution 规则版本（用于 Result meta；非 schema 字段）。 */
 export const SECOND_BALL_RESOLUTION_RULE_VERSION = 'match-second-ball-resolution-v1';
@@ -33,22 +39,37 @@ export const SECOND_BALL_ELIGIBILITY = Object.freeze({
   OUT_OF_RANGE: 'OUT_OF_RANGE',           // 与球不存在有效空间关系（超出争抢半径）
 });
 
-export const SECOND_BALL_RESOLUTION_CONFIG = Object.freeze({
-  /** pitch 边界（坐标 invariant）。 */
+/** 结构性常量（**非 Calibration**）：坐标 invariant。 */
+const SECOND_BALL_STRUCTURAL_CONSTANTS = Object.freeze({
   PITCH_MIN: 0,
   PITCH_MAX: 1,
-
-  /** 争抢半径：球员到球的距离上限。超出即无资格（复用 ballRelation.distance 口径）。 */
-  RANGE: 0.20,
-
-  /** 最低获胜分数：低于此值视为「竞争无法形成合法 winner」→ NO_WINNER。 */
-  MIN_SCORE: 0.02,
-
-  /** 竞争模型权重（arrivalAdvantage + positioning + relevantAbility + contextModifier）。 */
-  PROXIMITY_WEIGHT: 0.45,        // 到达优势：越近越大
-  CLOSING_WEIGHT: 0.15,          // 到达优势：接近速度（closingSpeed）越大越大
-  CLOSING_SPEED_NORM: 5,         // 接近速度归一化基准（TBD-CAL）
-  ABILITY_DEFENDING_WEIGHT: 0.20, // relevantAbility：防守能力
-  ABILITY_PACE_WEIGHT: 0.12,      // relevantAbility：速度
-  CONTEXT_WEIGHT: 0.08,           // contextModifier：soft state（fitness/form/morale）
 });
+
+/**
+ * 由 Calibration Profile 派生 Second-Ball Resolution Config（参数注入，不改竞争公式结构）。
+ * @param {object} profile Calibration Profile
+ * @returns {object} 冻结的 second-ball 生效配置
+ */
+export function buildSecondBallResolutionConfig(profile) {
+  const s = profile.secondBall;
+  return Object.freeze({
+    ...SECOND_BALL_STRUCTURAL_CONSTANTS,
+
+    /** 争抢半径：球员到球的距离上限。超出即无资格（复用 ballRelation.distance 口径）。 */
+    RANGE: s.RANGE,
+
+    /** 最低获胜分数：低于此值视为「竞争无法形成合法 winner」→ NO_WINNER。 */
+    MIN_SCORE: s.MIN_SCORE,
+
+    /** 竞争模型权重（arrivalAdvantage + relevantAbility + contextModifier）。 */
+    PROXIMITY_WEIGHT: s.PROXIMITY_WEIGHT,
+    CLOSING_WEIGHT: s.CLOSING_WEIGHT,
+    CLOSING_SPEED_NORM: s.CLOSING_SPEED_NORM,
+    ABILITY_DEFENDING_WEIGHT: s.ABILITY_DEFENDING_WEIGHT,
+    ABILITY_PACE_WEIGHT: s.ABILITY_PACE_WEIGHT,
+    CONTEXT_WEIGHT: s.CONTEXT_WEIGHT,
+  });
+}
+
+/** 默认生效配置（C09-v1 默认 profile 派生）。 */
+export const SECOND_BALL_RESOLUTION_CONFIG = buildSecondBallResolutionConfig(DEFAULT_CALIBRATION_PROFILE);
