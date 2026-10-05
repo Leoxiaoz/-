@@ -847,3 +847,22 @@
 - **明确 Deferred**：DRIBBLE / TACKLE / PRESS / INTERCEPTION / SECOND_BALL Resolution、FOUL / OFFSIDE / GK Interaction / Set Piece、lofted / bounce / spin、正式 possession transfer、Production Loop、Renderer。
 - **不变**：PASS / SHOT resolution 与 state-update、Save Format 1、Schema 10、Production Loop、Renderer 均**未修改**；无 Math.random；无第三方 physics engine。测试基线：既有 777 + 新增 28 = **805 通过 / 0 失败**。
 - **Deferred**：Playoff / Domestic Cup / Continental / Qualification / Complex stages / Youth·Reserve / Staff / Scout / Reputation / Revenue·TV·Sponsor·Prize / Loan / Registration / licensing / FFP / promotion history entity / CompetitionSeason persistent entity。
+
+---
+
+## §39 Interaction Ball Position Ownership 解耦（Step 39F-M-C-32）
+
+- **状态**：**OWNERSHIP DECOUPLING GATE 已实现并验证**。承接 39F-M-C-27（Interaction Movement Semantics = INSTANT）与 39F-M-C-31（SECOND_BALL = NO_POSITION_CHANGE）。**C-30 仍 BLOCKED / SEALED，本 Gate 未实现 / 未接入 C-30。**
+- **问题**：此前 C-05 `applyInteractionStateUpdate()` **原子地同时**写 `ball.position` + `state / possession / control / lastTouch / velocity`，导致 **Ball Position Ownership 与 Interaction State Mutation 耦合**。
+- **职责分离（冻结）**：
+  - **Interaction State Mutation Boundary** = [interaction-state-update.js](file:///workspace/FE-project/src/core/match/interaction-state-update.js)（C-05，职责收窄）：只写 `Ball State / possession / control / lastTouch / velocity`；**不再写 `ball.position`**。
+  - **Ball Position Ownership Boundary** = [interaction-ball-position-ownership.js](file:///workspace/FE-project/src/core/match/interaction-ball-position-ownership.js)（新增）：`applyInteractionBallPositionUpdate(matchCore, result)` 是 **Interaction Ball Position 的唯一写入归属边界**，内部**复用既有 C-29** [instant-ball-position-integration.js](file:///workspace/FE-project/src/core/match/instant-ball-position-integration.js) 的 `applyInstantBallPositionUpdate`（不重复实现 Position Validation，不建第二套 Instant Position Boundary）。
+- **数据流（C-06 编排，单向）**：`Interaction Resolution Result` → **① Position Integration**（`applyInteractionBallPositionUpdate`，唯一写位置）→ **② State Mutation**（`applyInteractionStateUpdate`，不写位置）→ 新 MatchCore。调用顺序 **Position → State**（见 [interaction-integration.js](file:///workspace/FE-project/src/core/match/interaction-integration.js)）。
+- **原子性**：State Mutation 为全函数（total）；Position Integration 可失败（`INVALID_POSITION` / `INVALID_INPUT`）。**先 Position 后 State**：Position 失败 → 返回 `ok:false` / `POSITION_INTEGRATION_FAILED`，**不进入 State Mutation**，输入 MatchCore 原样返回，**无半完成 Interaction 状态**。
+- **Position 来源**：只消费上游 Resolution 已确定的 `result.ball.position`，**不重算** destination / scatter / contestPoint / carrierPos / interception / actor position。
+- **唯一 Truth**：不创建第二个 Ball Position Truth，最终 Truth 仍是 `MatchCore.ball.position`；不创建 Movement State / Duration / Transit / Velocity Model / Trajectory / Physics / Collision。
+- **SECOND_BALL（C-31 约束）**：SECOND_BALL = `NO_POSITION_CHANGE`，故 **不经过 Position Ownership 边界**；`integrateSecondBallResolution` 只走 State Mutation（C-05，不写 position）→ **SECOND_BALL Position Write Count = 0**，即使 State 变化球位也完全不变。**禁止** SECOND_BALL → C-29 / C-30。
+- **不变（红线）**：未修改 **C-29 Contract**（API / validation / result contract / ruleVersion / immutable semantics）、**C-27**、**C-31** 语义；未实现 C-30；未改 Save Format 1 / Schema 10；未接 Production Loop / Renderer；无 `Math.random` / `Date.now` / 墙钟 / physics / collision / trajectory / duration / transit。
+- **业务结果一致性**：合法 Interaction / SECOND_BALL 流程的 `Position / State / Possession / Control / LastTouch / Velocity` 与 C-32 之前**完全一致**（BEFORE === AFTER）；仅改变「谁负责写 Position」，不改变「Position 写成什么值」。
+- **测试**：新增 [interaction-position-ownership.test.js](file:///workspace/FE-project/tests/interaction-position-ownership.test.js)（31 用例，覆盖所有权边界契约、12 类 Interaction outcome 回归、SECOND_BALL Position Write Count = 0、失败原子性、Immutability、Source Guard）。全量基线：既有 1419 + 新增 31 = **1450 通过 / 0 失败**。
+- **Deferred**：Interaction → C-29 的正式接入属于后续独立 Gate（C-30）；本 Gate 完成后 **STOP**，等待 Owner 验收。

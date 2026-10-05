@@ -1,15 +1,23 @@
 /**
- * Interaction State Update（Step 39F-M-C-05）。
+ * Interaction State Update（Step 39F-M-C-05；Step 39F-M-C-32 职责收窄）。
  * 层级归属：Simulation Core / Match Resolution。**纯函数**（返回新状态，不原地 mutate 输入）。
  *
- * 职责：消费 `InteractionResolutionResult`，把结果写回 **唯一 authoritative Ball Truth**
- * （`MatchCore.ball`）。Resolution 只描述结果；**只有本模块负责 authoritative state mutation**。
+ * 职责：消费 `InteractionResolutionResult`，把 **Interaction State** 写回 `MatchCore.ball`：
+ * Ball State / possession / control / lastTouch / velocity。
  *
- * 红线：只影响 BallState；**不修改 Score / Standings / Stats / Growth / Training /
- * Development / Save / Match Result**；不产生 Event；不调用 Decision；无 Math.random。
+ * ⚠ C-32 起：**Ball Position Ownership 已与本层解耦**。
+ * - 本层 **不再写入 `ball.position`**（保留当前 position，不重算 / 不覆盖 `result.ball.position`）。
+ * - Interaction 的 Ball Position 由专用边界
+ *   `interaction-ball-position-ownership.js` → C-29 `applyInstantBallPositionUpdate` 负责，
+ *   且 **先于**本层执行（见 C-06 `integrateInteractionResolution`）。
+ * - 这是职责分离，**不改变业务结果**：合法流程中最终 ball.position 与此前完全一致。
+ *
+ * 红线：只影响 BallState（含 state/possession/control/lastTouch/velocity）；**不修改 Score /
+ * Standings / Stats / Growth / Training / Development / Save / Match Result**；不产生 Event；
+ * 不调用 Decision；无 Math.random；不写 Ball Position。
  *
  * Deferred：bounce / spin / lofted / GK Interaction 的球物理属未来阶段；本模块只做
- * 控制关系与基本位置的确定性落地（速度置零）。
+ * 控制关系的确定性落地（速度置零）。
  */
 
 import { INTERACTION_BALL_STATE as BS } from './interaction-resolution-config.js';
@@ -40,7 +48,6 @@ function cloneBall(ball) {
 export function applyInteractionStateUpdate(matchCore, result) {
   if (!matchCore || !result || !result.ok || !result.ball || !result.ball.state) return matchCore;
   const current = matchCore.ball ?? {};
-  const position = { x: Number(result.ball.position?.x) || 0, y: Number(result.ball.position?.y) || 0 };
 
   if (result.ball.state === BS.IN_TRANSIT) {
     // 未拦截：球仍在飞行，权威状态不变（保留 transit 与速度）。
@@ -48,9 +55,9 @@ export function applyInteractionStateUpdate(matchCore, result) {
   }
 
   const controlled = result.ball.state === BS.CONTROLLED;
+  // C-32：不写 `position`（保留当前球位；Position 由 interaction-ball-position-ownership 边界负责）。
   const nextBall = {
     ...cloneBall(current),
-    position,
     velocity: { x: 0, y: 0 },
     state: result.ball.state,
     control: controlled ? (result.possession?.toPlayerId ?? null) : null,

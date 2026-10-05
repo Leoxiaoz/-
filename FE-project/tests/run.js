@@ -65,6 +65,7 @@ import './ball-movement-state.test.js';
 import './ball-movement-integration.test.js';
 import './action-ball-movement-state.test.js';
 import './interaction-ball-transit.test.js';
+import './interaction-position-ownership.test.js';
 import './interaction-ball-movement-semantics.test.js';
 import './instant-ball-position-integration.test.js';
 import './second-ball-ball-movement-semantics.test.js';
