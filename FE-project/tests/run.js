@@ -51,6 +51,7 @@ import './match-tick.test.js';
 import './match-ticks.test.js';
 import './match-clock.test.js';
 import './match-phase.test.js';
+import './match-result.test.js';
 import './development-derived.test.js';
 import './finance-feedback.test.js';
 import './competition.test.js';
