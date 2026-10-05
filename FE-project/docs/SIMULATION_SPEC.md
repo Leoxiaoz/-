@@ -932,3 +932,37 @@
 
 - **不变（红线）**：未修改 C-23 / C-24 / C-29 / C-33 / C-27 / C-03 Ball Physics；未改 C-08 Lifecycle；未创建 Movement Model / Transit State / Physics / Velocity Model / Trajectory / Collision / Goal Detection；未直接写 Ball Position；未新增测试；全量测试不受影响（1473 通过 / 0 失败）。
 - **Deferred**：连续运动 Tick 语义最终冻结 + 生产接入；本 Gate 完成后 **STOP**，等待 Owner 验收。
+
+---
+
+## §43 Continuous Ball Movement Authority & Tick Integration Decision（Step 39F-M-C-36）
+
+- **状态**：**BLOCKED（一致性验证失败）**。Owner 决策 A/B 已收到，但**现有源码不足以支持该冻结架构**，且验证其成立需修改生产代码 / 新增规则（§12/§13 禁止）。**未修改任何生产代码 / 测试 / Frozen Contract。**
+
+### Owner Decision（已接收）
+
+- **A — positionUpdateMode = MOVEMENT_DRIVEN_TICK**：Transit 期间 `MatchCore.ball.position` 由 C-03 Ball Physics `position += velocity*dt` 每 Tick 推进。
+- **B — 权威关系**：`Transit State`（定义 from/to/duration/elapsed/progress/IN_TRANSIT 生命周期）→ `Ball Physics`（连续 Position 推进）→ `MatchCore.ball.position`。Transit **不得**作为第二 Position Writer。
+
+### Verification（对照源码）
+
+- ✅ **Position Truth Owner** = `MatchCore.ball.position`；**Transit Truth Owner** = `MatchCore.ball.transit`（不含 current position）——符合决策。
+- ✅ **Invariant A/C**：安装时 `ball.position := transit.from`；`progress < 1` 不 finalize——成立。
+- ✅ **dt Source**：C-03 仅接受显式 `dt`（simulation seconds），无 `Date.now`/wall clock；C-11 `TICK_DURATION_SECONDS = 1` 可作来源——成立。
+- ❌ **Invariant E（单一 Position Writer）失败**：`finalize()` **写 `ball.position := transit.to`**（[pass-state-update.js#L50-L70](file:///workspace/FE-project/src/core/match/pass-state-update.js#L50-L70) / [shot-state-update.js#L41-L61](file:///workspace/FE-project/src/core/match/shot-state-update.js#L41-L61)）。与 Ball Physics 的每 Tick Position 写入构成**两个独立 Position Writer**。解耦须修改 pass/shot-state-update（§12 禁止）→ **BLOCK #2 / #5**。
+- ❌ **Invariant D（完成 Tick `ball.position === transit.to`）失败**：Ball Physics 由 [velocityFromTransit](file:///workspace/FE-project/src/core/match/ball-physics.js#L73) 播种速度 `|to−from|/duration`，但随后受 `FRICTION = 0.20` 衰减 + `STOP_THRESHOLD` 停止 + 边界 clamp，**不含**对 `to`/`duration` 的到达约束。**只读数值探针**：`from={0,0.5}`、`to={0.6,0.5}`、`duration=2`、`v0=0.3` → 累加 2s 后 `ball.position.x ≈ 0.222`（残速 0），**远未到 0.6**。→ **BLOCK #3 / #6**。
+- ❌ **C-03 作为唯一连续 Position Writer 不成立**：因 finalize 亦写 position（见上）→ **BLOCK #1**。
+
+### Decision
+
+- **未 PASS**。要落地 Owner 决策，至少需要：(a) 从 `finalize()` 移除 Position 写入（改 pass/shot-state-update）；(b) 新增 Ball Physics「准确到达 `to`」规则（或 completion Tick 的 position 裁决）。二者均属 §12 禁止范围 / §13 #4/#6 触发 → **BLOCKED**。
+- 决策 A/B 作为**设计意图**予以记录，但**尚不可由现有源码证明**。
+
+### 解除 BLOCKED 的前置条件（供 Owner + 后续独立 Implementation Gate）
+
+1. 决定 Position 完成写入口径：**physical arrival**（需给 Ball Physics 增加到达约束/终止规则）**或** physics 推进 + **唯一 completion writer**（须明确该 writer 是 finalize 还是 C-23，且仅一个）。
+2. 明确 `advance*Transit` 的 finalize 是否**移除** Position 写入（涉及修改 pass/shot-state-update）——属独立 Gate，不在 C-36。
+3. 冻结 C-08 生产 Integration Point（Action / Transit advancement / Ball Physics / finalize 顺序）与 dt 接线。
+
+- **不变（红线）**：未修改 C-03 / C-08 / C-23 / C-24 / C-29 / C-33 / C-27 / PASS·SHOT Resolution；未新增 Physics / Transit / Velocity / Acceleration / Spin / Bounce 模型；未引入随机数 / wall clock；未新增测试；未直接写 Ball Position；全量测试不受影响（1473 通过 / 0 失败）。
+- **Deferred**：连续运动权威架构的生产落地；本 Gate 完成后 **STOP**，等待 Owner 验收。
