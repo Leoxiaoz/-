@@ -882,3 +882,16 @@
 - **不变（红线）**：未修改 **C-29 / C-27 / C-31**（API / ruleVersion / 语义）；未实现 C-30；未改 C-08 Tick Lifecycle；未改 Save Format 1 / Schema 10；未接 Renderer；无 `Math.random` / `Date.now` / 墙钟 / duration / Movement State / Transit / Trajectory / physics / collision。
 - **测试**：新增 [interaction-instant-ball-position-integration.test.js](file:///workspace/FE-project/tests/interaction-instant-ball-position-integration.test.js)（23 用例，覆盖 Gate 放行 / 未知失败、四类 Interaction 生产接入、same-position / IN_TRANSIT 无虚假 Movement、失败原子性、Immutability、单写 Guard、SECOND_BALL = 0、真实 C-08 生产链、Source Guard）。全量基线：既有 1450 + 新增 23 = **1473 通过 / 0 失败**。
 - **Deferred**：C-30（Interaction → C-29 的更广接入）仍 BLOCKED / SEALED；本 Gate 完成后 **STOP**，等待 Owner 验收。
+
+---
+
+## §41 Action Ball Movement State → Continuous Position Integration（Step 39F-M-C-34）
+
+- **状态**：**BLOCKED（未实现）**。原因：`ACTION_CONTINUOUS_MOVEMENT_TICK_SEMANTICS_GAP`。**未修改任何生产代码 / 测试 / Contract。**
+- **目标**：正式建立 `Action Resolution → C-24（Action → Ball Movement State）→ C-23（Continuous Position Integration）→ MatchCore.ball.position` 的生产接入边界，优先覆盖 PASS / SHOT。
+- **BLOCKED 依据 1 — 无生产 Action Resolution 路径**：C-08 [match-tick.js](file:///workspace/FE-project/src/core/match/match-tick.js) 只编排 **Interaction**（C-05 / C-06 / C-07）；它**从不调用** `resolvePass` / `resolveShot`。[pass-resolution.js](file:///workspace/FE-project/src/core/match/pass-resolution.js) / [shot-resolution.js](file:///workspace/FE-project/src/core/match/shot-resolution.js) 及其 state-update 目前**仅被测试引用**，无任何 src 编排器接入。建立该路径须扩展 / 重设计 C-08 Lifecycle → 触发 BLOCKED 条件 #8。
+- **BLOCKED 依据 2 — 连续运动 Tick 写入语义冲突（核心）**：现有权威连续运动是**多 Tick 的 transit 状态机**——[pass-state-update.js](file:///workspace/FE-project/src/core/match/pass-state-update.js) `applyPassStateUpdate`（球置 IN_TRANSIT、`position = transit.from`）→ `advancePassTransit(dt)`（`progress = elapsed/duration`，`progress ≥ 1` 时 `finalize` 到 `to`）；SHOT 对称（[shot-state-update.js](file:///workspace/FE-project/src/core/match/shot-state-update.js)）。该语义中 **`duration` 明确跨多个 Tick**。而 C-23 [ball-movement-integration.js](file:///workspace/FE-project/src/core/match/ball-movement-integration.js) `applyBallMovementPositionUpdate` 是**一次性写 `endPosition`**、无 tick / duration / progress 语义。将 C-23 作为 PASS/SHOT 的 Position Writer 会：(a) 在 Resolution 当 Tick 直接把球瞬移到 `to`，改变现有业务结果；或 (b) 需要把 `duration` 解释为多个 Tick / 外部推进 Movement——均为 §12 / §25 明令禁止 → 触发 BLOCKED 条件 #5。
+- **已确认的可用前提（非阻塞项）**：① C-24 [action-ball-movement-state.js](file:///workspace/FE-project/src/core/match/action-ball-movement-state.js) 可读取权威 `transit{from,to,duration}` 并归一化为 Movement State；② PASS / SHOT 的 `transit.from = actor 位置（= 当前持球位）`、`to = actualDestination`、`duration = calculateTransit/ShotDuration(...) > 0`（authoritative，非重推）；③ C-23 的 Start Position 一致性 / `duration > 0` / immutable 契约均已就绪。**冲突点仅在"连续运动的 Tick 写入时刻"语义。**
+- **不变（红线）**：未修改 C-23 / C-24 / C-29 / C-33 / C-27；未改 C-08 Tick Lifecycle；未创建 Movement Model / Duration Rule / Trajectory / Goal Detection / Physics / Multi-Tick Movement；未直接写 Ball Position；全量测试不受影响（1473 通过 / 0 失败）。
+- **解除 BLOCKED 的前置条件（供后续独立 Gate）**：先明确并冻结「AI/Action 连续运动的 Tick 写入语义」——即 C-23 的 `endPosition` 写入是发生在 transit 完成 Tick（与现有 `finalize` 对齐），还是引入受控的 movement-driven tick 推进；并明确 C-08 是否扩展出 Action Resolution 阶段。在此之前不得接入 PASS/SHOT → C-24 → C-23。
+- **Deferred**：Action（PASS / SHOT）连续运动的正式生产接入；本 Gate 完成后 **STOP**，等待 Owner 验收。
