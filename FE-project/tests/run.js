@@ -64,6 +64,7 @@ import './trajectory-goal-match-tick.test.js';
 import './ball-movement-state.test.js';
 import './ball-movement-integration.test.js';
 import './action-ball-movement-state.test.js';
+import './interaction-ball-transit.test.js';
 import './development-derived.test.js';
 import './finance-feedback.test.js';
 import './competition.test.js';
