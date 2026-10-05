@@ -865,4 +865,20 @@
 - **不变（红线）**：未修改 **C-29 Contract**（API / validation / result contract / ruleVersion / immutable semantics）、**C-27**、**C-31** 语义；未实现 C-30；未改 Save Format 1 / Schema 10；未接 Production Loop / Renderer；无 `Math.random` / `Date.now` / 墙钟 / physics / collision / trajectory / duration / transit。
 - **业务结果一致性**：合法 Interaction / SECOND_BALL 流程的 `Position / State / Possession / Control / LastTouch / Velocity` 与 C-32 之前**完全一致**（BEFORE === AFTER）；仅改变「谁负责写 Position」，不改变「Position 写成什么值」。
 - **测试**：新增 [interaction-position-ownership.test.js](file:///workspace/FE-project/tests/interaction-position-ownership.test.js)（31 用例，覆盖所有权边界契约、12 类 Interaction outcome 回归、SECOND_BALL Position Write Count = 0、失败原子性、Immutability、Source Guard）。全量基线：既有 1419 + 新增 31 = **1450 通过 / 0 失败**。
-- **Deferred**：Interaction → C-29 的正式接入属于后续独立 Gate（C-30）；本 Gate 完成后 **STOP**，等待 Owner 验收。
+- **Deferred**：Interaction 的正式生产接入（C-27 Semantic Gate + 全链验证）由后续独立 Gate **C-33** 完成（见 §40）；C-30 仍保持 BLOCKED / SEALED。
+
+---
+
+## §40 Interaction Instant Ball Position Integration 生产接入（Step 39F-M-C-33）
+
+- **状态**：**PRODUCTION INTEGRATION GATE 已实现并验证**。承接 39F-M-C-32（Position Ownership 解耦）。**C-30 仍 BLOCKED / SEALED，本 Gate 未实现 / 未接入 C-30。**
+- **目标**：将 Interaction Resolution 的 Ball Position **正式**经 `C-27 Semantic Gate → C-32 Position Ownership → C-29 Instant Position` 写入 `MatchCore.ball.position`，并证明 **生产链真正使用该路径**（而非仅"边界存在"）。
+- **生产调用图（C-33 冻结）**：`C-08 Match Tick` → `Interaction Resolution` → `integrateInteractionResolution` → **C-27 Semantic Gate** → **C-32 `applyInteractionBallPositionUpdate`** → **C-29 `applyInstantBallPositionUpdate`** → `MatchCore.ball.position` → **C-05 State Mutation**。
+- **C-27 Semantic Gate（新增）**：[interaction-instant-ball-position-integration.js](file:///workspace/FE-project/src/core/match/interaction-instant-ball-position-integration.js)——`resolveInteractionInstantBallPositionSemantics(result)`。只有 C-27 语义 = `INSTANT`（DRIBBLE / TACKLE / PRESS / INTERCEPTION）放行；未知 / 未审查 / 非 INSTANT → **明确失败** `INTERACTION_BALL_MOVEMENT_SEMANTICS_UNSUPPORTED`，**绝不静默视为 INSTANT**，不进入 C-32 / C-29。Gate **不硬编码** actionType 白名单，统一委托 C-27 `resolveInteractionBallMovementSemantics`（避免第二套 Semantic Contract）。
+- **编排（C-06）**：[interaction-integration.js](file:///workspace/FE-project/src/core/match/interaction-integration.js) 在 Position Integration 前插入 Gate；失败即 `ok:false` / `POSITION_INTEGRATION_FAILED`（附 `positionReason`）。执行顺序 **Gate → Position → State**；Position / Gate 失败 → **不执行 State Mutation**，输入 MatchCore 原样返回（无半完成状态）。
+- **唯一 Position Writer**：final Ball Position 必须等于 `interactionResult.ball.position`，且写入只能经 C-29（禁 `matchCore.ball.position = ...`）。C-05 **不写 position**。
+- **SECOND_BALL（C-31 约束）**：**不经过** Semantic Gate / Position Ownership；`SECOND_BALL Position Integration = 0`，即使 State 变化球位亦不变。
+- **生产链验证**：`runMatchTick` 中 Interaction（如 DRIBBLE_COMPLETED）最终 `matchCore.ball.position === interactionResult.ball.position`，`applied.interaction === true`，invariants 通过；未知 ActionInstance 不改球位。
+- **不变（红线）**：未修改 **C-29 / C-27 / C-31**（API / ruleVersion / 语义）；未实现 C-30；未改 C-08 Tick Lifecycle；未改 Save Format 1 / Schema 10；未接 Renderer；无 `Math.random` / `Date.now` / 墙钟 / duration / Movement State / Transit / Trajectory / physics / collision。
+- **测试**：新增 [interaction-instant-ball-position-integration.test.js](file:///workspace/FE-project/tests/interaction-instant-ball-position-integration.test.js)（23 用例，覆盖 Gate 放行 / 未知失败、四类 Interaction 生产接入、same-position / IN_TRANSIT 无虚假 Movement、失败原子性、Immutability、单写 Guard、SECOND_BALL = 0、真实 C-08 生产链、Source Guard）。全量基线：既有 1450 + 新增 23 = **1473 通过 / 0 失败**。
+- **Deferred**：C-30（Interaction → C-29 的更广接入）仍 BLOCKED / SEALED；本 Gate 完成后 **STOP**，等待 Owner 验收。

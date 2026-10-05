@@ -5,8 +5,9 @@
  * 职责：把 C-05 产出的 `InteractionResolutionResult` 以确定性、单向、可测试的方式交给
  * `applyInteractionStateUpdate`，形成一致的基础 possession / control / transit 写回语义。
  *
- * 数据流（单向，C-32 起）：
+ * 数据流（单向，C-33 起）：
  *   ActionInstance → Interaction Resolution → InteractionResolutionResult
+ *     ├─ C-27 Semantic Gate：interaction-instant-ball-position-integration（仅 INSTANT 放行）
  *     ├─ Position Ownership：interaction-ball-position-ownership → C-29（仅 Ball Position）
  *     └─ State Mutation：interaction-state-update（Ball State / possession / control / lastTouch / velocity）
  *     → MatchCore Truth
@@ -16,8 +17,10 @@
  * - **C-32 Position Ownership 分离**：Interaction Ball Position 由专用边界
  *   `applyInteractionBallPositionUpdate`（内部委托 C-29）负责；state-update **不再写 position**。
  *   本层只做确定性编排（顺序 + 失败原子性），**不重算 position**。
- * - **执行顺序（Position → State）**：Position 集成可失败（INVALID_*），State Mutation 为全函数（total）。
- *   先 Position 后 State，保证 Position 失败时 **不产生任何 State 写入**（无半完成 Interaction 状态）。
+ * - **C-33 C-27 Semantic Gate**：Position Integration 前必须先经 C-27 语义判定；只有 `INSTANT`
+ *   放行，未知 / 非 INSTANT → 明确失败（`INTERACTION_BALL_MOVEMENT_SEMANTICS_UNSUPPORTED`）。
+ * - **执行顺序（Gate → Position → State）**：Semantic Gate / Position 均可失败，State Mutation 为全函数（total）。
+ *   逐级前置保证失败时 **不产生任何 State 写入**（无半完成 Interaction 状态）。
  * - **Integration ≠ Production Loop**：不接 renderer / UI。
  * - **不重算 Resolution**：只消费 Result（不判断成功概率 / 不调用 RNG）。
  * - **单一 Ball Truth**：不保存第二份 ball state / 不维护第二份 possession truth；
@@ -30,6 +33,7 @@
 
 import { applyInteractionStateUpdate } from './interaction-state-update.js';
 import { applyInteractionBallPositionUpdate } from './interaction-ball-position-ownership.js';
+import { resolveInteractionInstantBallPositionSemantics } from './interaction-instant-ball-position-integration.js';
 import { resolveInteraction } from './interaction-resolution.js';
 import { resolveSecondBall } from './second-ball-resolution.js';
 import { INTERACTION_BALL_STATE as BS } from './interaction-resolution-config.js';
@@ -120,10 +124,12 @@ export function checkMatchInvariants(matchCore) {
  * 将 `InteractionResolutionResult` 集成进 MatchCore（C-32：Position Ownership 与 State Mutation 分离）。
  *
  * 语义：
+ * - **步骤 0 — C-27 Semantic Gate**：`resolveInteractionInstantBallPositionSemantics`（C-33）；
+ *   仅 `semantics === INSTANT` 放行，未知 / 非 INSTANT → `ok:false`（不进入 Position / State）。
  * - **步骤 1 — Position Ownership**：`applyInteractionBallPositionUpdate`（唯一 Interaction Position 边界，
  *   内部委托 C-29）。仅消费 `result.ball.position`（不重算）。
  * - **步骤 2 — State Mutation**：`applyInteractionStateUpdate`（唯一 state mutation 层；不再写 position）。
- * - **顺序（Position → State）**：Position 可失败、State 为全函数；先 Position 保证失败时不落地任何 State。
+ * - **顺序（Gate → Position → State）**：前置步骤可失败、State 为全函数；保证失败时不落地任何 State。
  * - 若结果非法 / 不适用 → 原样返回输入 matchCore，`applied:false`。
  * - 若 Position 边界失败（INVALID_*）→ 原样返回输入 matchCore，`ok:false` / `applied:false`
  *   （**原子性**：不产生任何 State 写入 / 无半完成 Interaction 状态）。
@@ -147,6 +153,17 @@ export function integrateInteractionResolution(matchCore, result, options = {}) 
   if (result.type !== 'INTERACTION_RESOLUTION' || !result.ok || !result.ball || !result.ball.state) {
     return {
       ok: true, matchCore, applied: false, reason: INTEGRATION_REASONS.RESULT_NOT_APPLICABLE,
+      applicationKey, invariantIssues: checkMatchInvariants(matchCore),
+    };
+  }
+
+  // 步骤 1.0（C-33 C-27 Semantic Gate）：只有 C-27 语义 = INSTANT 的 Interaction 才有资格进入
+  // Position Integration；未知 / 非 INSTANT → 明确失败（绝不静默视为 INSTANT），不进入 C-32 / C-29。
+  const gate = resolveInteractionInstantBallPositionSemantics(result);
+  if (!gate.ok) {
+    return {
+      ok: false, matchCore, applied: false, reason: INTEGRATION_REASONS.POSITION_INTEGRATION_FAILED,
+      positionReason: gate.reason, semantics: gate.semantics,
       applicationKey, invariantIssues: checkMatchInvariants(matchCore),
     };
   }
