@@ -966,3 +966,50 @@
 
 - **不变（红线）**：未修改 C-03 / C-08 / C-23 / C-24 / C-29 / C-33 / C-27 / PASS·SHOT Resolution；未新增 Physics / Transit / Velocity / Acceleration / Spin / Bounce 模型；未引入随机数 / wall clock；未新增测试；未直接写 Ball Position；全量测试不受影响（1473 通过 / 0 失败）。
 - **Deferred**：连续运动权威架构的生产落地；本 Gate 完成后 **STOP**，等待 Owner 验收。
+
+---
+
+## §44 Continuous Transit / Ball Physics Endpoint Compatibility Decision（Step 39F-M-C-37）
+
+- **状态**：**BLOCKED**。分类：**C — INCOMPATIBLE**，缺失/冲突标识：`CONTINUOUS_TRANSIT_PHYSICS_INCOMPATIBLE`。**未修改任何生产代码 / 测试 / Frozen Contract。**
+
+### C-03 Physics 方程（源码事实）
+
+- **Position 更新**：半隐式 Euler，逐子步：[ball-physics.js#L142-L227](file:///workspace/FE-project/src/core/match/ball-physics.js#L142-L227) —— ①摩擦 ②`pos += vel*sdt` ③边界反射 ④速度 clamp → 低于 `STOP_THRESHOLD` 归零。
+- **Velocity 初始化**：[velocityFromTransit](file:///workspace/FE-project/src/core/match/ball-physics.js#L73) —— `speed = |to−from| / duration`，方向 `(to−from)/|to−from|`。**不含摩擦补偿。**
+- **Friction**：**线性（库仑式）** `ns = |v| − FRICTION·sdt`，`FRICTION = 0.20`（[config#L60](file:///workspace/FE-project/src/core/match/ball-physics-config.js#L60)）。非指数衰减。
+- **Stop Threshold**：`|v| ≤ 0.006 → v = 0`（[config#L62](file:///workspace/FE-project/src/core/match/ball-physics-config.js#L62)）。
+- **无 acceleration / 无 time-to-target / 无 target 跟随**：模块头明确 `不做 targetPosition 路线跟随动画`（[#L12](file:///workspace/FE-project/src/core/match/ball-physics.js#L12)）。
+
+### 数值探针（确定性，无 RNG；dt = TICK_DURATION_SECONDS = 1）
+
+| Probe | from→to | duration | final x | target x | ERROR |
+|---|---|---|---|---|---|
+| A 单 Tick | (0,0.5)→(0.6,0.5) | 1 | 0.4875 | 0.6 | 0.1125 |
+| B 多 Tick | (0,0.5)→(0.6,0.5) | 2 | **0.2059（残速 0，中途停止）** | 0.6 | 0.3941 |
+| C partial-dt | (0,0.5)→(0.6,0.5) | 1.5 | 0.3589 | 0.6 | 0.2411 |
+| D PASS-like | (0.2,0.5)→(0.8,0.5) | 1 | 0.6875 | 0.8 | 0.1125 |
+| E SHOT-like | (0.5,0.5)→(0.95,0.5) | 1 | 0.8375 | 0.95 | 0.1125 |
+| **对照 FRICTION=0** | (0,0.5)→(0.6,0.5) | 1 | **0.6** | 0.6 | **0.0000** |
+
+- Case A（无摩擦）：`pos += (d/duration)·dt` 累加恰好 = `d` → **精确到达**（对照 Probe ERROR=0）。
+- Case B（现 FRICTION）：连续近似欠达 `≈ ½·FRICTION·duration²`；离散更甚。
+- Case C（STOP_THRESHOLD）：**Probe B 在 duration 内已静止**（残余 EXACT 0）→ **永远无法到达 `to`**。
+- 误差是**结构性的**（速度模型忽略摩擦 + 摩擦 + 停止阈值），非浮点残差。
+
+### 判定
+
+- **分类 = C — INCOMPATIBLE**：现有 C-03 的**速度模型（`v=d/duration`）+ 线性摩擦 + STOP_THRESHOLD** 与 `transit.from → to → duration` 精确到达存在**结构性冲突**（§13C）。
+- **无任何既有端点约束机制**：C-03 明确禁止 target 跟随；无 snap / arrival tolerance / remaining-distance / terminal correction（§6 搜索为空）。
+- **并非仅缺一根端点规则**：即便加终末 snap，中间运动仍在中途静止（Probe B 62.5% 欠达）——须同时修正速度/摩擦口径 → 不止"补一条端点规则"。
+- **PASS / SHOT 可统一**：两者共用 `velocityFromTransit`，无特殊规则 → **无** `PASS_SHOT_ENDPOINT_SEMANTICS_CONFLICT`。
+
+### Owner Decision 建议（**不自行冻结**）
+
+- **Current C-03 Physics：INCOMPATIBLE**（无法在 `from→to→duration` 下成为唯一精确连续 Position Writer）。
+- **Required future architecture**（建议，待 Owner 裁决）：引入 **确定性 Transit Movement Solver**——(1) 摩擦补偿速度剖面使 `∫v dt = |to−from|`，或 (2) 明确放弃"物理到达"改由**唯一 completion writer** 在完成 Tick 落 `to`；(3) 保证**单一 Position Writer**（移除/迁移 `finalize` 的 position 写），(4) 冻结 C-08 生产 Integration Point + dt 接线。
+- **Required new Gate**：`Transit Endpoint / Movement Solver Integration Gate`（或等价的 Owner Decision Gate）——**不得**在 C-37 内新增规则。
+- **不得**自行把 `MOVEMENT_DRIVEN_TICK` 改回 `COMPLETION_TICK`。
+
+- **不变（红线）**：未修改 C-03 / C-08 / C-23 / C-24 / C-29 / C-33 / C-27 / PASS·SHOT Resolution·State-Update；未新增端点规则 / 摩擦模型 / 速度求解器；未引入随机数 / wall clock；未直接写 Ball Position；未新增生产测试（仅只读探针）；全量测试不受影响（1473 通过 / 0 失败）。
+- **Deferred**：Transit Endpoint 兼容性的最终裁决与生产落地；本 Gate 完成后 **STOP**，等待 Owner 验收。
