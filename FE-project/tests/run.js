@@ -55,6 +55,7 @@ import './match-result.test.js';
 import './goal-resolution.test.js';
 import './goal-geometry.test.js';
 import './ball-tick-segment.test.js';
+import './goal-aware-match-tick.test.js';
 import './development-derived.test.js';
 import './finance-feedback.test.js';
 import './competition.test.js';
