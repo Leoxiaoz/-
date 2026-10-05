@@ -895,3 +895,40 @@
 - **不变（红线）**：未修改 C-23 / C-24 / C-29 / C-33 / C-27；未改 C-08 Tick Lifecycle；未创建 Movement Model / Duration Rule / Trajectory / Goal Detection / Physics / Multi-Tick Movement；未直接写 Ball Position；全量测试不受影响（1473 通过 / 0 失败）。
 - **解除 BLOCKED 的前置条件（供后续独立 Gate）**：先明确并冻结「AI/Action 连续运动的 Tick 写入语义」——即 C-23 的 `endPosition` 写入是发生在 transit 完成 Tick（与现有 `finalize` 对齐），还是引入受控的 movement-driven tick 推进；并明确 C-08 是否扩展出 Action Resolution 阶段。在此之前不得接入 PASS/SHOT → C-24 → C-23。
 - **Deferred**：Action（PASS / SHOT）连续运动的正式生产接入；本 Gate 完成后 **STOP**，等待 Owner 验收。
+
+---
+
+## §42 Continuous Ball Movement Tick Semantics Decision（Step 39F-M-C-35）
+
+- **状态**：**BLOCKED（Decision Gate，未冻结语义）**。原因：`CONTINUOUS_BALL_POSITION_TRUTH_UNDEFINED`。**未修改任何生产代码 / 测试 / Frozen Contract。**
+
+### Existing Fact（源码已明确）
+
+- **PASS Transit Truth**：`MatchCore.ball.transit`（`IN_TRANSIT` 时挂在 `ball` 上）。`from = actor 位置`、`to = actualDestination`、`duration = authoritative`（[pass-resolution.js](file:///workspace/FE-project/src/core/match/pass-resolution.js#L199-L203)）；`elapsed/progress` 由推进函数派生（起点 0）；`startedAt = clock.simulationTime`。
+- **SHOT Transit Truth**：同构（[shot-resolution.js](file:///workspace/FE-project/src/core/match/shot-resolution.js#L222-L229)）。
+- **Transit 安装**：[applyPassStateUpdate](file:///workspace/FE-project/src/core/match/pass-state-update.js#L44) / [applyShotStateUpdate](file:///workspace/FE-project/src/core/match/shot-state-update.js#L31)——`ball.position := transit.from`、清 control / possession、置 `IN_TRANSIT`。
+- **Transit 推进（机制 1）**：[advancePassTransit](file:///workspace/FE-project/src/core/match/pass-state-update.js#L78) / [advanceShotTransit](file:///workspace/FE-project/src/core/match/shot-state-update.js#L67)：`elapsed += dt`、`progress = clamp01(elapsed/duration)`；**中间 Tick 不修改 `ball.position`**（`position: { ...ball.position }`）；`progress ≥ 1`（完成 Tick）→ `finalize` 写入 `ball.position := transit.to` 并结算 possession。⇒ 语义 = **COMPLETION_TICK**。
+- **Ball Physics（机制 2）**：[stepBallPhysics](file:///workspace/FE-project/src/core/match/ball-physics.js#L106) / [stepMatchBall](file:///workspace/FE-project/src/core/match/ball-physics.js#L285)（C-03）：`position += velocity * dt`，`IN_TRANSIT` 球由 [velocityFromTransit](file:///workspace/FE-project/src/core/match/ball-physics.js#L73)（`|to−from|/duration`）播种速度，**每 Tick 推进 `ball.position`**（含摩擦 / clamp [0,1]）。⇒ 语义 = **MOVEMENT_DRIVEN_TICK**。
+- **生产 Tick 现状**：C-08 [runMatchTick](file:///workspace/FE-project/src/core/match/match-tick.js#L97) **既不推进 transit，也不跑 ball physics**；`ball.position` 仅经 **Interaction → C-33 → C-29**（瞬时）改变。`advance*Transit` / `stepMatchBall` 全仓**仅被测试 / Harness 引用**，无生产调用者。
+
+### Architectural Gap（源码未定义）
+
+- **核心冲突**：对「Transit 中间 Tick 是否更新 `ball.position`」这一问题，源码存在**两个互相矛盾**的既有机制——机制 1 回答 **否（COMPLETION_TICK）**，机制 2 回答 **是（MOVEMENT_DRIVEN_TICK）**。二者均为 Foundation、均未接入生产，**无更高层冻结规则裁决**。
+- **无生产 Tick Integration Point**：没有任何生产 Tick 调用 transit 推进 / ball physics；连续运动的 Tick 写入时刻在生产层**未定义**；`dt` 无生产来源。
+- **C-08 需求未定**：C-08 是否新增 `Action Resolution` / `Transit Advancement` 阶段 = **UNRESOLVED**。
+- **C-23 映射**：C-23 一次性 `applyBallMovementPositionUpdate` 写入 `endPosition`，最接近机制 1 的 **完成 Tick** 节点；但它无法表达机制 2 的每 Tick 推进——映射尚未裁决。
+
+### Decision
+
+- **未冻结语义**。§19 触发：源码无法确定「Ball Position 在 Transit 中间 Tick 是否更新」→ `CONTINUOUS_BALL_POSITION_TRUTH_UNDEFINED`；§23 #1 / #3 同时成立（机制冲突 / 需 Owner 选择设计方案）。
+- **不得自行裁定**：既不假设「现实飞行 ⇒ 每 Tick 移动」（禁止现实主义推断），也不把机制 1 的未接入行为当成生产权威。**C-34 维持 BLOCKED。**
+
+### 解除 BLOCKED 的前置条件（供 Owner 决策 + 后续独立 Gate）
+
+1. **Owner 冻结 `CONTINUOUS_BALL_MOVEMENT_TICK_SEMANTICS_V1`**：选定 `positionUpdateMode = COMPLETION_TICK`（对齐机制 1 / C-23）**或** `MOVEMENT_DRIVEN_TICK`（对齐机制 2 / C-03 Ball Physics）。
+2. **裁决机制 1 与机制 2 的权威关系**（谁拥有 Transit 期间的 Ball Position Truth），并明确是否废弃 / 收敛另一套。
+3. **明确 C-08 是否扩展 Action Resolution / Transit Advancement 阶段**（Tick Integration Point / `dt` 来源）。
+4. 均**不在 C-35 内实施**。
+
+- **不变（红线）**：未修改 C-23 / C-24 / C-29 / C-33 / C-27 / C-03 Ball Physics；未改 C-08 Lifecycle；未创建 Movement Model / Transit State / Physics / Velocity Model / Trajectory / Collision / Goal Detection；未直接写 Ball Position；未新增测试；全量测试不受影响（1473 通过 / 0 失败）。
+- **Deferred**：连续运动 Tick 语义最终冻结 + 生产接入；本 Gate 完成后 **STOP**，等待 Owner 验收。
