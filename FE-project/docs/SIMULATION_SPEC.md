@@ -2008,3 +2008,89 @@ Contact 检测发生在**物理子步内**：以子步 `from`（当前球位）�
 - **纪律遵守**：只调查不实现；未接入 `players`；未实现 Contact / Transit Interruption / Possession·Last Touch Arbitration / Swept Contact；未改 C-03/C-39/C-44 方程；未新增 Schema；无 `Date.now` / `Math.random`。
 
 **STOP — 等待 Owner 根据 Owner Decision Matrix 决定下一步。不得自行进入 C-46，不得自行实现 Contact。**
+
+## §53 Player-Ball Contact Contract Freeze（Step 39F-M-C-46）
+
+**Gate Result = PASS / SEALED。Architecture Conclusion = FROZEN。**
+本 Gate 为**架构冻结 Gate**（非实现）。在「不得修改任何已 SEALED 契约（C-03 / C-05 / C-06 / C-08 / C-23 / C-29 / C-39 / C-44 / Schema）」的硬约束下，Contact Contract 的设计空间被唯一收窄；下表即为**唯一自洽解**。生产代码 / 测试**未改动**；Regression **1510 通过 / 0 失败**。
+
+> **One Production Contact Boundary**：`C-08 CONTINUOUS_TRANSIT → advanceContinuousBallMovement → C-39 非完成 Tick → stepBallPhysics → C-03 Contact`。
+
+### 一、Frozen Decisions
+
+| # | Decision | Frozen Decision |
+|---|---|---|
+| 1 | **Contact Stage** | **Option B**：Contact **内嵌于 C-03 Ball Physics**，仅在 C-39 **非完成 Tick** 执行；无独立 `CONTACT` Stage；C-08 顺序不变。 |
+| 2 | **Player Position Timestamp** | Tick N **post-`PLAYER_MOVEMENT`** 的 `players[].positionOnPitch`，经 `playerMotionList(matchCore)` 只读快照。 |
+| 3 | **Ball Position Timestamp** | **Physics Substep `from`**（C-03 子步内；C-39 已先播种 transit velocity）。 |
+| 4 | **Before/After Physics** | Detection+Resolution 均在 **Physics Substep 内（B）**；motion → swept，静止 → 离散；去穿透位置**取代**该子步自由积分。 |
+| 5 | **Completion Tick Contact** | **D — 不执行 Contact**（完成 Tick 走 C-23、跳过 C-03 Physics）。 |
+| 6 | **Contact Position Write** | **有**，但**仅作为 C-03 Physics 内部 Resolution**，非独立 Writer。 |
+| 7 | **Contact Velocity Write** | **有**，同为 C-03 内部（法向反射 + 切向保留）。 |
+| 8 | **Contact Transit Interrupt** | **A — 不影响 Transit**（不得改 / 清 / 完成 / 暂停）。 |
+| 9 | **Contact Possession** | **Contact ≠ Possession**（不写 `control` / `possessingTeamId`）。 |
+| 10 | **Contact Last Touch** | **有**（写 `lastTouchPlayerId`）。 |
+| 11 | **contacting[] Nature** | **C — Tick-Transient Derived Data**（每 Tick 重算 + hysteresis 清理）。 |
+| 12 | **Contact / Interaction Relation** | **D — 无直接依赖**；Contact 不改 Interaction 输入，Interaction 不读 Contact Result。 |
+| 13 | **Swept Contact** | **子步 Ball-swept = 必需**（C-03 已实现，禁止纯离散）；**跨 Tick / Player-swept 不在本契约内**（记录为限制）。 |
+| 14 | **Contact Result Schema** | **不存在**；Contact 仅以既有 BallState 字段表达，**不新增 Schema**。 |
+| 15 | **Position Writer Arbitration** | 唯一 Truth = `MatchCore.ball.position`；Tick 内按 Stage 顺序：C-03（含 Contact）→ C-23（与 C-03 互斥）→ C-29。无同优先级 Writer。 |
+| 16 | **Velocity Writer Arbitration** | 分层：C-03（Physics+Contact）→ C-39（缺省播种）→ C-05/C-29（Interaction，后阶段可覆盖）。 |
+| 17 | **Last Touch Writer Arbitration** | 唯一 Truth = `ball.lastTouchPlayerId`；C-03（CONTINUOUS_TRANSIT）→ C-05（INTERACTION，后阶段优先）。 |
+| 18 | **Possession Writer Arbitration** | Contact 不参与；C-05 / C-39 finalize / SECOND_BALL 由 Stage 顺序已序。 |
+| 19 | **Unique Production Integration Point** | 见下「二」。 |
+
+### 二、Unique Production Integration Boundary
+- **唯一链**：`C-08 [runMatchTick] CONTINUOUS_TRANSIT → advanceContinuousBallMovement(matchCore, dt, { players: playerMotionList(matchCore) }) → C-39 非完成 Tick → stepBallPhysics(stepping, dt, { players }) → C-03 Contact`。
+- 当前 **C-08 未传 players**（探针 P1/P2：生产 Tick `lastTouch=null`、`contacting=[]`）；未来接线属**独立实现 Gate**，本 Gate 不接线。
+- **禁止重复边界**：C-39 不得二次 Contact；C-03 不得脱离 Physics 自行 Contact；Interaction 不得调用 Contact。
+- **潜在重复入口（必须留作非生产）**：`stepMatchBall`（Harness-only，硬编码 `playerMotionList`，全仓 0 生产调用者）、`advancePassTransit` / `advanceShotTransit`（透传 `options`，仅测试 / Harness）。
+
+### 三、Writer Matrix（生产）
+
+| 字段 | Writer（Stage 顺序） | Contact 权限 | 仲裁 |
+|---|---|---|---|
+| `ball.position` | C-03（CONTINUOUS_TRANSIT，含去穿透）→ C-23（完成，与 C-03 互斥）→ C-29（INTERACTION） | 是（C-03 内部） | Stage 顺序，已冻结 |
+| `ball.velocity` | C-03（CONTINUOUS_TRANSIT）→ C-39（缺省播种）→ C-05/C-29（INTERACTION） | 是（C-03 内部） | Stage 顺序，已冻结 |
+| `ball.transit` | C-39（elapsed/progress、finalize 清除）/ C-05 / PASS·SHOT 创建 | **否** | C-39 冻结（不中断） |
+| `ball.lastTouchPlayerId` | C-03（CONTINUOUS_TRANSIT）→ C-05（INTERACTION） | 是 | Stage 顺序，已冻结 |
+| `ball.control` / `possessingTeamId` | C-05 / C-39 finalize / SECOND_BALL | **否** | 无新冲突 |
+| `ball.contacting[]` | C-03 | 是 | 单一 owner（transient） |
+
+### 四、Owner Decision Matrix（Frozen / Not Frozen）
+
+| # | Decision | Current Finding | Proposed Frozen Decision | Evidence | Frozen | Risk |
+|---|---|---|---|---|---|---|
+| 1 | Contact Stage | 无生产 Stage；候选 B | **Option B**（内嵌 C-03 Physics，非完成 Tick） | call graph：`stepBallPhysics` 仅被 C-39 import；仅 C-39 非完成分支带 players | **Frozen** | 与 C-39 强耦合 |
+| 2 | Player Pos Timestamp | post-PLAYER_MOVEMENT | **post-`PLAYER_MOVEMENT` `positionOnPitch`** | C-45 P1；C-44 冻结；`playerMotionList` 读 `positionOnPitch` | **Frozen** | 依赖 `movement` transient 速度 |
+| 3 | Ball Pos Timestamp | 子步 `from` | **Physics Substep `from`** | C-03 #L158-L167 | **Frozen** | — |
+| 4 | Before/After Physics | 子步内 | **B（Substep 内，去穿透取代自由积分）** | C-03 #L175-L193 | **Frozen** | — |
+| 5 | Completion Tick Contact | 跳过 | **D — 不执行** | C-39 完成分支走 C-23，不跑 Physics；探针 P5 | **Frozen** | Transit 末 Tick 永不 Contact |
+| 6 | Contact Pos Write | 是 | **C-03 内部 Writer** | 探针 P4/P6；C-03 #L175-L178 | **Frozen** | 与 C-29 同 Tick 时后者覆盖 |
+| 7 | Contact Vel Write | 是 | **C-03 内部 Writer** | 探针 P5/P6；C-03 #L190-L193 | **Frozen** | 与 C-05 同 Tick 时后者覆盖 |
+| 8 | Transit Interrupt | 否 | **A — 不影响** | 探针 P6；C-39 #L166-L176 | **Frozen** | — |
+| 9 | Contact Possession | 否 | **不写 Possession** | 探针 P6；C-03 无 possession | **Frozen** | — |
+| 10 | Contact Last Touch | 是 | **有写权，Stage 顺序仲裁** | C-03 #L182/#L243；C-05 #L65 | **Frozen** | Interaction 后阶段可覆盖 |
+| 11 | contacting[] Nature | transient | **Tick-Transient Derived** | C-45 P11；C-03 #L234-L242 | **Frozen** | 不得升格为 Truth |
+| 12 | Contact/Interaction | 无依赖 | **D — 无直接依赖** | C-45 P9（40 seed 不变）；`interaction-resolution` 不引用 contacting | **Frozen** | 未来若需联动须新 Gate |
+| 13 | Swept Contact | 子步 swept | **子步必需；跨 Tick/Player-swept 不在契约** | C-45 P10；C-03 #L160-L161 | **Frozen** | 跨 Tick/球员穿越未覆盖 |
+| 14 | Contact Result Schema | 无 | **不新增** | C-03 仅输出 BallState | **Frozen** | 未来或需独立 Result |
+| 15 | Position Writer Arbitration | 无规则 | **Stage 顺序（C-03→C-23→C-29）** | C-08 顺序；C-39 分支互斥 | **Frozen** | — |
+| 16 | Velocity Writer Arbitration | 无规则 | **Stage 顺序（C-03→C-39→C-05/C-29）** | C-08 顺序 | **Frozen** | — |
+| 17 | Last Touch Arbitration | 无规则 | **Stage 顺序（C-03→C-05）** | C-08 顺序 | **Frozen** | — |
+| 18 | Possession Arbitration | 已序 | **C-05/C-39/SECOND_BALL，Contact 不参与** | C-08 顺序 | **Frozen** | — |
+| 19 | Unique Integration Point | C-08 未接线 | **C-08→C-39→stepBallPhysics（单一）** | 探针 P2；call graph | **Frozen** | 潜在入口 stepMatchBall / pass·shot adapters |
+
+**结论：核心项全部 Frozen，无 `OWNER_DECISION_REQUIRED` 残留 → Architecture Conclusion = FROZEN。**
+
+### 五、Residual Risks（不阻断）
+1. **Completion Tick 永不 Contact**（C-39 冻结所致）。
+2. **跨 Tick / Player-swept 未覆盖**（C-03 仅子步 Ball-swept）。
+3. **无正式 ContactResult Schema**；仅 BallState 字段。
+4. **同 Tick 覆盖**：C-29 / C-05 在 Interaction 阶段可覆盖 Contact 的 Position / Velocity / LastTouch（由 Stage 顺序确定，非冲突）。
+5. **潜在重复 Contact 入口**：`stepMatchBall`、`advancePassTransit`、`advanceShotTransit` 必须保持非生产。
+
+### 六、Recommended Next Gate
+`Player-Ball Contact Production Wiring Implementation Gate`（实现 Gate，需 Owner 授权变更 C-44 的「不传 players」范围）：在 C-08 `CONTINUOUS_TRANSI` 向 `advanceContinuousBallMovement` 传入 `{ players: playerMotionList(matchCore) }`，并按本 §53 Frozen Contract 加回归 / Probe；**不得**修改 C-03 / C-39 / C-23 / C-29 / C-05 / C-06。
+
+**STOP — 不得自行进入 C-47，不得自行实现 Contact，不得修改 C-03 / C-39 / C-44 / Interaction。**
