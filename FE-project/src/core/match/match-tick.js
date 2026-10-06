@@ -37,6 +37,7 @@ import {
 import { deriveBallFacts } from './ball-facts.js';
 import { INTERACTION_BALL_STATE as BS, FOLLOW_UP_KIND } from './interaction-resolution-config.js';
 import { advanceContinuousBallMovement } from './continuous-ball-movement-integration.js';
+import { playerMotionList } from './ball-physics.js';
 import { advancePlayerPositionTick } from './player-position-tick-integration.js';
 import { MATCH_CLOCK_CONFIG } from './match-clock-config.js';
 import {
@@ -161,8 +162,10 @@ export function runMatchTick(matchCore, tickInput = {}, options = {}) {
   // 2.5 Continuous Ball Movement Integration（C-39 / OPTION_B）
   //     检测当前是否存在 Continuous Transit → 注入确定性 Tick dt → C-03 Physics（中间）/ C-23（完成）。
   //     dt 来源 = 生产 Match Tick 的 simulation seconds（默认 1 Tick = TICK_DURATION_SECONDS）；不使用墙钟。
-  //     ⚠ 不传 players（Contact 属独立 Gate）。
-  const contRes = advanceContinuousBallMovement(current, deltaTime);
+  //     C-47：向 C-39 传入当前 Tick（post-PLAYER_MOVEMENT）的 Player Position 输入 →
+  //           C-39 非完成 Tick 转发 players 给 C-03 stepBallPhysics → 既有 C-03 Contact 正式进入生产。
+  //           唯一 Player Position Truth = players[].positionOnPitch；Contact 仍内嵌于 C-03 Physics（无独立 Stage）。
+  const contRes = advanceContinuousBallMovement(current, deltaTime, { players: playerMotionList(current) });
   current = contRes.matchCore;
   applied.continuousMovement = contRes.applied === true;
   applied.continuousMovementCompleted = contRes.completed === true;

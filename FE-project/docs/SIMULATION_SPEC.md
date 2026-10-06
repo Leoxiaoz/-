@@ -2094,3 +2094,74 @@ Contact 检测发生在**物理子步内**：以子步 `from`（当前球位）�
 `Player-Ball Contact Production Wiring Implementation Gate`（实现 Gate，需 Owner 授权变更 C-44 的「不传 players」范围）：在 C-08 `CONTINUOUS_TRANSI` 向 `advanceContinuousBallMovement` 传入 `{ players: playerMotionList(matchCore) }`，并按本 §53 Frozen Contract 加回归 / Probe；**不得**修改 C-03 / C-39 / C-23 / C-29 / C-05 / C-06。
 
 **STOP — 不得自行进入 C-47，不得自行实现 Contact，不得修改 C-03 / C-39 / C-44 / Interaction。**
+
+## §54 Player-Ball Contact Production Integration（Step 39F-M-C-47）
+
+**Gate Result = PASS / SEALED。** 按 C-46 §53 Frozen Contact Contract，将既有 C-03 Contact 正式接入生产 Match Tick。**唯一改动**：C-08 `CONTINUOUS_TRANSIT` 向 C-39 传入当前 Tick 的 Player Position 输入；Contact 仍内嵌于 C-03 Physics。
+
+### 一、Production Call Chain（唯一）
+```
+C-08 MATCH TICK
+  → SNAPSHOT
+  → PLAYER_MOVEMENT            （C-44：players[].positionOnPitch）
+  → CONTINUOUS_TRANSIT         （C-39）
+      advanceContinuousBallMovement(current, deltaTime, { players: playerMotionList(current) })
+        → 非完成 Tick：stepBallPhysics(stepping, dt, { players })   （C-03）
+            → Ball Position Integration → Contact Detection(swept) → Contact Resolution
+        → 完成 Tick：C-23 applyBallMovementPositionUpdate（不跑 Physics → 无 Contact）
+```
+- 新增 import：`playerMotionList`（来自 `ball-physics.js`），复用既有适配器（未改其数学语义）。
+- **单一 Production Contact Boundary**：`advanceContinuousBallMovement(` 在 C-08 仅 1 处；`stepBallPhysics(` 在 C-39 仅 1 处（CP-13 源码守卫）。
+
+### 二、Tick Stage Order（未改）
+`VALIDATE → SNAPSHOT → PLAYER_MOVEMENT → CONTINUOUS_TRANSIT → ACTION → INTERACTION_RESOLVE → INTERACTION_INTEGRATE → [SECOND_BALL] → INVARIANTS`。**无独立 `CONTACT` Stage**（Contact 隐藏于 CONTINUOUS_TRANSIT → C-03）。
+
+### 三、Contact Trigger Evidence（CP-02/03/04）
+- 场景：transit `from 0.2 → to 0.8`，`duration=3`，`dt=1`（非完成 Tick），H 队 MF `p1@0.30`。
+- 结果：`lastTouchPlayerId='p1'`、`contacting=['p1']`、Ball Position 被去穿透、Velocity 按 C-03 改写。
+- **Player Position Timestamp**：Contact 使用 **post-PLAYER_MOVEMENT** 的 `positionOnPitch`；落点满足 `|ball − playerAfter| == CONTACT_RADIUS(0.03)`（CP-03）。
+- **Ball Position Timestamp**：C-03 Physics Substep（`from`）。
+
+### 四、Completion Tick（CP-05）
+`duration=1, dt=1` → 完成 Tick：**不跑 Physics → 无 Contact**；`lastTouch=null`、`contacting=[]`、`position===transit.to {0.8,0.5}`、`state=CONTROLLED`、`transit=undefined`（C-23 唯一完成边界）。
+
+### 五、写入验证
+- **Position**：Contact 按既有 C-03 去穿透规则改写 Ball Position（CP-06）；仍在 C-03 Physics 内部，非独立 Writer。
+- **Velocity**：Contact 按既有 C-03 法向反射改写（CP-07：逼近 +x → 反射 −x；无 Contact 对照保持 +x）。
+- **Last Touch**：Contact 写 `lastTouchPlayerId`；无 Contact 不产生（CP-08）。
+- **Transit**：`from / to / duration` 保持；`elapsed=1`、`progress=1/3` 正常推进；不中断 / 不强制完成（CP-10）。
+- **Possession**：Contact 不写 `control` / `possessingTeamId`（CP-09）。
+
+### 六、隔离与确定性
+- **Interaction Isolation**（CP-15）：`interaction-resolution.js` 不引用 Contact 几何 / `contacting` / `lastTouch`；无 Transit 的 DRIBBLE Tick 正常 resolve + integrate。
+- **Determinism**（CP-12）：相同 MatchCore + Tick Inputs → MatchCore / events / stages 完全一致。
+- **contacting[]**：Tick-Transient Derived（每 Tick 重算、排序唯一、无第二 Contact Truth）（CP-11）。
+- **Swept**：子步 Ball-swept 维持 C-03 既有机制（未新增跨 Tick / Player-swept）。
+
+### 七、Tests
+新增 `tests/player-ball-contact-production-integration.test.js`：**CP-01 ~ CP-15 全部通过（15/15）**。
+既有测试最小期望修正（均属 §18-A：旧测试假设 Contact 永不接线）：
+- `match-tick.test.js` MT-16：依赖白名单新增 `ball-physics`（C-47 授权依赖）。
+- `player-position-tick-integration.test.js` PPT-11：将「C-08 不得传 players」更新为「C-08 经 `playerMotionList(current)` 传入（唯一 Contact 接线）」。
+
+### 八、Regression
+`node tests/run.js` → **1525 通过 / 0 失败（共 1525）**。
+
+### 九、Files Modified
+- `src/core/match/match-tick.js`（+1 import；C-39 调用传 `players: playerMotionList(current)`）。
+- `tests/player-ball-contact-production-integration.test.js`（新增）；`tests/run.js`（注册）；`tests/match-tick.test.js` / `tests/player-position-tick-integration.test.js`（最小期望修正）。
+- 本 §54。
+
+### 十、Contract Changes
+**无**。C-03 / C-05 / C-06 / C-23 / C-29 / C-39 / C-44 方程与 Schema 均未改。
+
+### 十一、Architecture Audit
+C-03 未改 · C-05 未改 · C-06 未改 · C-08 仅 +players 输入、无 CONTACT Stage · C-23 未改 · C-29 未改 · C-39 Transit Contract 未改 · C-44 Player Movement Contract 未改 · 无第二 Ball/Player Position Truth · 无第二 Contact Detector / Resolver · 无 ContactResult Schema · 无 Contact Possession 自动化 · 无 Transit Interruption · 无 wall clock / random。
+
+### 十二、Remaining Risks
+1. Completion Tick 永不 Contact（C-39 冻结所致，同 §53）。
+2. 跨 Tick / Player-swept 未覆盖（契约外）。
+3. Contact 与 C-29/C-05 同 Tick 时后者（后阶段）可覆盖 Position / Velocity / LastTouch（由 Stage 顺序确定）。
+4. 潜在重复 Contact 入口 `stepMatchBall` / `advancePassTransit` / `advanceShotTransit` 须持续保持非生产。
+
+**STOP — 不得自行进入 C-48，不得扩展 Contact 机制，不得修改 C-46 Frozen Contract。等待 Owner 验收。**

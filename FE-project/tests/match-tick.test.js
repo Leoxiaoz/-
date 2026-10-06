@@ -296,6 +296,8 @@ test('MT-16. Production Loop 未被修改（match-tick 仅编排既有能力）'
     'continuous-ball-movement-integration', 'match-clock-config',
     // C-44：Player Position Tick Integration Boundary（Match Tick 生产接入；PLAYER_MOVEMENT 阶段）
     'player-position-tick-integration',
+    // C-47：Player-Ball Contact Production Integration（复用既有 playerMotionList 适配器 → C-03 Contact）
+    'ball-physics',
   ]);
   for (const dep of importsOf(code)) assert(allowed.has(dep), `match-tick 依赖越界模块：${dep}`);
   assert(!/productionLoop|matchLoop|match-loop|production-loop/i.test(code));

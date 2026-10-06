@@ -198,7 +198,7 @@ test('PPT-10 (P9). Contact Isolation：存在 Player Position 也不自动产生
 // P10：Writer Audit / Source Guard
 // ===========================================================================
 
-test('PPT-11 (P10). Writer Audit：唯一 Position Truth / 不触碰 Ball / 不接 Contact', () => {
+test('PPT-11 (P10). Writer Audit：唯一 Position Truth / 不触碰 Ball / Contact 经唯一边界接线', () => {
   const boundary = stripComments(readSrc('player-position-tick-integration.js'));
   const tick = stripComments(readSrc('match-tick.js'));
 
@@ -211,9 +211,11 @@ test('PPT-11 (P10). Writer Audit：唯一 Position Truth / 不触碰 Ball / 不�
   // 不得第二套 Player Position Truth。
   assert(!/tickPosition|simulationPosition|runtimePosition|nextPosition\s*:/.test(boundary), '不得新增第二套 Player Position Truth');
 
-  // C-08 不得向 Continuous Transit 传 players（禁止 Contact 接线）。
-  assert(!/advanceContinuousBallMovement\([^)]*players/.test(tick), 'C-08 不得向 Continuous Transit 传 players');
-  // C-08 不再直接持有 Ball 提取逻辑（仅编排）。
+  // C-47（本 Gate 授权接线）：C-08 经唯一 Integration Boundary 向 Continuous Transit 传
+  // post-PLAYER_MOVEMENT 的 Player Position（playerMotionList），使既有 C-03 Contact 进入生产。
+  assert(/advanceContinuousBallMovement\(\s*current\s*,\s*deltaTime\s*,\s*\{\s*players:\s*playerMotionList\(current\)\s*\}\)/.test(tick),
+    'C-08 必须经 playerMotionList 传入 Player Position（C-47 唯一 Contact 接线）');
+  // Boundary 仍仅负责 Player Position（PLAYER_MOVEMENT），不承担 Ball / Contact。
   assert(/advancePlayerPositionTick/.test(tick), 'C-08 必须调用 Player Position Boundary');
 });
 
