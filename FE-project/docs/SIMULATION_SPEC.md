@@ -1013,3 +1013,66 @@
 
 - **不变（红线）**：未修改 C-03 / C-08 / C-23 / C-24 / C-29 / C-33 / C-27 / PASS·SHOT Resolution·State-Update；未新增端点规则 / 摩擦模型 / 速度求解器；未引入随机数 / wall clock；未直接写 Ball Position；未新增生产测试（仅只读探针）；全量测试不受影响（1473 通过 / 0 失败）。
 - **Deferred**：Transit Endpoint 兼容性的最终裁决与生产落地；本 Gate 完成后 **STOP**，等待 Owner 验收。
+
+---
+
+## §45 Transit Endpoint Authority / Completion Writer Architecture Decision（Step 39F-M-C-38）
+
+- **状态**：**PASS / SEALED**（架构调查完成，非实施）。**Recommended Architecture: OPTION_B — Completion Writer**。**未修改任何生产代码 / 测试 / Frozen Contract。**
+
+### 前提复核
+
+- C-36 冻结 `positionUpdateMode = MOVEMENT_DRIVEN_TICK`；C-37 证明 C-03 无法在 `from→to→duration` 下精确到达（`CONTINUOUS_TRANSIT_PHYSICS_INCOMPATIBLE`）。本 Gate 裁决：如何同时满足 **Continuous Movement + Exact Endpoint + Single Position Writer**。
+
+### Option A — Transit Movement Solver（不推荐）
+
+- 需新增组件求解「摩擦补偿速度剖面」使离散积分恰达 `to`。
+- **BLOCK A**：产生新的、未冻结的 **Velocity / Movement Truth**。
+- **BLOCK F**：须精确建模 C-03 的离散子步/线性摩擦/`STOP_THRESHOLD`（否则无法保证），实质是**新 Movement Model**（新速度/摩擦规则）。且 C-03 明令禁止 target 跟随（[#L12](file:///workspace/FE-project/src/core/match/ball-physics.js#L12)）。
+- 结论：**不可成立**（若选它即触发 BLOCK A/F）。
+
+### Option B — Completion Writer（推荐，可成立）
+
+- 语义：`progress < 1` → Ball Physics 更新**中间** Position；`progress ≥ 1` → **唯一** Completion Position Boundary 写 `position = transit.to`。
+- **不引入新运动模型**：仅「完成条件成立 → 唯一 Position Boundary → `position = to`」——§8 明确允许作为 Completion Integration 候选。
+- **唯一 writer 蓝图（§5B）成立**：`Ball Physics → 中间 Position` + `Completion Boundary → 唯一最终 Correction`，**不存在**第三个生产 writer。
+
+### Boundary 兼容性
+
+- **C-23**（[ball-movement-integration.js#L63](file:///workspace/FE-project/src/core/match/ball-movement-integration.js#L63)）：一次性 `Movement State → endPosition`（要求 `start===ball.position`），**正是**完成点写入语义 → **可作唯一 Transit Completion Position Boundary**；与 C-36 §5「C-23 不得作为每 Tick 连续 writer」**一致**（C-23 = 完成，Physics = 每 Tick）。
+- **C-29**（`applyInstantBallPositionUpdate`）：语义为 **INSTANT / Interaction** → **不可**作为 Transit Completion Boundary（§6；不将 Transit Completion 等同于 Interaction Instant）。
+- **C-32**：Interaction Position Ownership → **不涉及**、不修改。
+- **C-33**：Interaction Instant Position Integration → 与 Transit 完成路径**互斥分离**（INSTANT→C-29；CONTINUOUS→C-23 完成 + Physics 中间）。
+
+### Finalize 职责拆解
+
+- **PASS** `finalize`（[pass-state-update.js#L50-L70](file:///workspace/FE-project/src/core/match/pass-state-update.js#L50-L70)）：`position=to` + `state` + `control` + `possessingTeamId` + `transit=undefined`。
+- **SHOT** `finalize`（[shot-state-update.js#L41-L61](file:///workspace/FE-project/src/core/match/shot-state-update.js#L41-L61)）：`position=to` + `state`（含 GOAL）+ `control` + `possessingTeamId` + `transit=undefined`。
+- **结论**：Position Ownership **可分离**；剥离后 finalize 仍可独立承担 **state / control / possession / transit 清理**。
+
+### Option A / B 对比
+
+| 项 | Option A：Movement Solver | Option B：Completion Writer |
+|---|---|---|
+| 中间 Tick Position | Physics（需 Solver 保证） | Ball Physics（每 Tick） |
+| 最终 Position | Solver→Physics 精确落 `to` | 唯一 Completion Boundary 落 `to` |
+| 需新运动模型 | **是**（新速度/摩擦求解） | **否**（仅终端修正） |
+| 需改 C-03 | 是（否则欠达/停止） | 否 |
+| 需改 Transit | 间接 | 否（finalize 仅迁移 position 职责，属未来 Gate） |
+| 唯一 Position Writer | 是（唯一=Physics）但需新 Truth | 是（Physics 中间 + 唯一 Completion） |
+| 与 C-23 兼容 | 差 | **好**（C-23 = 完成边界） |
+| 与 C-29 兼容 | 不适用 | 明确分离 |
+| C-32/C-33 冲突 | 无 | 无 |
+| PASS/SHOT 统一 | 是 | **是** |
+| 复杂度 | 高 | 中 |
+| 架构风险 | **高**（新 Truth / 离散脆弱） | 低 |
+
+### 结论
+
+- **Recommended Architecture：OPTION_B**（Completion Writer）。Completion Boundary 建议 = **C-23**；连续中间 writer = **C-03 Ball Physics**；`finalize` 未来**仅保留** state/possession（其 position 写迁至唯一 Completion Boundary）。
+- **PASS / SEALED**：Option B 架构可成立；单一 Position Truth（`MatchCore.ball.position`）；PASS/SHOT 可统一；C-23/C-29/C-32/C-33 边界清晰；无需在本 Gate 改任何生产代码。
+- **Required Future Gate**：`Transit Continuous Movement Integration Gate` —— (1) 落实 Physics 中间推进；(2) C-23 作为唯一 Completion Boundary；(3) finalize 迁出 position 职责；(4) C-08 生产 Integration Point + dt 接线（simulation Tick，`TICK_DURATION_SECONDS=1`）。
+- **不自行冻结**：Recommendation 待 Owner 确认后方可进入实施 Gate。
+
+- **不变（红线）**：未修改 C-03 / C-08 / C-23 / C-24 / C-29 / C-32 / C-33 / C-27 / PASS·SHOT Resolution·State-Update；未新增 Solver / Endpoint Correction / 速度规则；未直接写 Ball Position；全量测试不受影响（1473 通过 / 0 失败）。
+- **Deferred**：Option B 的生产实施；本 Gate 完成后 **STOP**，等待 Owner 验收。
