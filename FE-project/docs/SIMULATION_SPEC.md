@@ -1435,3 +1435,161 @@ Owner Decision Matrix（13 项）已就绪，全部标记 `OWNER_DECISION_REQUIR
 - **红线遵守**：未改 C-03 / C-08 / C-23 / C-29 / C-32 / C-33 / C-27 / Player Movement / Interaction · PASS · SHOT / Ball · Player · Possession Schema / Goal 系统；无 `Date.now` / `Math.random`。
 
 **STOP — 等待 Owner 验收。不得自行进入 C-42。**
+
+## §49 Player Position Tick Truth / Simulation-Time Authority Decision Foundation（Step 39F-M-C-42）
+
+**状态**：**BLOCKED / SEALED**（Owner Decision Foundation Gate；调查完成，结论为 BLOCKED，Owner Decision Matrix 已就绪）。未修改任何生产代码 / 测试 / Frozen Contract（仅本节文档 + 只读探针）。
+
+> 结论先行：**Player Position Truth 是唯一且确定的（`players[].positionOnPitch`，唯一 writer = `updateMovement`）**；
+> **但它在 Tick 引擎中没有任何生产 writer 在跑**（`updateMovement` 无生产调用点），且其 **dt 口径为 minute**，与 Tick 的 **second** 不一致。
+> `playerMotionList` 只是 **minute→second 的速度适配器**，**不等于** Player Movement 已具备 Tick semantics。
+> Player Movement 与 Ball Movement 的 **Tick 先后顺序无法由现有 Frozen Contract 唯一确定** → **BLOCK H**，全部决策项 `OWNER_DECISION_REQUIRED`。
+
+---
+
+### 39F-M-C-42 Gate Report
+
+#### 1. C-41 Context Verification
+C-41 结论 **BLOCKED**（Gate 完成），Owner Decision Matrix（13 项）已就绪并指向本 Gate。C-40 / C-41 已确认：Ball Position = Tick-level truth；Player Position = `positionOnPitch`，未接入 C-08 Tick；C-03 已提供 `playerMotionList` 换算（见 §47 / §48）。
+**补充事实（wiring）**：C-08 tick 引擎（`runMatchTick` / `runMatchTicks` / `runMatchClockDriver` / `runMatchPhaseDriver`）目前**无赛季级生产调用点**；赛季入口 `simulateMatch`（[match.js](file:///workspace/FE-project/src/core/match.js#L256)）仍为**时段制 MVP**，未使用 tick 引擎。二者尚未统一——本 Gate 在 C-08 tick 语义范围内作答，并如实记录该 wiring gap。
+
+#### 2. Player Position Writer Map
+
+| Writer | 文件 | 调用方 | 时间单位 | 是否生产调用 | 是否修改正式 Position |
+|---|---|---|---|---|---|
+| `updateMovement`（`stepLocomotion` 结果回写 `players[].positionOnPitch`） | [movement-update.js](file:///workspace/FE-project/src/core/match/movement-update.js#L138-L139) | 无（`src/**` 无调用点；仅 tests/harness） | **simulation minute** | **否** | 是（唯一正式 writer） |
+| 静态播种（lineup / test fixture 构造 `players[].positionOnPitch`） | 测试与外部构造 | — | — | — | 初始值（非运行时 writer） |
+| C-03 `stepBallPhysics` 接触 | [ball-physics.js](file:///workspace/FE-project/src/core/match/ball-physics.js#L156-L214) | `stepBallPhysics` / `advanceContinuousBallMovement` | second | 是（Ball 路径） | **否**（只写 Ball position / velocity，不写 Player position） |
+
+→ **Player Position Writer 唯一**（`updateMovement`）。无 Writer A/B/C 竞争。→ **BLOCK A 不成立**（唯一 Truth 可确定）。
+
+#### 3. Player Position Current Truth
+唯一：`players[].positionOnPitch`，格式 `{x,y}`。`movement-update.js#L138-139` 是 `src/**` 中唯一运行时写入点。
+**BUT**：因无生产调用，Tick 引擎运行期间 `positionOnPitch` **保持静态**（播种值）。→ 当前**不存在 Tick-level Player Position Truth**。
+
+#### 4. updateMovement Time Model
+- `dt` 参数 = **simulation minutes**（[movement-update.js](file:///workspace/FE-project/src/core/match/movement-update.js#L67-L74)）；`stepDt = dt>0 ? dt : 0`。
+- `stepLocomotion`：`step = speed * dt`，`speed` 单位 = **归一化球场单位 / simulation minute**（[locomotion.js](file:///workspace/FE-project/src/core/match/locomotion.js#L58-L62)）。
+- 累计状态：`movement.players[id].elapsed` **累加 `stepDt`（minute）**；但 `movement.lastUpdateTime` / `evalTime` 来自 `clock.simulationTime`（**second**）→ **同一 transient 状态内混用 minute 与 second（技术债）**。
+- 重评条件：`targetInvalid || possessionChanged || tacticChanged || phase 变化 || ballMoved > 0.02 || elapsed >= COMMIT_MAX_MINUTES(8)`（[movement-update.js](file:///workspace/FE-project/src/core/match/movement-update.js#L118-L135)）。
+- `dt=0`：`stepLocomotion` 返回原位（探针 P6：**无 Position Mutation**），但 movement 状态仍被初始化（首次调用会重评 target）。
+- **确定性**：无 `Math.random` / 无墙钟（探针 P5：重复输入结果一致，`clock.simulationTime` 不变）。
+- **可分解性**：`speed` 每次调用按**当前**位置（含 ball 邻近度）重算 → 路径依赖；探针 P2/P3/P8 在测试场景下结果一致（多因到达 `ARRIVE_RADIUS` 被 clamp），**但没有 dt-可分解性保证**（elapsed 重评阈值随 dt 粒度漂移）。→ 记入技术债。
+
+#### 5. playerMotionList Time Model
+`playerMotionList(matchCore)`（[ball-physics.js](file:///workspace/FE-project/src/core/match/ball-physics.js#L256-L277)）：
+- 位置：取 `player.positionOnPitch`（归一化）。
+- 速度：由 `matchCore.movement.players[id].speed / 60` 派生（**minute→second**），方向 = `normalize(target - position)`。
+- 探针 P7：speed=60/min → velocity ≈ 0.949/s（方向归一化）。
+- 唯一消费者：`stepMatchBall`（Headless Harness），**未接生产 Tick**。
+→ 定位 = **C. Player Movement Adapter**（供 Ball Physics 消费的输入），**非 Player Movement Truth**。
+
+#### 6. Minute→Second Adapter Analysis
+适配**只转换速度**（`/60`），**不转换** `updateMovement` 的 dt 语义，也**不**为 Player Movement 提供 tick 级积分。
+→ 「存在换算」**不等于**「Player dt = second」。是否将 Player Movement 改为 second-dt 积分，属 Owner 决策（§7）。→ BLOCK D 相关，`OWNER_DECISION_REQUIRED`。
+
+#### 7. Player dt Analysis
+现状 dt = **minute**；Tick dt = **second**；换算比 1:60 明确且唯一（探针 P1）。
+→ **关系可建立（60:1）**，但**采用哪种 base unit 不唯一**：Option A（Player 改 second）、Option B（保留 minute 做换算）、Option C（独立 Movement Time）——**均与现状部分自洽** → `OWNER_DECISION_REQUIRED`。
+
+#### 8. Match Tick dt Analysis
+`MATCH_CLOCK_CONFIG.TICK_DURATION_SECONDS = 1`（second）；C-08 `CONTINUOUS_TRANSIT` 默认 `deltaTime = TICK_DURATION_SECONDS`（[match-tick.js](file:///workspace/FE-project/src/core/match/match-tick.js#L132-L146)）。
+**不得假设 Tick 恒为 1s**：`tickInput.deltaTime` 可传入任意有限正数；但 Player Movement 是否支持任意 dt（0.5/1/2s）**未由 Frozen Contract 定义**（探针 P4 仅表明测试场景可跑通，非语义保证）→ 记入限制。
+
+#### 9. Simulation Time Authority
+唯一 Simulation Time = `matchCore.clock.simulationTime`（second），由 match-clock 推进。`updateMovement` **读取**它（`clockTime`）但不推进。
+**无墙钟**：`src/core/match/**` 无任何 `Date.now` / `performance.now` / `new Date` 实际调用（grep 仅命中注释）；`updateMovement` 纯函数、确定性。→ **BLOCK C 不成立**；若未来 tick 化，时间只能来自 Match Tick。
+
+#### 10. Player Position / Snapshot Relationship
+C-08 `SNAPSHOT` **只保存 Ball facts**：`{ tickIndex, ballState, control, possessingTeamId, inTransit }`（[match-tick.js](file:///workspace/FE-project/src/core/match/match-tick.js#L122-L129)）——**不含任何 Player Position**。
+→ 未来若 Contact 在 Tick N 读取 Player Position，必须由 Owner 定义其来源（Tick N-1 committed / Tick N movement / snapshot）→ `OWNER_DECISION_REQUIRED`。
+
+#### 11. Player / Ball Update Ordering
+候选 A（PLAYER_MOVEMENT → BALL_MOVEMENT → CONTACT）/ B（BALL → PLAYER → CONTACT）/ C（并列）/ D（Player 不推进）。
+现有 Frozen Contract **只冻结 Ball 侧**（CONTINUOUS_TRANSIT），**完全未定义 Player Movement 阶段**；无任何调用图暗示先后。→ **BLOCK H**：`PLAYER_BALL_TIME_ORDER_UNDEFINED`。
+（唯一硬约束：若要 Contact 读到同一 timestamp 的 Player/Ball，二者必须在同一 Tick 内推进且顺序明确——但**具体顺序不可由现状唯一推出**。）
+
+#### 12. Player Position Integration Boundary Analysis
+- Option A（复用现有 `updateMovement` writer）：**最小改动**，但 dt=minute 与 tick=second 冲突。
+- Option B（新增 `player-position-tick-integration.js`）：引入**第二套 Player Position 写入路径**风险（违反「禁止第二套 Truth」，除非它是唯一 writer 且替换 A）。
+- Option C（扩展 `playerMotionList` 为 Tick Boundary）：`playerMotionList` 现为**只读适配器**，扩为 writer 会改变其语义层级。
+→ 三者均可行但需 Owner 取舍；**本 Gate 不创建文件**，`OWNER_DECISION_REQUIRED`。
+
+#### 13. Coordinate System Analysis
+- Player：`positionOnPitch` ∈ **[0,1]²**（`stepLocomotion` 全路径 `clamp01`；`PITCH_BOUNDS = {0,1}`；测试断言 [0,1]）。
+- Ball：`matchCore.ball.position` ∈ **[0,1]²**（ball-physics clamp）。
+→ **同一归一化坐标系，无需坐标转换**。→ **BLOCK E 不成立**。`CONTACT_RADIUS = 0.030` 亦为归一化单位，直接可比。
+
+#### 14. C-03 Contact Input Compatibility
+`stepBallPhysics(players)` 需要 `[{ playerId, position:{x,y}, velocity:{x,y} }]`（[ball-physics.js](file:///workspace/FE-project/src/core/match/ball-physics.js#L103)）；`ball-contact.js` 取位兼容 `player.position ?? player.positionOnPitch`（[ball-contact.js](file:///workspace/FE-project/src/core/match/ball-contact.js#L21-L23)）。
+`playerMotionList` 恰好产出该形状（`positionOnPitch` + min→sec 速度）。
+→ **完全兼容，无需 Player Schema 变更**。→ **BLOCK F 不成立**。
+
+#### 15. Player Position Mutation Authority
+C-03 `stepBallPhysics` 接触只改 **Ball** position / velocity，写 `lastTouchPlayerId` / `contacting[]`；**不修改 Player position**（[ball-physics.js](file:///workspace/FE-project/src/core/match/ball-physics.js#L156-L214)）。
+→ **Player Position Writer（`updateMovement`）与 Ball Position Writer（C-03 / C-23 / C-29）完全分离**，无交叉 → 无 Conflict。C-03 **不是** Player Position Writer。
+
+#### 16. C-39 Dependency Check
+Player Position 的 tick 化（新增 PLAYER_MOVEMENT 阶段 / 传入 players）**不需要修改** C-39 的 Transit Contract（`from/to/duration/elapsed/progress/completion/state`）——只需在 C-08 侧插入 Player 阶段并（若 Owner 批准）向 `advanceContinuousBallMovement` 传 `options.players`。
+→ **BLOCK G 不成立**（无 `C39_DEPENDENCY`）。本 Gate 亦**未**修改 C-39 / match-tick（§18 纪律）。
+
+#### 17. Read-only Probe Results
+`/tmp/c42-player-time-probe.mjs`（未进仓库）：
+- **P1**：`TICK_DURATION_SECONDS=1`；1 minute = 60 s；speed 单位 = 归一化/min（`BASE_SPEED=0.055`）。
+- **P2**：1 min（1×dt=1）vs 60×dt=1/60 → 位置一致到 ~1e-6（非 bitwise；本场景 ball 邻近度恒定，故近似相等）。
+- **P3**：60 s vs 30×2 s → 一致到 ~1e-6。
+- **P4**：dt=1s / 0.5s / 2s（总 60s）→ 一致到 ~1e-6（非 bitwise）。
+- **P5**：确定性 = **true**；`clock.simulationTime` 未被 updateMovement 改变。
+- **P6**：**dt=0 → 无 Position Mutation**（`(0.2,0.4)` 不变）。
+- **P7**：`playerMotionList` 输出 `{playerId, position:{0.2,0.4}, velocity:≈(0.949,0.316)}`（60/min→/s）。
+- **P8**：近球场景 1 min vs 60×1 s → 因到达 `ARRIVE_RADIUS` 被 clamp，结果一致（bitwise）。
+→ 结论：`updateMovement` **确定性、无墙钟、dt=0 安全**；但**无 dt-可分解性保证**（速度路径依赖 / 重评阈值随粒度漂移）。
+
+#### 18. Owner Decision Matrix
+
+| 决策项 | 调查结果 | 推荐方案 | 是否可由 Frozen Contract 唯一确定 |
+|---|---|---|---|
+| Player Position Truth | `players[].positionOnPitch`，唯一 writer=`updateMovement` | 沿用 `positionOnPitch` 为唯一 Truth | **是**（Truth 唯一） |
+| Player Position Writer | 唯一：`updateMovement` | 保持单一 writer | **是** |
+| Player dt Unit | 现状 minute；Tick=second；比 1:60 | 统一为 **simulation seconds** | **否** → `OWNER_DECISION_REQUIRED` |
+| Match Tick dt | `TICK_DURATION_SECONDS=1`，可传任意正数 | 保持 second；确认任意 dt 语义 | **否**（任意 dt 语义未冻结） |
+| Minute→Second Adapter | `playerMotionList` 仅转速度，非 tick 积分 | 明确其仅为 C-03 输入适配器 | **否** → `OWNER_DECISION_REQUIRED` |
+| Player Movement Tick Integration | 无生产阶段；`updateMovement` 无调用点 | 新增 PLAYER_MOVEMENT 阶段（Option A 写入路径） | **否** → `OWNER_DECISION_REQUIRED` |
+| Player Position / Snapshot 时序 | Snapshot 仅含 Ball facts，无 Player | 由 Owner 定义 Contact 读取的 Player 来源 | **否** → `OWNER_DECISION_REQUIRED` |
+| Player vs Ball Update Order | Frozen Contract 只冻结 Ball 侧 | 由 Owner 冻结先后（建议同一 Tick 内 Player 先于 Ball） | **否** → `OWNER_DECISION_REQUIRED`（BLOCK H） |
+| Player Position Coordinate System | 与 Ball 同为 [0,1]²，无需转换 | 沿用归一化坐标系 | **是** |
+| C-03 Contact Input Compatibility | `playerMotionList` 输出与 `stepBallPhysics` 输入兼容 | 复用，无 Schema 变更 | **是** |
+| Player Position Mutation Authority | 与 Ball Position Writer 完全分离，C-03 不改 Player | 保持分离 | **是** |
+
+> 关键 **`OWNER_DECISION_REQUIRED`** 项：Player dt Unit / Match Tick dt 语义 / Adapter 定位 / Tick Integration / Snapshot 时序 / **Player vs Ball 顺序（BLOCK H）**。
+
+#### 19. Required Future Implementation Gate
+`Player Position Tick Integration Boundary Freeze Gate`（Owner 冻结：① dt base unit（建议 seconds）；② Player Movement 在 Tick 中的阶段与顺序；③ 唯一 Player Position writer / Integration Boundary；④ Snapshot / Contact 读取来源）。
+→ 之后再开 `Player-Ball Contact Production Integration Gate`。**不得**在 C-42 内自行冻结。
+
+#### 20. Files Modified
+- `docs/SIMULATION_SPEC.md`（仅新增本节 §49）。
+- 无任何 `src/**`、`tests/**`、Frozen Contract 改动（Production = 0 / Test = 0 / Frozen Contract = 0）。
+
+#### 21. Tests / Probes
+- 只读探针：`/tmp/c42-player-time-probe.mjs`（未进仓库；P1–P8，见 §17）。
+- 未新增仓库测试（本 Gate 无可冻结的新 Contract）。
+
+#### 22. Full Regression
+`node tests/run.js` → **1495 通过 / 0 失败（共 1495 用例）**（本次仅改文档，无代码路径变更）。
+
+#### 23. Technical Debt
+- **Player Position 无 Tick 生产 writer**；`updateMovement` 无调用点。
+- **dt 口径双轨**：Player=minute，Tick/Ball=second；`movement` transient 内 `elapsed`(min) 与 `evalTime/lastUpdateTime`(sec) 混用。
+- **`updateMovement` 无 dt-可分解性保证**（速度按当前位置重算；重评阈值随 dt 粒度漂移）。
+- **无 Player/Ball Tick 顺序契约**（BLOCK H）。
+- **C-08 tick 引擎与赛季级 `simulateMatch`（时段制）尚未统一**（wiring gap）。
+- **Snapshot 不含 Player Position**，Contact 读取来源未定义。
+
+#### 24. Final PASS / BLOCKED
+**BLOCKED / SEALED**。命中 **BLOCK H（Player vs Ball Update Order 无法由 Frozen Contract 唯一确定）**；核心决策项（dt unit / Tick Integration / Snapshot 时序 / Order）标记 `OWNER_DECISION_REQUIRED`。
+**最终架构状态判定 = C**：`Player Position 需要未来新的 Integration Gate`（Truth 唯一、坐标与 C-03 兼容、无 Schema 缺口，但缺 Tick 时间/顺序契约）。
+未命中 BLOCK A（Truth 唯一）/ B（60:1 关系可建立）/ C（确定性成立）/ E（坐标兼容）/ F（无需改 Schema）/ G（无 C39 依赖）/ I（调查无需改 C-08）。
+- **红线遵守**：Production Code Changes = 0 / Test Changes = 0 / Frozen Contract Changes = 0；未改 C-03/C-08/C-23/C-29/C-32/C-33/C-39/C-40/C-41 / Player Movement / Schema / Interaction / Contact / Transit / Goal / Possession；无 `Date.now` / `Math.random`。
+
+**STOP — 等待 Owner 验收。不得自行进入 C-43。**
