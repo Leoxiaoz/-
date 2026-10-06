@@ -235,10 +235,12 @@ test('MT-12. 重复消费保持既有 idempotency（无二次转移 / 漂移）'
   const inst = dribbleInst('h_a', 0.45, 0.50);
   const found = findSeed(inst, core, (r) => r.ok && r.outcome === 'DRIBBLE_COMPLETED', { sequence: 0 });
   const r1 = runMatchTick(core, { tickIndex: 12, actionInstance: inst, seed: found.seed, interactionSequence: 0 });
-  // 在已更新的 MatchCore 上重复消费同一 ActionInstance → ALREADY_APPLIED，无漂移。
+  // 在已更新的 MatchCore 上重复消费同一 ActionInstance → ALREADY_APPLIED，无球权 / Ball 二次转移。
+  // ⚠ C-44：PLAYER_MOVEMENT 每 Tick 合法推进 players[].positionOnPitch，故本用例只断言 Interaction 相关状态（Ball / applied）不漂移。
   const r2 = runMatchTick(r1.matchCore, { tickIndex: 13, actionInstance: inst, seed: found.seed, interactionSequence: 0 });
   assertEquals(r2.applied.interaction, false);
-  assertEquals(JSON.stringify(r2.matchCore), JSON.stringify(r1.matchCore));
+  assertEquals(r2.applied.secondBall, false);
+  assertEquals(JSON.stringify(r2.matchCore.ball), JSON.stringify(r1.matchCore.ball));
 });
 
 test('MT-13. Invariant 检查（Tick 级 INV-01~07）', () => {
@@ -292,6 +294,8 @@ test('MT-16. Production Loop 未被修改（match-tick 仅编排既有能力）'
     'interaction-integration', 'ball-facts', 'interaction-resolution-config', 'match-tick-config',
     // C-39：Continuous Transit Integration（Match Tick 生产接入；OPTION_B Completion Writer）
     'continuous-ball-movement-integration', 'match-clock-config',
+    // C-44：Player Position Tick Integration Boundary（Match Tick 生产接入；PLAYER_MOVEMENT 阶段）
+    'player-position-tick-integration',
   ]);
   for (const dep of importsOf(code)) assert(allowed.has(dep), `match-tick 依赖越界模块：${dep}`);
   assert(!/productionLoop|matchLoop|match-loop|production-loop/i.test(code));

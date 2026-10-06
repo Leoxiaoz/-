@@ -392,7 +392,8 @@ test('C33-21. 生产链：未知 ActionInstance 不写 Position（resolve 为 un
   const tick = runMatchTick(core, { tickIndex: 0, actionInstance: { actionType: 'MOVE', actorId: 'h_a' } });
   assertEquals(tick.applied.interaction, false);
   assertEquals(JSON.stringify(tick.matchCore.ball.position), before, '未知动作不得移动球');
-  assertEquals(tick.matchCore, core);
+  // ⚠ C-44：PLAYER_MOVEMENT 每 Tick 合法推进 players[].positionOnPitch；此处仅断言 Ball 未被 Interaction 改写。
+  assertEquals(JSON.stringify(tick.matchCore.ball), JSON.stringify(core.ball), '未知动作不得改写 Ball Truth');
 });
 
 // ===========================================================================

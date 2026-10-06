@@ -1749,3 +1749,107 @@ VALIDATE → SNAPSHOT → PLAYER_MOVEMENT → CONTINUOUS_TRANSIT → ACTION
 - **红线遵守**：Production Code Changes = 0 / Test Changes = 0 / Frozen Contract Changes = 0；未改 C-03 / C-05 / C-06 / C-08 / C-14 / C-15 / C-19 / C-20 / C-21 / C-22 / C-23 / C-24 / C-27 / C-29 / C-32 / C-33 / C-39 / Player·Ball·Interaction·Goal Schema；无 `Date.now` / `Math.random`。
 
 **STOP — 等待 Owner 验收。不得自行进入 C-44。**
+
+## §51 Player Position Tick Integration Implementation（Step 39F-M-C-44）
+
+**状态**：**PASS / SEALED**（Player Position Tick Integration Implementation Gate）。C-43 冻结的 Player Position Integration Boundary 已正式接入 C-08 Match Tick，新增 `PLAYER_MOVEMENT` 阶段。全量回归 **1510 通过 / 0 失败**。未接入 Contact、未修改 C-39 / Interaction / Movement 方程 / Schema。
+
+> 结论先行：C-08 顺序现为 **`VALIDATE → SNAPSHOT → PLAYER_MOVEMENT → CONTINUOUS_TRANSIT → ACTION → INTERACTION_RESOLVE → INTERACTION_INTEGRATE → SECOND_BALL(可选) → INVARIANTS`**。
+> `players[].positionOnPitch` 由**唯一生产 writer（新 Boundary）**推进，与 Ball Position 处于同一 Tick；`PLAYER_MOVEMENT` **只写 Player Position，不触碰 Ball / Transit**；**未向 `advanceContinuousBallMovement` 传 `players`**（Contact 保持未接入）。
+
+---
+
+### 39F-M-C-44 Gate Report
+
+#### 1. C-43 Context Verification
+C-43 = PASS / SEALED，已冻结 Player Position Tick Integration Boundary：`playerDt = tickInput.deltaTime`（缺省 `TICK_DURATION_SECONDS`）；唯一 writer（Boundary → `updateMovement`）→ `players[].positionOnPitch`；顺序 `SNAPSHOT → PLAYER_MOVEMENT → CONTINUOUS_TRANSIT`；Snapshot = Pre-Tick；Contact 读取 = Tick N post-movement。本 Gate 原样落地，不重释。
+
+#### 2. Player Movement Integration Boundary
+新增 [player-position-tick-integration.js](file:///workspace/FE-project/src/core/match/player-position-tick-integration.js)：`advancePlayerPositionTick(matchCore, deltaTime)` → `{ ok, matchCore, applied, reason, deltaTime, source, ruleVersion }`。
+- 唯一内部换算：`updateMovement(matchCore, dtSeconds / 60)`（second → minute，镜像 `playerMotionList` 的 min→sec 约定）。
+- `dt=0` → 返回**输入 core 原样**（`applied:false`，无 movement 状态推进，严格 no-op）。
+- 仅调用 `movement-update.js`；**不 import** 任何 Ball / Contact / Interaction 模块。
+
+#### 3. Player dt Source
+`deltaTime` 由 C-08 计算：`Number.isFinite(tickInput.deltaTime) ? tickInput.deltaTime : MATCH_CLOCK_CONFIG.TICK_DURATION_SECONDS`（=1）。Boundary 复用同值。**无** `Date.now` / `performance.now` / `setTimeout` / FPS（PPT-15 源码守卫）。
+
+#### 4. dt Validation
+复用既有语义：Boundary 内 `Number.isFinite(n) && n > 0 ? n : 0`（与 C-39 内部一致）；非法（负数 / NaN / undefined）→ 0 = 合法 no-op（PPT-13）。
+
+#### 5. C-08 Tick Order
+冻结顺序（[match-tick.js](file:///workspace/FE-project/src/core/match/match-tick.js#L131-L166)）：
+`VALIDATE → SNAPSHOT → PLAYER_MOVEMENT → CONTINUOUS_TRANSIT → ACTION → INTERACTION_RESOLVE → INTERACTION_INTEGRATE → SECOND_BALL(可选) → INVARIANTS`。
+`deltaTime` 计算上移到 `PLAYER_MOVEMENT` 之前；`CONTINUOUS_TRANSIT` 现以 `current`（= PLAYER_MOVEMENT 输出）为输入（Ball 未变 → 语义等价）；**C-39 调用签名不变、不传 players**。
+
+#### 6. Player Position Writer Audit
+全仓 `src/**`：`positionOnPitch` 赋值仍**唯一**位于 [movement-update.js](file:///workspace/FE-project/src/core/match/movement-update.js#L139)（Boundary 委托）。Boundary 自身**不**出现 `positionOnPitch:` 赋值（PPT-11）。→ **Exactly One Production Player Position Writer**；无冲突。
+
+#### 7. updateMovement Integration
+仅经 Boundary 复用；未改 [movement-update.js](file:///workspace/FE-project/src/core/match/movement-update.js)（速度/加速度/重评阈值/路径/边界/状态全未改）。
+
+#### 8. playerMotionList Usage
+**未修改**；`playerMotionList` 仍为 min→sec 速度适配器（供 C-03 输入），本 Gate 不接 Contact，故 A 侧不使用它。C-43 的「second→minute」由 Boundary 的 `/60` 承担。
+
+#### 9. Multi-Player Deterministic Order
+`updateMovement` 按 `matchCore.players` **数组顺序**迭代（稳定、可复现，无对象遍历偶然性 / wall clock / random）；单球员 target 由 shape/context 决定，**无 player-to-player 依赖**（PPT-14 断言 order-stable + 可复现）。
+
+#### 10. Player Runtime Fields Written（PLAYER_MOVEMENT_WRITES）
+- `players[].positionOnPitch`（唯一 Position Truth）。
+- `matchCore.movement`（**transient / derived**；含 intent/target/speed/elapsed/evalTime/level 等）。
+- **不写** fitness / stamina / form / morale / attributes / ball / score / goal。
+
+#### 11. Ball State Isolation
+PPT-06：`PLAYER_MOVEMENT` 前后 `ball.position / velocity / state / transit` **完全一致**；Boundary 单独调用亦不改 Ball。
+
+#### 12. Transit Isolation
+PPT-07：`ball.transit`（from/to/duration/elapsed/progress）逐字节保持，**不提前完成**。
+
+#### 13. Snapshot Isolation
+PPT-08：Snapshot 仍在 `PLAYER_MOVEMENT` 之前，字段仍为 `{ tickIndex, ballState, control, possessingTeamId, inTransit }`，**未注入 Player Position**（C-08 Snapshot Contract 未改）。
+
+#### 14. Contact Isolation
+PPT-10：球员与球完全重合 + dt=1 → `ball.lastTouchPlayerId` 保持 `null`、`contacting` 为空、无 CONTACT/COLLISION 事件。**未传 players 给 `advanceContinuousBallMovement`**（PPT-11 源码守卫）。
+
+#### 15. Interaction Isolation
+未修改 `resolveInteraction` / `integrateInteractionResolution` / `interaction-state-update` / TACKLE·PRESS·INTERCEPTION·DRIBBLE·PASS·SHOT。C-05/C-06/C-24/C-27/C-33 保持 Frozen。
+
+#### 16. P1–P10 Test Results
+新增 [player-position-tick-integration.test.js](file:///workspace/FE-project/tests/player-position-tick-integration.test.js)（PPT-01~15，**15/15 通过**）：
+- PPT-01 (P1) 阶段执行 + position 推进 + 输入不被原地改；
+- PPT-02 (P2) 无 Movement 输入 → 不变；PPT-03 (P3) dt=0 → 不变且无 movement 推进；
+- PPT-04/05 (P4) dt 来源（显式 / 缺省回退）；
+- PPT-06 (P5) Ball 隔离；PPT-07 (P6) Transit 隔离；PPT-08 (P7) Snapshot 隔离；
+- PPT-09 (P8) 确定性与 5-Tick 序列可复现；PPT-10 (P9) Contact 隔离；
+- PPT-11 (P10) Writer Audit / Source Guard；PPT-12 顺序冻结；PPT-13 原因码；PPT-14 顺序稳定；PPT-15 墙钟/RNG 守卫。
+
+#### 17. Full Regression
+`node tests/run.js` → **1510 通过 / 0 失败（共 1510 个用例）**。
+
+#### 18. Files Modified
+- **新增**：`src/core/match/player-position-tick-integration.js`（Boundary）。
+- **修改**：`src/core/match/match-tick.js`（接入 `PLAYER_MOVEMENT`；`deltaTime` 上移；`applied.playerMovement`；文档注释）；`src/core/match/match-tick-config.js`（`TICK_STAGES.PLAYER_MOVEMENT`、`TICK_EVENT_TYPES.PLAYER_MOVEMENT_APPLIED/SKIPPED`）。
+- **新增**：`tests/player-position-tick-integration.test.js`；`tests/run.js`（注册）。
+- **修改**：`tests/match-tick.test.js`（MT-16 依赖白名单新增 `player-position-tick-integration`；MT-12 收敛为 Ball/applied 幂等，因 C-44 起 PLAYER_MOVEMENT 每 Tick 合法推进球员）；`tests/interaction-instant-ball-position-integration.test.js`（C33-21 收敛为 Ball 不变，理由同上）。
+- **文档**：本节 §51。
+
+#### 19. Frozen Contract Impact
+- **未修改**：C-03 / C-05 / C-06 / C-14 / C-15 / C-19 / C-20 / C-21 / C-23 / C-24 / C-27 / C-29 / C-32 / C-33 / C-39 / Player·Ball·Interaction·Goal Schema。
+- **按授权修改的接线层**：C-08 Match Tick 编排（新增阶段与 event）——C-44 §25 明确允许「修改 C-08 Match Tick 接线」；C-08 的既有阶段语义（SNAPSHOT / CONTINUOUS_TRANSIT / ACTION / INTERACTION_* / SECOND_BALL / INVARIANTS）未改。
+- 两处既有测试因「每 Tick 新增合法 Player 推进」而收敛断言（非契约破坏，见 §18）。
+
+#### 20. Technical Debt
+- **Movement 时间基数仍为 minute**：Boundary 以 `/60` 适配；未把 Movement 模型本身改为 second（C-43 已决定不要求）。
+- **`movement` transient 内单位混用**：`elapsed`(min) vs `evalTime/lastUpdateTime`(sec)（C-42 记录，未在本 Gate 修）。
+- **`updateMovement` 无 dt-可分解性保证**（路径依赖速度 + 累计 elapsed 重评阈值，C-43 记录）。
+- **C-08 tick 引擎与赛季级 `simulateMatch`（时段制）尚未统一**（wiring gap，C-42 记录）。
+- `PLAYER_MOVEMENT` 现为**无条件阶段**；无 players 时 Boundary 安全 no-op（`INVALID_MATCHCORE` / `NO_PLAYERS`）。
+
+#### 21. Future Gate Recommendation
+`Player-Ball Contact Production Integration Gate`（独立；职责仅为把 `players` 接入 `advanceContinuousBallMovement` 并落地 C-40/C-41 的 Contact 边界/Transit 中断/Writer 仲裁）。**本 Gate 不做**。
+
+#### 22. Final PASS / BLOCKED
+**PASS / SEALED**。满足 §28 全部条件：`PLAYER_MOVEMENT` 已进入 C-08 且顺序正确；Player Position 成功推进；`players[].positionOnPitch` 仍为唯一 Truth；Ball / Transit 未被修改；Contact 未接入；Interaction 无语义变化；**Regression = 0**。
+**未命中 BLOCK A–K**（无 Writer 冲突 / 无 dt 语义破坏 / 无顺序破坏 / 无 Ball·Transit 变异 / 无 Contact·Interaction scope creep / 无需 C-39·Schema·Snapshot 变更 / 无回归失败）。
+- **纪律遵守**：只接线不扩权；未向 Continuous Transit 传 `players`；无 `Date.now` / `performance.now` / `Math.random` / 新 Player Physics / 第二套 Truth。
+
+**STOP — 等待 Owner 验收。不得自行进入 C-45。**

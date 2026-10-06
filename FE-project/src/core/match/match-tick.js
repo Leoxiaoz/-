@@ -7,10 +7,14 @@
  *   «确定调用顺序 + 输入快照 + 输出下一状态»，不是新的游戏规则层，也不是完整 Match Loop。
  *
  * 数据流（单向、每 Tick 单次）：
- *   Tick Input → Snapshot → ActionInstance（C-04 Decision 或外部传入）
+ *   Tick Input → Snapshot → Player Movement（C-43 Boundary / C-44）
+ *     → Continuous Transit（C-39）→ ActionInstance（C-04 Decision 或外部传入）
  *     → Interaction Resolution（C-05）→ Integration（C-06）
  *     → 若 FREE 且 requiresFollowUp=SECOND_BALL → SECOND_BALL（C-07）→ Integration
  *     → Tick Result → Next MatchCore
+ *
+ * 冻结顺序：VALIDATE → SNAPSHOT → PLAYER_MOVEMENT → CONTINUOUS_TRANSIT → ACTION
+ *   → INTERACTION_RESOLVE → INTERACTION_INTEGRATE → SECOND_BALL(可选) → INVARIANTS。
  *
  * 关键边界（冻结）：
  * - **单一 MatchCore Truth**：输入 → 计算 → 新 MatchCore（immutable return）；不原地修改、不建第二套。
@@ -33,6 +37,7 @@ import {
 import { deriveBallFacts } from './ball-facts.js';
 import { INTERACTION_BALL_STATE as BS, FOLLOW_UP_KIND } from './interaction-resolution-config.js';
 import { advanceContinuousBallMovement } from './continuous-ball-movement-integration.js';
+import { advancePlayerPositionTick } from './player-position-tick-integration.js';
 import { MATCH_CLOCK_CONFIG } from './match-clock-config.js';
 import {
   MATCH_TICK_RULE_VERSION, MATCH_TICK_CONFIG, TICK_STAGES, TICK_EVENT_TYPES,
@@ -93,7 +98,7 @@ export function checkTickInvariants(matchCore, tickInfo = {}) {
  * @returns {{
  *   matchCore:object, tick:object, actionInstance:object|null,
  *   interactionResult:object|null, secondBallResult:object|null,
- *   events:object[], applied:{interaction:boolean, secondBall:boolean, continuousMovement:boolean, continuousMovementCompleted:boolean},
+ *   events:object[], applied:{interaction:boolean, secondBall:boolean, playerMovement:boolean, continuousMovement:boolean, continuousMovementCompleted:boolean},
  *   invariantIssues:string[], debug:null
  * }}
  */
@@ -110,7 +115,7 @@ export function runMatchTick(matchCore, tickInput = {}, options = {}) {
     return {
       matchCore, tick: { tickIndex, ruleVersion, stages: [TICK_STAGES.VALIDATE], status: 'INVALID', snapshot: null },
       actionInstance: null, interactionResult: null, secondBallResult: null,
-      events, applied: { interaction: false, secondBall: false },
+      events, applied: { interaction: false, secondBall: false, playerMovement: false, continuousMovement: false, continuousMovementCompleted: false },
       invariantIssues: matchCore ? checkMatchInvariants(matchCore) : ['NO_MATCHCORE'], debug: null,
     };
   }
@@ -129,20 +134,38 @@ export function runMatchTick(matchCore, tickInput = {}, options = {}) {
   };
   stages.push(TICK_STAGES.SNAPSHOT);
 
-  // 2.5 Continuous Ball Movement Integration（C-39 / OPTION_B）
-  //     检测当前是否存在 Continuous Transit → 注入确定性 Tick dt → C-03 Physics（中间）/ C-23（完成）。
-  //     dt 来源 = 生产 Match Tick 的 simulation seconds（默认 1 Tick = TICK_DURATION_SECONDS）；不使用墙钟。
+  // 2.25 Player Position Movement Integration（C-44；C-43 Boundary）
+  //      顺序冻结：SNAPSHOT → PLAYER_MOVEMENT → CONTINUOUS_TRANSIT。
+  //      唯一写入 players[].positionOnPitch；只读 Ball（不触碰 ball.position / velocity / transit / state）。
+  //      dt 来源 = 生产 Match Tick 的 simulation seconds（默认 TICK_DURATION_SECONDS）；不使用墙钟。
   const deltaTime = Number.isFinite(tickInput?.deltaTime)
     ? tickInput.deltaTime
     : MATCH_CLOCK_CONFIG.TICK_DURATION_SECONDS;
-  const contRes = advanceContinuousBallMovement(matchCore, deltaTime);
-  let current = contRes.matchCore;
+  const playerMoveRes = advancePlayerPositionTick(matchCore, deltaTime);
+  let current = playerMoveRes.matchCore;
   const applied = {
     interaction: false,
     secondBall: false,
-    continuousMovement: contRes.applied === true,
-    continuousMovementCompleted: contRes.completed === true,
+    playerMovement: playerMoveRes.applied === true,
+    continuousMovement: false,
+    continuousMovementCompleted: false,
   };
+  stages.push(TICK_STAGES.PLAYER_MOVEMENT);
+  events.push({
+    type: playerMoveRes.applied
+      ? TICK_EVENT_TYPES.PLAYER_MOVEMENT_APPLIED
+      : TICK_EVENT_TYPES.PLAYER_MOVEMENT_SKIPPED,
+    tickIndex, reason: playerMoveRes.reason,
+  });
+
+  // 2.5 Continuous Ball Movement Integration（C-39 / OPTION_B）
+  //     检测当前是否存在 Continuous Transit → 注入确定性 Tick dt → C-03 Physics（中间）/ C-23（完成）。
+  //     dt 来源 = 生产 Match Tick 的 simulation seconds（默认 1 Tick = TICK_DURATION_SECONDS）；不使用墙钟。
+  //     ⚠ 不传 players（Contact 属独立 Gate）。
+  const contRes = advanceContinuousBallMovement(current, deltaTime);
+  current = contRes.matchCore;
+  applied.continuousMovement = contRes.applied === true;
+  applied.continuousMovementCompleted = contRes.completed === true;
   stages.push(TICK_STAGES.CONTINUOUS_TRANSIT);
   if (!contRes.ok) {
     events.push({ type: TICK_EVENT_TYPES.CONTINUOUS_TRANSIT_FAILED, tickIndex, reason: contRes.reason });
