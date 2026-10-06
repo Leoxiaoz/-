@@ -1593,3 +1593,159 @@ Player Position 的 tick 化（新增 PLAYER_MOVEMENT 阶段 / 传入 players）
 - **红线遵守**：Production Code Changes = 0 / Test Changes = 0 / Frozen Contract Changes = 0；未改 C-03/C-08/C-23/C-29/C-32/C-33/C-39/C-40/C-41 / Player Movement / Schema / Interaction / Contact / Transit / Goal / Possession；无 `Date.now` / `Math.random`。
 
 **STOP — 等待 Owner 验收。不得自行进入 C-43。**
+
+## §50 Player Position Tick Integration Boundary（Step 39F-M-C-43）
+
+**状态**：**PASS / SEALED**（Integration Boundary Foundation Gate；架构契约已冻结，无需修改任何 Frozen Contract 即可确定边界）。生产代码 / 测试 / Frozen Contract 改动 = 0（仅本节文档 + 只读探针）。
+
+> 结论先行：Player Position Tick Integration Boundary **可被唯一冻结**：
+> **dt = simulation seconds（= `tickInput.deltaTime`，缺省回退 `TICK_DURATION_SECONDS`）；唯一 writer = Boundary 包裹既有 `updateMovement`；写入唯一 Truth `players[].positionOnPitch`；Tick 阶段 = `SNAPSHOT` 之后、`CONTINUOUS_TRANSIT` 之前（Option A）；Snapshot = Pre-Tick（仅 Ball facts，不变）；Contact 读取 = Tick N、Player Movement 之后的 Player Position 与同 Tick 的 Ball Position。**
+> 未命中任何 BLOCK 条件（A–K）。**PASS 仅代表边界已冻结；本 Gate 不接入生产 Tick，后续由独立实现 Gate 落地。**
+
+---
+
+### 39F-M-C-43 Gate Report
+
+#### 1. C-42 Context Verification
+C-42 结论 **BLOCKED**（Gate 完成，判定 C = 需要未来 Integration Gate）。C-42 已冻结事实（不得重释）：`players[].positionOnPitch` = 唯一 Player Position Truth；唯一运行时 writer = `updateMovement`；生产 Tick 无 Player Position writer（Tick-level Truth = NOT INTEGRATED）；Player/Ball 坐标同为归一化 [0,1]²；`playerMotionList` = Adapter，非 Truth。本 Gate 在其上冻结生产边界。
+
+#### 2. Player Position Truth
+唯一：`players[].positionOnPitch` `{x,y}`（归一化 [0,1]²）。本 Gate **不新增**任何 `tickPosition` / `simulationPosition` / `runtimePosition` 等第二套 Truth。
+
+#### 3. Player Movement Input Analysis
+`updateMovement(matchCore, dt, options?)`（[movement-update.js](file:///workspace/FE-project/src/core/match/movement-update.js#L71)）所需最小输入：
+- `matchCore.players[]`（`playerId / teamId / positionOnPitch / onPitch / injured / sentOff / attributes.pace / fitness`）
+- `matchCore.movement`（transient；缺失由 `initMovementState` 建立）
+- `matchCore.ball.position / control / possessingTeamId`（球邻近速度、carrier 判定）
+- `matchCore.teams.home/away`、`matchCore.clock.simulationTime`（second；仅读取）
+- `dt`（**simulation minute**；非有限 / ≤0 视为 0）
+**无** `Date.now` / `performance.now` / wall clock / FPS / random（grep 确认无实际调用）。
+
+#### 4. Player dt Unit
+**冻结：Player Movement Tick dt = simulation seconds**（= Match Tick `deltaTime`）。
+既有 `updateMovement` 内部为 minute 模型（`speed[归一化/min] * dt[min]`）；Boundary 的**对外时间单位 = second**，内部按 `dt_minute = deltaTime_second / 60` 适配（与 `playerMotionList` 的 min→sec 约定互为逆）。**不要求、也不在本 Gate 修改 Movement 方程或 base unit。**
+
+#### 5. dt Source
+**冻结：`playerDt = tickInput.deltaTime`**；缺失（非有限）时回退 **`MATCH_CLOCK_CONFIG.TICK_DURATION_SECONDS`**（=1）。
+与既有 C-08 规则**完全一致**（[match-tick.js](file:///workspace/FE-project/src/core/match/match-tick.js#L135-L137)）。Player Movement **不得自行生成 dt**，**不得硬编码** `playerDt = 1`。
+
+#### 6. Player Position Writer Map
+
+| Writer | 是否保留 | 是否生产调用 | 是否唯一 | 时间单位 |
+|---|---|---|---|---|
+| `updateMovement` | 保留（作为 Boundary 内部实现） | 否（当前）→ 由 Boundary 调用 | 是（唯一 Position writer） | minute（内部）/ second（Boundary 对外） |
+| 新 Integration Boundary | 新增（**下一实现 Gate**；本 Gate 不创建） | 将接管（唯一入口） | 是（对外唯一） | simulation second |
+| C-03 Contact | 保留 | 是（Ball 路径） | 否（**不写 Player Position**） | second |
+| 其他 Writer | 无 | — | — | — |
+
+→ **Exactly One Production Player Position Writer**（Boundary）。C-03 不改 Player Position（§15）。
+
+#### 7. Player Movement Tick Stage Analysis
+**冻结：Option A** ——
+```
+VALIDATE → SNAPSHOT → PLAYER_MOVEMENT → CONTINUOUS_TRANSIT → ACTION
+        → INTERACTION_RESOLVE → INTERACTION_INTEGRATE → SECOND_BALL(可选) → INVARIANTS
+```
+依据（代码结构，非足球经验）：
+1. C-39 `advanceContinuousBallMovement(matchCore, dt, { players })` **已接受 `options.players` 并透传 `stepBallPhysics`**（[continuous-ball-movement-integration.js](file:///workspace/FE-project/src/core/match/continuous-ball-movement-integration.js#L110-L165)）→ 未来 Contact 的**宿主就是 CONTINUOUS_TRANSIT**；因此 Player Position 必须**先**更新，Contact 才能读到 Tick-N 的球员位置。
+2. `SNAPSHOT` 为 **pre-tick、仅 Ball facts**（§8），必须保持既有语义不变 → PLAYER_MOVEMENT 只能在其**之后**。
+3. PLAYER_MOVEMENT 只写 Player Position，**不触碰 Ball**（探针 P6）→ 与 C-39 语义正交，不改变 Transit。
+**本 Gate 不修改 C-08**（阶段落地属下一实现 Gate）。
+
+#### 8. Snapshot Timestamp
+**冻结：Snapshot = Pre-Tick**（Tick N **开始时**的状态）。既有 Snapshot 仅含 Ball facts `{ tickIndex, ballState, control, possessingTeamId, inTransit }`（[match-tick.js](file:///workspace/FE-project/src/core/match/match-tick.js#L122-L129)），**不含 Player Position**，且**本 Gate 不改变其语义**（不向其注入 Player Position）。
+- 用途冻结：Snapshot 用于 **previous-state comparison / debug / determinism 观测**；**不**是 Contact 的读取来源。
+- Player Position 的「Tick 入口值」= Tick N-1 committed 的 `players[].positionOnPitch`（即 Tick N 尚未推进前的值）。
+
+#### 9. Contact Read Timestamp
+**冻结 `CONTACT_POSITION_TIMESTAMP`**：Contact（未来）在 **Tick N** 读取
+- Player Position = **Tick N、PLAYER_MOVEMENT 之后**的 `players[].positionOnPitch`（Tick 内常量）；
+- Ball Position = **Tick N** 的 Ball 状态（CONTINUOUS_TRANSIT 内 contact 瞬时）。
+禁止出现 `Player(T-1) + Ball(T)` 的跨 Tick 混用。Contact 只**读取**该 Truth，**不得**创建 Contact Position 第二套 Truth（本 Gate 不实现 Contact）。
+
+#### 10. Player/Ball Timestamp Alignment
+**冻结：同属 Tick N**。Player = Tick-N post-movement（Tick 内静止常量，供 Physics 作为障碍位置）；Ball = Tick-N 连续 Transit 状态。二者时间戳在 **Tick 粒度对齐**。
+
+#### 11. Movement State Authority
+**冻结：`matchCore.movement` = transient / derived（movement intent / target / speed / elapsed 等），不是 Position Truth，也不是 Simulation Clock。**
+`elapsed` = **derived** 重评计数器（单位 minute），**非**权威累计时间（探针 P7：`elapsed=1/60` 而 `lastUpdateTime=0`(sec)）。
+→ Player Movement **不得建立第二 Simulation Clock**；**Match Clock（`matchCore.clock.simulationTime`，second）是唯一时间推进来源**。
+
+#### 12. dt Validation
+**冻结：复用既有规则，不创建第二套 validation。**
+- C-08：`Number.isFinite(tickInput.deltaTime) ? deltaTime : TICK_DURATION_SECONDS`。
+- C-39 内部：`dt = isNum(deltaTime) && deltaTime > 0 ? deltaTime : 0`（非有限 / ≤0 → 0 = 合法 NO-OP）。
+- Boundary 采用同一 `finite && > 0 else 0`；**允许 0**（探针 P5：`dt=0` 无 Position Mutation）。
+
+#### 13. dt Decomposition Probe
+`/tmp/c43-player-position-boundary-probe.mjs`：
+- **P2** `update(2s)` vs `update(1s)+update(1s)` → 差 `9.0e-7`（非 bitwise）。
+- **P3** `update(60s)` vs `60×update(1s)` → 差 `1.6e-3`（显著非零）。
+**原因**（已记录，非阻断）：① `computeMovementSpeed` 每次按**当前位置**（ball 邻近度）重算 → 路径依赖；② 重评阈值基于**累计 `elapsed`**（`COMMIT_MAX_MINUTES=8`），随 dt 粒度漂移。
+→ 冻结为**合法的 Tick decomposition 语义 = 「给定固定 dt 序列则确定性；不保证不同 dt 序列精确等价」**。**不修改 Movement Model**（§J 未命中）。
+
+#### 14. Replay Determinism Probe
+**P1**：两个独立 Run，10 Tick 的 Player Position 序列**逐帧完全一致** = `true`。（无 wall clock / random / 环境依赖 → BLOCK C 未命中。）
+
+#### 15. C-03 Contact Compatibility
+`playerMotionList` 位取 `positionOnPitch`、速度 = `movement.speed / 60`（min→sec），输出 `{playerId, position, velocity}` —— 与 `stepBallPhysics(players)` 输入形状**完全一致**（[ball-physics.js](file:///workspace/FE-project/src/core/match/ball-physics.js#L256-L277)）。
+**探针 P8**：以 `positionOnPitch` 派生列表调用 `stepBallPhysics` → `contacts=['a1']`，`lastTouch='a1'` → **CONTACT_INPUT_COMPATIBLE**。**无需 Player Schema 变更**（BLOCK G 未命中）。
+
+#### 16. C-39 Compatibility
+**探针 P6**：Boundary 执行后 `ball` **逐字节不变**、`transit` 保留 → 不改变 Ball Position / Velocity / Transit。PLAYER_MOVEMENT 与 CONTINUOUS_TRANSIT **正交** → **不修改 C-39**（BLOCK H 未命中）；不受影响 C-39 的 `from/to/duration/elapsed/progress/completion/state`。
+
+#### 17. Owner Decision Matrix
+
+| 决策项 | 调查结果 | 推荐方案 | Frozen Contract 是否已足够 |
+|---|---|---|---|
+| Player dt Unit | 现状 minute；Tick=second | **seconds** | 是（Tick 为 second；比 1:60） |
+| dt Source | C-08 已有规则 | `tickInput.deltaTime` ?? `TICK_DURATION_SECONDS` | 是（既有 C-08 规则） |
+| Position Writer | 唯一 `updateMovement` | 单一 Boundary 包裹 | 是 |
+| Player Movement Stage | C-08 未含 Player 阶段 | **Option A**（SNAPSHOT 后 / CONTINUOUS_TRANSIT 前） | 是（由 C-39 `players` 选项 + Snapshot 语义推出） |
+| Snapshot Timestamp | 仅 Ball facts，pre-tick | **Pre-Tick（不变）** | 是 |
+| Contact Read Timestamp | 无 | **Tick N、Player Movement 后** | 是 |
+| Player/Ball Timestamp Alignment | 无 | **均 Tick N** | 是 |
+| Movement State Authority | transient derived | **derived（非 Truth/非 Clock）** | 是 |
+| dt Validation | C-08 / C-39 已有 | **复用（finite && >0；0 = no-op）** | 是 |
+| dt Decomposition Semantics | 非严格可分解 | **记录限制，不要求精确等价** | 是（限制已记录） |
+| Replay Determinism | 可复现 | 保持 | 是 |
+
+→ 全部 `是`；**无 `OWNER_DECISION_REQUIRED`**。→ **PASS / SEALED 成立**。
+
+#### 18. Future Implementation Gate
+`Player Position Tick Integration Implementation Gate`（唯一职责）：
+- 新增 **PLAYER_MOVEMENT** 阶段（Option A）+ 唯一 **Player Position Integration Boundary**；
+- Boundary 契约（冻结）：
+  ```
+  input : matchCore, deltaTime (simulation seconds)
+  dt    : finite && >0 ? deltaTime : 0            // 复用 C-08/C-39 规则
+  write : players[].positionOnPitch               // 唯一 Player Position Truth
+  impl  : updateMovement(matchCore, dt / 60)      // second → minute 适配（内部）
+  out   : new matchCore（immutable；含 movement transient）
+  ```
+**不得顺带**：Contact / Collision / Tackle / Press / Interception / Transit Interruption / Possession Arbitration / 传入 players 到 `advanceContinuousBallMovement`。
+
+#### 19. Files Modified
+- `docs/SIMULATION_SPEC.md`（仅新增本节 §50）。
+- **无** `src/**` / `tests/**` / Frozen Contract 改动（Production = 0 / Test = 0 / Frozen Contract = 0）。
+
+#### 20. Tests / Probes
+- 只读探针：`/tmp/c43-player-position-boundary-probe.mjs`（未进仓库；P1–P8，见 §13/§14/§15/§16）。
+- 未新增仓库测试（本 Gate 无可运行的新 Contract；实现落地在下一 Gate）。
+
+#### 21. Full Regression
+`node tests/run.js` → **1495 通过 / 0 失败（共 1495 用例）**（仅改文档，无代码路径变更）。
+
+#### 22. Technical Debt
+- **dt 口径双轨**：Boundary 对外 second，`updateMovement` 内部 minute；`movement` transient 内 `elapsed`(min) 与 `lastUpdateTime/evalTime`(sec) 混用。
+- **`updateMovement` 无 dt-可分解性保证**（路径依赖速度 + 累计 elapsed 重评阈值）。
+- **C-08 tick 引擎与赛季级 `simulateMatch`（时段制）尚未统一**（wiring gap，C-42 已记）。
+- **Snapshot 不含 Player Position**（本 Gate 有意保持；Contact 读取来源已冻结为 Tick-N post-movement）。
+- Contact / Interaction 双 writer 仲裁仍由后续 Contact Gate 处理（不在本 Gate 范围）。
+
+#### 23. Final PASS / BLOCKED
+**PASS / SEALED**。Player Position Tick Integration Boundary **已唯一冻结**：dt unit / dt source / writer / tick stage / snapshot timestamp / contact read timestamp / player-ball alignment / movement state authority / dt validation / decomposition 语义 / replay determinism **全部明确**，且**无需修改任何 Frozen Contract**。
+**未命中 BLOCK A–K**（唯一 writer 可确定；dt 统一 seconds；无需第二 Clock；Snapshot/Contact timestamp 可确定；Player/Ball 可对齐；无需改 Player Schema / C-39 / Interaction；无需改 Movement Model；Tick order 可经分析确定）。
+- **红线遵守**：Production Code Changes = 0 / Test Changes = 0 / Frozen Contract Changes = 0；未改 C-03 / C-05 / C-06 / C-08 / C-14 / C-15 / C-19 / C-20 / C-21 / C-22 / C-23 / C-24 / C-27 / C-29 / C-32 / C-33 / C-39 / Player·Ball·Interaction·Goal Schema；无 `Date.now` / `Math.random`。
+
+**STOP — 等待 Owner 验收。不得自行进入 C-44。**
