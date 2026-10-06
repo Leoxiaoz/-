@@ -1141,3 +1141,136 @@ finalizeTransitSettlement（State / Control / Possession / Transit 清理，**�
 
 - **Deferred**：Player↔Ball Contact 接线、Continuous Transit → Goal Detection / Resolution 接线、Physics Redesign。
 - **本 Gate 完成后 STOP**，等待 Owner 验收；**不自行进入 C-40**。
+
+## §47 Player-Ball Contact Boundary / Timing Decision（Step 39F-M-C-40）
+
+**状态**：**BLOCKED / SEALED**（Decision / Foundation Gate；调查完成，结论为 BLOCKED）。未修改任何生产代码 / 测试 / Frozen Contract（仅本节文档 + 只读探针）。
+
+> 结论先行：**Player Position Truth 存在但未接入 C-08 Tick，且与 Tick 的 dt 单位口径冲突（BLOCK A）**；
+> **Contact 目前仅存在于 C-03 Physics 单元内部，生产 Tick 不产生 Contact**；
+> **Contact 与 Interaction 无正式连接（Model 4），Contact 是否可中断 Transit 无任何现有规则**。
+> 因此本 Gate 结论为 BLOCKED，需 Owner 冻结 Contact 边界后再进入下一 Gate。
+
+---
+
+### 39F-M-C-40 Gate Report
+
+#### 1. C-39 Context Verification
+`match-tick.js` 的 `CONTINUOUS_TRANSIT` 阶段调用 `advanceContinuousBallMovement(matchCore, deltaTime)`（[match-tick.js](file:///workspace/FE-project/src/core/match/match-tick.js#L135-L146)），**不传 players**；dt 来自 `TICK_DURATION_SECONDS`（simulation seconds）。C-39 已把 C-03 Physics（中间）/ C-23（完成）接入生产 Tick，但**只接入 Ball Position，未接入 Player。**
+
+#### 2. Current Match Tick Order
+`VALIDATE → SNAPSHOT → CONTINUOUS_TRANSIT → ACTION → INTERACTION_RESOLVE → INTERACTION_INTEGRATE → SECOND_BALL_RESOLVE/INTEGRATE（可选）→ INVARIANTS`（[match-tick.js](file:///workspace/FE-project/src/core/match/match-tick.js#L119-L242)）。
+探针 P5 实测 stages = `["validate","snapshot","continuous_transit","action","invariants"]`（无动作时短路）。**Contact 不在该序列的任何显式阶段中**。
+
+#### 3. Player Position Truth
+存在且唯一：`players[].positionOnPitch`，唯一写入者是 `updateMovement`（C-movement，经 transient `matchCore.movement`，[movement-update.js](file:///workspace/FE-project/src/core/match/movement-update.js)）。
+**但**：C-08 Tick **不调用** `updateMovement`，Tick 结果**无** `movement` 字段（探针 P5）；且 `updateMovement` dt 单位是 **simulation minute**，而 C-08 Tick dt 是 **simulation second**（`TICK_DURATION_SECONDS = 1`）——**单位口径不一致**。
+→ **BLOCK A `PLAYER_POSITION_TRUTH_NOT_TICK_INTEGRATED`**：Contact 若接入生产 Tick，无法确定使用哪个 Player Position Truth。
+
+#### 4. Ball Position Truth
+唯一：`MatchCore.ball.position`。Contact 系统（C-03）只**读** `ball.position` 并写回同一字段；**未**产生第二套 Ball Position Truth。`ball.contacting[]` / `ball.lastTouchPlayerId` 是 transient 派生信息，非独立 Truth。
+
+#### 5. Ball Transit Truth
+唯一：`MatchCore.ball.transit`（`{ state, from, to, duration, progress, elapsed, outcome, ... }`），由 C-39 / C-23 管理。Contact **不触碰** `transit`（探针 P2 `transitKept=true`）。
+
+#### 6. Existing Contact-like Logic
+已存在，但**仅限 C-03 单元内部**：
+- 几何：[ball-contact.js](file:///workspace/FE-project/src/core/match/ball-contact.js) 的 `computeBallContact`（离散）与 `sweptBallContact`（线段防 tunneling）。
+- 物理：[ball-physics.js](file:///workspace/FE-project/src/core/match/ball-physics.js) 的 `stepBallPhysics` 在提供 `players` 时执行去穿透（改 position）、法向相对速度反射（改 velocity）、写 `lastTouchPlayerId` / `contacting[]`。
+- `ball-contact.js` 的**唯一生产消费者**是 `ball-physics.js`；生产 Tick 未把 players 传入 Physics。
+
+#### 7. Contact vs Interaction Relationship
+**Model 4：二者目前完全没有正式连接。** Contact 属 C-03 Physics（几何，CONTINUOUS_TRANSIT 内）；Interaction（DRIBBLE/TACKLE/PRESS/INTERCEPTION）属 C-05（ACTION 阶段之后，概率性 disposition，C-27 冻结为 INSTANT）。二者**不共享状态机、无仲裁**。
+
+#### 8. Contact Timing Analysis
+选项判定（基于现有代码）：
+- Option A（Snapshot→Contact→Movement）：**否**，Snapshot 无该逻辑。
+- Option B（Continuous Movement→Contact）：**是**——Contact 内嵌于 C-03 Physics 的连续推进中，是「读取连续运动后的 Position」。
+- Option C / D（独立阶段）：**否**，无独立 Contact 阶段。
+即：**若接线，Contact 应落在 Continuous Movement 内（Option B）**；但**生产 Integration Point 缺失**（players 未传入）。
+
+#### 9. Contact During Transit
+- Case A（IN_TRANSIT）：几何上**可**接触（探针 P2 召回到 4 次 p1 接触，`vel 0.6→0.4`），但**无任何业务规则**规定其语义/结果。
+- Case B（Transit Completion Tick）：完成 Tick **跳过 Physics**（探针 P1b，`lastTouch=null`）→ 永不产生 Contact。
+- Case C（无 Transit）：CONTROLLED/FREE 球同理仅在 Physics 内可接触，未接线。
+- Case D（Instant Interaction 后）：Interaction 写入位置并 `delete transit`、`velocity={0,0}`，随后球不在 Transit。
+**读取口径**：C-03 使用**当前 Tick 内子步的离散 Position + `from→to` 线段（swept）**，而非仅 `ball.transit.from/to`；INTERCEPTION（C-05）另用 `closestPointOnSegment(actor, transit.from, transit.to)`。
+→ **BLOCK C `CONTACT_IN_TRANSIT_RULE_ABSENT`**。
+
+#### 10. Transit Interruption Analysis
+**Contact 不能中断 Transit**：`stepBallPhysics` 不读、不清除、不重写 `transit`（探针 P2 `transitKept=true`）。
+- Transit 清除权：**目前无**（仅 C-05 `applyInteractionStateUpdate` 会 `delete transit`，但那属 Interaction，非 Contact）。
+- Contact 后 Ball Position / Velocity 写入权：C-03 物理层（去穿透 + 反射）。
+- 新 Ball State / 立即进入 Interaction Resolution：**未定义**。
+→ **BLOCK D `CONTACT_TRANSIT_INTERRUPTION_UNDEFINED`**。
+
+#### 11. Contact Position Ownership
+模型判定：当前代码实际支持 **A（Detection Only）+ C-03 已有的局部物理响应**，即几何检测 + 去穿透 position 修正（属 C-03 已冻结物理，非本 Gate 新增）。
+不属 B（未产生 `targetPosition` 走 C-23）。**禁止**本 Gate 新增 C-03 Physics Collision。与 C-39 唯一中间 writer 一致（Contact 不创建第二套）。
+
+#### 12. Contact Velocity Ownership
+C-03 Physics **拥有**（法向反射 `CONTACT_RESTITUTION` + 切向保留 `CONTACT_TANGENT_RETENTION`）。但 C-05 `applyInteractionStateUpdate` **也写** `velocity`，二者**无仲裁**（见 §13 / BLOCK E）。
+
+#### 13. Possession Ownership
+Contact **无** possession / control / possessingTeamId / looseBall 写权限（C-03 明令只做几何物理）。这些字段的唯一 Interaction writer 是 `applyInteractionStateUpdate`（[interaction-state-update.js](file:///workspace/FE-project/src/core/match/interaction-state-update.js)）。
+但 Contact 写 `lastTouchPlayerId` / `velocity`，与 Interaction 的写集**重叠且无仲裁**。
+→ **BLOCK E `CONTACT_POSSESSION_WRITER_UNDEFINED`**（两个互相冲突的 State Writer，未连接）。
+
+#### 14. Last Touch Ownership
+`lastTouchPlayerId` 当前由 C-03 `stepBallPhysics`（接触）与 C-05 `applyInteractionStateUpdate`（Interstate）**两处**可写，无唯一 owner。Contact **不得**成为第二个 Last Touch Writer；未来若需改，必须经现有 Interaction / State Mutation Boundary。本 Gate 仅调查。
+
+#### 15. Contact Geometry Availability
+几何**已存在**：`CONTACT_RADIUS = 0.030`（探针 P3 确认）、`CONTACT_RESTITUTION` / `CONTACT_TANGENT_RETENTION` / `CONTACT_HYSTERESIS`，及 `computeBallContact` / `sweptBallContact`。
+但**业务语义缺失**：无「抢断/盘带/解围/成功」的判定定义；几何只回答「是否相交」。
+→ **`CONTACT_GEOMETRY_SCHEMA_GAP`（业务语义部分）**：几何充足，业务语义不足。
+
+#### 16. Completion Tick Ordering
+现有代码隐含顺序 = `Physics → Completion → C-23`：完成 Tick **不跑 Physics**（探针 P1b：玩家站在 `transit.to` 也 `lastTouch=null`，直接落到 `state=CONTROLLED / control=t`）。
+候选 `Physics → Contact → Completion → C-23` 与现状**会产生不同的 Position/possession 结果**。
+→ **BLOCK F `CONTACT_COMPLETION_ORDER_CONFLICT`**。
+
+#### 17. Existing Tests / Hidden Contracts
+- **存在隐式 C-03 Contact Contract（单元级）**：[match-ball-physics.test.js](file:///workspace/FE-project/tests/match-ball-physics.test.js#L85-L130) 的 F/G 段断言 `stepBallPhysics` 的接触距离、法向、`lastTouchPlayerId`、防 tunneling、确定性——**但仅测 Physics 单元，不测生产 Tick 接线**。
+- 相关测试：`continuous-ball-movement-integration` / `match-ball-causality` / `interaction-position-ownership` / `match-interaction-resolution` / `match-interaction-integration` / `interaction-ball-movement-semantics` / `interaction-ball-transit` / `interaction-instant-ball-position-integration` 等。
+- **未发现**把 players 传入生产 Tick 的 Contact 断言 → 生产无 Contract。
+
+#### 18. Proposed Minimal Contact Boundary（仅建议，未落地）
+- 若 Owner 冻结：将 Contact 定义为 **Continuous Movement（Option B）内**的只读检测 + C-03 既有几何/速度响应；**不**新增 `PLAYER_BALL_CONTACT` Tick 阶段，**不**新增 Contact Engine。
+- 前置依赖：必须先解决 §3 的 Player Position Truth 接入与 dt 单位口径（BLOCK A）。
+- Contact Result 建议形状（**不写入 Schema**）：`{ ok, playerId, contactType, ballPosition, detectionMeta }`；**禁止** `ball.contactPosition / collisionPosition / lastContactPosition / physicsPosition / transitPosition` 等第二套 Truth。
+- 若 Contact 需改 possession / transit / lastTouch → **必须**经现有 Interaction / State Mutation Boundary，不得建立第二套 writer。
+
+#### 19. Required Future Gate
+`Player-Ball Contact Boundary Freeze Gate`（由 Owner 决策）：
+1. Player Position Truth 接入 C-08 Tick 与 dt 单位口径（minute↔second）；
+2. Contact 的 Tick 阶段与生产 Integration Point（players 传入）；
+3. Contact 是否/如何中断 Transit（Transit 清除权归属）；
+4. Contact 的 Position / Velocity / Possession / Last Touch 权威边界与与 Interaction 的仲裁；
+5. Completion Tick 的 Contact 顺序。
+**不得**在 C-40 内自行制定。
+
+#### 20. Files Modified
+- `docs/SIMULATION_SPEC.md`（仅新增/完善本节 §47）。
+- 无任何 `src/**`、`tests/**`、Frozen Contract 改动。
+
+#### 21. Tests / Probes
+- 只读探针：`/tmp/c40-probe.mjs`（未进入仓库）。P1 生产非完成 Tick `contacting=[]/lastTouch=null`；P1b 完成 Tick 跳过 Physics；P2 `stepBallPhysics` + players → 4 次接触、`vel 0.6→0.4`、`transitKept=true`；P3 `CONTACT_RADIUS=0.03`；P4 `updateMovement(1)` 推进球员；P5 Tick 结果无 `movement`。
+- 未新增仓库测试（本 Gate 无可冻结的新 Contract）。
+
+#### 22. Full Regression
+`node tests/run.js` → **1495 通过 / 0 失败（共 1495 用例）**，与 §46 基线一致（本次仅改文档，无代码路径变更）。
+
+#### 23. Technical Debt
+- **Player Position Truth 未接入 Tick + dt 单位不一致**（minute↔second）——Contact 生产接线的前置阻塞。
+- **Contact 与 Interaction 双 writer 未仲裁**（`velocity` / `lastTouchPlayerId`）。
+- **Contact 无 Transit 语义**（不可中断、无清除权、无接触后重新解析）。
+- **Completion Tick 跳过 Physics**，最后一步永不产生 Contact。
+- **Contact 缺业务语义层**（只有几何，无抢断/盘带等动作定义）。
+
+#### 24. Final PASS / BLOCKED
+**BLOCKED / SEALED**。命中 **BLOCK A（Player Position Truth 未接入 Tick）、BLOCK C（Transit 中 Contact 无规则）、BLOCK D（是否可中断 Transit 未定义）、BLOCK E（Contact 与 Interaction 双 writer 冲突）、BLOCK F（Completion Tick 顺序冲突）**。
+未命中 BLOCK B（几何存在）/ G（无需改 C-03）/ H（无第二套 Ball Truth）/ I（未改 Frozen Contract）。
+
+- **红线遵守**：未改 C-03 / C-08 / C-23 / C-29 / C-32 / C-33 / C-27 / Interaction / PASS·SHOT；未新增 Contact / Collision Engine、未改 Physics、未改 Schema、未新增 Ball / Player Truth；无 `Date.now` / `Math.random`。
+
+**STOP — 等待 Owner 验收。不得自行进入 C-41。**
