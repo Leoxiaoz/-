@@ -290,6 +290,8 @@ test('MT-16. Production Loop 未被修改（match-tick 仅编排既有能力）'
   const allowed = new Set([
     'decision-pipeline', 'interaction-resolution', 'second-ball-resolution',
     'interaction-integration', 'ball-facts', 'interaction-resolution-config', 'match-tick-config',
+    // C-39：Continuous Transit Integration（Match Tick 生产接入；OPTION_B Completion Writer）
+    'continuous-ball-movement-integration', 'match-clock-config',
   ]);
   for (const dep of importsOf(code)) assert(allowed.has(dep), `match-tick 依赖越界模块：${dep}`);
   assert(!/productionLoop|matchLoop|match-loop|production-loop/i.test(code));

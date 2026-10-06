@@ -32,6 +32,8 @@ import {
 } from './interaction-integration.js';
 import { deriveBallFacts } from './ball-facts.js';
 import { INTERACTION_BALL_STATE as BS, FOLLOW_UP_KIND } from './interaction-resolution-config.js';
+import { advanceContinuousBallMovement } from './continuous-ball-movement-integration.js';
+import { MATCH_CLOCK_CONFIG } from './match-clock-config.js';
 import {
   MATCH_TICK_RULE_VERSION, MATCH_TICK_CONFIG, TICK_STAGES, TICK_EVENT_TYPES,
 } from './match-tick-config.js';
@@ -82,6 +84,7 @@ export function checkTickInvariants(matchCore, tickInfo = {}) {
  *   seed?:string,                 // 确定性随机种子（Decision / Interaction）
  *   decisionSequence?:number,
  *   interactionSequence?:number,
+ *   deltaTime?:number,            // C-39：Continuous Transit 推进的 simulation seconds（默认 TICK_DURATION_SECONDS）
  * }} [tickInput]
  * @param {{
  *   ruleVersion?:string, decisionRuleVersion?:string, interactionRuleVersion?:string,
@@ -90,7 +93,7 @@ export function checkTickInvariants(matchCore, tickInfo = {}) {
  * @returns {{
  *   matchCore:object, tick:object, actionInstance:object|null,
  *   interactionResult:object|null, secondBallResult:object|null,
- *   events:object[], applied:{interaction:boolean, secondBall:boolean},
+ *   events:object[], applied:{interaction:boolean, secondBall:boolean, continuousMovement:boolean, continuousMovementCompleted:boolean},
  *   invariantIssues:string[], debug:null
  * }}
  */
@@ -126,6 +129,32 @@ export function runMatchTick(matchCore, tickInput = {}, options = {}) {
   };
   stages.push(TICK_STAGES.SNAPSHOT);
 
+  // 2.5 Continuous Ball Movement Integration（C-39 / OPTION_B）
+  //     检测当前是否存在 Continuous Transit → 注入确定性 Tick dt → C-03 Physics（中间）/ C-23（完成）。
+  //     dt 来源 = 生产 Match Tick 的 simulation seconds（默认 1 Tick = TICK_DURATION_SECONDS）；不使用墙钟。
+  const deltaTime = Number.isFinite(tickInput?.deltaTime)
+    ? tickInput.deltaTime
+    : MATCH_CLOCK_CONFIG.TICK_DURATION_SECONDS;
+  const contRes = advanceContinuousBallMovement(matchCore, deltaTime);
+  let current = contRes.matchCore;
+  const applied = {
+    interaction: false,
+    secondBall: false,
+    continuousMovement: contRes.applied === true,
+    continuousMovementCompleted: contRes.completed === true,
+  };
+  stages.push(TICK_STAGES.CONTINUOUS_TRANSIT);
+  if (!contRes.ok) {
+    events.push({ type: TICK_EVENT_TYPES.CONTINUOUS_TRANSIT_FAILED, tickIndex, reason: contRes.reason });
+  } else if (contRes.applied) {
+    events.push({
+      type: contRes.completed ? TICK_EVENT_TYPES.CONTINUOUS_TRANSIT_COMPLETED : TICK_EVENT_TYPES.CONTINUOUS_TRANSIT_ADVANCED,
+      tickIndex, progress: contRes.progress,
+    });
+  } else {
+    events.push({ type: TICK_EVENT_TYPES.CONTINUOUS_TRANSIT_SKIPPED, tickIndex, reason: contRes.reason });
+  }
+
   // 3. Produce ActionInstance（优先复用外部；否则走 C-04 Decision）
   let actionInstance = null;
   if (tickInput.actionInstance && typeof tickInput.actionInstance === 'object') {
@@ -141,10 +170,8 @@ export function runMatchTick(matchCore, tickInput = {}, options = {}) {
   }
   stages.push(TICK_STAGES.ACTION);
 
-  let current = matchCore;
   let interactionResult = null;
   let secondBallResult = null;
-  const applied = { interaction: false, secondBall: false };
 
   if (actionInstance) {
     events.push({

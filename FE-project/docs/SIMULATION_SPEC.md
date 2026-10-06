@@ -1076,3 +1076,68 @@
 
 - **不变（红线）**：未修改 C-03 / C-08 / C-23 / C-24 / C-29 / C-32 / C-33 / C-27 / PASS·SHOT Resolution·State-Update；未新增 Solver / Endpoint Correction / 速度规则；未直接写 Ball Position；全量测试不受影响（1473 通过 / 0 失败）。
 - **Deferred**：Option B 的生产实施；本 Gate 完成后 **STOP**，等待 Owner 验收。
+
+## §46 Transit Continuous Movement Integration（Step 39F-M-C-39 已实现）
+
+- **状态**：**PASS / SEALED**（Implementation Gate）。落地 C-38 已冻结的 **OPTION_B — Completion Writer**。
+
+### 生产连续运动链（冻结）
+
+```
+PASS / SHOT Transit（Transit Truth）
+        ↓
+C-08 runMatchTick  （CONTINUOUS_TRANSIT 阶段）
+        ↓
+Continuous Movement Integration  （continuous-ball-movement-integration.js）
+        ↓
+C-03 Ball Physics  →  中间 MatchCore.ball.position（非完成 Tick）
+        ↓
+Transit Completion Detection（elapsed >= duration - ε）
+        ↓
+C-23 applyBallMovementPositionUpdate  →  MatchCore.ball.position = transit.to（完成 Tick）
+        ↓
+finalizeTransitSettlement（State / Control / Possession / Transit 清理，**不写 Position**）
+```
+
+### Position Writer 协议（冻结）
+
+- **非完成 Tick**（`elapsed < duration - ε`）：仅 **C-03 Physics** 推进**中间** `ball.position`；**不调用 C-23**。
+- **完成 Tick**（`elapsed >= duration - ε`）：**不跑 Physics**；**C-23** 为唯一 Completion Boundary 写 `position = transit.to`；Finalize 只做状态/球权/Transit 清理。
+- **无双写**：完成 Tick 上 Physics 不产生最终 Position；最终 Position 恒为 `transit.to`（精确 `===`，非 `≈`）。
+
+### dt 来源（唯一时间 Truth）
+
+- dt = 生产 Match Tick 注入的 **simulation seconds**：`tickInput.deltaTime ?? MATCH_CLOCK_CONFIG.TICK_DURATION_SECONDS`（= 1）。
+- **不新增第二套 Clock / Tick / Time Truth**；不使用 `Date.now` / wall clock / `Math.random` / 渲染 FPS。
+- `elapsed` / `progress` 属 **Transit Truth**：`progress = clamp01(elapsed / duration)`；**不由 Physics 实际距离反推**。
+- **完成容差 ε = 1e-9**：仅用于判定「到达完成条件」，避免多 Tick 浮点累加（如 `0.3×3+0.1 < 1`）永远无法完成；不改变 `duration` / `elapsed` / `progress` 定义。
+
+### PASS / SHOT 统一
+
+- PASS / SHOT 共享同一 **Continuous Movement Integration Boundary**（`advanceContinuousBallMovement`）；
+  `pass-state-update.js` / `shot-state-update.js` 的 `advance*Transit` 均委托之，无第二套 Position Integration。
+- `finalize` 的 **Position Ownership 已迁出**；仅保留 State / Control / Possession / Transit 清理（PASS/SHOT 语义保持：`INACCURATE/MISS→FREE`、`SAVE/BLOCKED→CONTROLLED`、`GOAL→GOAL`）。
+
+### 边界（红线）
+
+- **不改 C-03 Physics**（摩擦 / STOP_THRESHOLD / substep / 边界反射 / `velocityFromTransit` 均冻结）；**不新增 Movement Solver**。
+- Interaction **INSTANT** 路径（C-27 → C-32 → C-29）**不受影响**，与 CONTINUOUS 路径互斥分离。
+- **不改 Goal / C-14 / C-15 / C-20 / C-21**；Goal 接线留给后续 Gate。
+- **无 Transit 时 NO_OP**：不改 position / velocity，不创建 Transit。
+- 无第二套 Match Tick / Clock / Time Truth。
+
+### Files Modified
+
+- `src/core/match/continuous-ball-movement-integration.js`（新增）：共享积分器 + 统一 Finalize。
+- `src/core/match/match-tick.js`：新增 `CONTINUOUS_TRANSIT` 阶段 + dt 注入。
+- `src/core/match/match-tick-config.js`：新增 stage / event 常量。
+- `src/core/match/pass-state-update.js`、`shot-state-update.js`：委托共享积分器，移除 finalize 的 Position 写入。
+- `tests/continuous-ball-movement-integration.test.js`（新增）、`tests/match-tick.test.js`（MT-16 依赖白名单加入合法新依赖）、`tests/run.js`（注册新测试）。
+
+### 测试
+
+- 新增 **22** 个用例（C39-A ~ C39-J、C39-11 ~ C39-22），覆盖：PASS/SHOT 多 Tick、Partial Tick（`0.4+0.4+0.2` / `0.3+0.3+0.3+0.1`）、Overshoot（`0.8+0.5`）、精确落点、完成 Tick 单写、Finalize 不写 Position、无 Transit NO_OP、失败传播、dt 语义、生产 `runMatchTick` 集成、共享边界、源码红线。
+- **全量回归：1495 通过 / 0 失败**（before 1473 / after 1495，delta +22）。
+
+- **Deferred**：Player↔Ball Contact 接线、Continuous Transit → Goal Detection / Resolution 接线、Physics Redesign。
+- **本 Gate 完成后 STOP**，等待 Owner 验收；**不自行进入 C-40**。

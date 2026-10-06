@@ -63,6 +63,7 @@ import './goal-crossing-resolution.test.js';
 import './trajectory-goal-match-tick.test.js';
 import './ball-movement-state.test.js';
 import './ball-movement-integration.test.js';
+import './continuous-ball-movement-integration.test.js';
 import './action-ball-movement-state.test.js';
 import './interaction-ball-transit.test.js';
 import './interaction-position-ownership.test.js';

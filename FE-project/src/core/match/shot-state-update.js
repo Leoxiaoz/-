@@ -1,13 +1,17 @@
 /**
  * SHOT State Update（Step 39F-M-B-RESOLUTION-SHOT）。
- * 层级归属：Simulation Core / Match Resolution。**纯函数**（返回新状态，不 mutate 输入）。
+ * 层级归属：Simulation Core / Match Resolution。**纯函数**（返回新状态，不原地 mutate 输入）。
  *
  * 职责：`applyShotStateUpdate`（球进入 IN_TRANSIT）、`advanceShotTransit` / `completeShotTransit`（结算球权）。
+ *
+ * 边界（C-39 起）：
+ *  - Transit 推进委托给 C-39 `advanceContinuousBallMovement`：中间 Tick 由 C-03 Physics 推进 Position，
+ *    完成 Tick 由 C-23 Completion Boundary 写 `transit.to`。**Finalize 不再写 Position**（只做 State / Control / Possession / Transit 清理）。
+ *
  * 红线：只影响 BallState；**不改 Score / Standings / Stats / Growth / Save / Match Result**；不产生 Event。
  */
 
-import { clamp01 } from './player-situation.js';
-import { SHOT_OUTCOMES } from './shot-resolution-config.js';
+import { advanceContinuousBallMovement } from './continuous-ball-movement-integration.js';
 
 function transitBall(result) {
   return {
@@ -33,51 +37,14 @@ export function applyShotStateUpdate(matchCore, result) {
   return { ...matchCore, ball: transitBall(result) };
 }
 
-function teamOf(players, id) {
-  return players.find((p) => p.playerId === id)?.teamId ?? null;
-}
-
-/** 结算：GOAL / SAVE / BLOCKED / MISS。 */
-function finalize(ball, transit, players) {
-  const to = { ...transit.to };
-  switch (transit.outcome) {
-    case SHOT_OUTCOMES.SAVE:
-      if (transit.goalkeeperId) {
-        return { ...ball, position: to, state: 'CONTROLLED', control: transit.goalkeeperId, possessingTeamId: teamOf(players, transit.goalkeeperId), transit: undefined };
-      }
-      return { ...ball, position: to, state: 'FREE', control: null, possessingTeamId: null, transit: undefined };
-    case SHOT_OUTCOMES.BLOCKED:
-      if (transit.blockerId) {
-        return { ...ball, position: to, state: 'CONTROLLED', control: transit.blockerId, possessingTeamId: teamOf(players, transit.blockerId), transit: undefined };
-      }
-      return { ...ball, position: to, state: 'FREE', control: null, possessingTeamId: null, transit: undefined };
-    case SHOT_OUTCOMES.GOAL:
-      // 注意：**不修改 Score**（Score/Event/Stats 属未来 Integration）。
-      return { ...ball, position: to, state: 'GOAL', control: null, possessingTeamId: null, transit: undefined };
-    case SHOT_OUTCOMES.MISS:
-    default:
-      return { ...ball, position: to, state: 'FREE', control: null, possessingTeamId: null, transit: undefined };
-  }
-}
-
 /**
  * 推进 SHOT 飞行（simulation time；纯函数）。
- * @returns {object} 新的 matchCore
+ * **委托 C-39**：中间 Tick → C-03 Physics；完成 Tick → C-23 Completion Boundary + Finalize（不写 Position）。
+ * @returns {object} 新的 matchCore（失败时返回原 matchCore，不产生部分更新）
  */
-export function advanceShotTransit(matchCore, deltaTime) {
-  const ball = matchCore?.ball;
-  const transit = ball?.transit;
-  if (!ball || !transit) return matchCore;
-  const dt = Number.isFinite(deltaTime) && deltaTime > 0 ? deltaTime : 0;
-  const elapsed = (Number(transit.elapsed) || 0) + dt;
-  const duration = Math.max(1e-6, Number(transit.duration) || 0);
-  const progress = clamp01(elapsed / duration);
-  const players = Array.isArray(matchCore.players) ? matchCore.players : [];
-  if (progress >= 1) {
-    return { ...matchCore, ball: finalize(ball, transit, players) };
-  }
-  const nextTransit = { ...transit, from: { ...transit.from }, to: { ...transit.to }, elapsed, progress };
-  return { ...matchCore, ball: { ...ball, position: { ...ball.position }, transit: nextTransit } };
+export function advanceShotTransit(matchCore, deltaTime, options = {}) {
+  const res = advanceContinuousBallMovement(matchCore, deltaTime, options);
+  return res.ok ? res.matchCore : matchCore;
 }
 
 /** 便捷：一次性算完整个飞行（测试 / 快模）。 */

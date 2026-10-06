@@ -4,23 +4,19 @@
  *
  * 职责：
  *  - `applyPassStateUpdate(matchCore, result)`：根据 PassResolutionResult 把球置为 IN_TRANSIT。
- *  - `advancePassTransit(matchCore, deltaTime)`：推进飞行进度；完成时结算球权（CONTROLLED / FREE）。
+ *  - `advancePassTransit(matchCore, deltaTime)`：推进飞行（委托 C-39 Continuous Movement Integration）。
+ *  - `completePassTransit(matchCore)`：一次性算完整个飞行（测试 / 快模）。
+ *
+ * 边界（C-39 起）：
+ *  - Passive Transit 推进委托给 C-39 `advanceContinuousBallMovement`：中间 Tick 由 C-03 Physics 推进 Position，
+ *    完成 Tick 由 C-23 Completion Boundary 写 `transit.to`。**Finalize 不再写 Position**（只做 State / Control / Possession / Transit 清理）。
  *
  * 红线：只影响 BallState（及必要的最小球权字段）；**不写 stats / Growth / Training / Development /
  * Save / Match Result**；不产生 Event；不调用 Decision。
  */
 
-import { clamp01 } from './player-situation.js';
-import { PASS_OUTCOMES, BALL_TRANSIT_STATE as TS } from './pass-resolution-config.js';
-
-/** 深拷贝 ball（避免与输入共享引用）。 */
-function cloneBall(ball) {
-  return {
-    ...ball,
-    position: { ...(ball?.position ?? { x: 0, y: 0 }) },
-    transit: ball?.transit ? { ...ball.transit, from: { ...ball.transit.from }, to: { ...ball.transit.to } } : (ball?.transit ?? undefined),
-  };
-}
+import { BALL_TRANSIT_STATE as TS } from './pass-resolution-config.js';
+import { advanceContinuousBallMovement } from './continuous-ball-movement-integration.js';
 
 /** 构造“球在飞行中”的 BallState（清除控制者，满足 invariant）。 */
 function transitBall(result) {
@@ -46,50 +42,17 @@ export function applyPassStateUpdate(matchCore, result) {
   return { ...matchCore, ball: transitBall(result) };
 }
 
-/** 完成飞行时的球权结算。 */
-function finalize(ball, transit, players) {
-  const teamOf = (id) => players.find((p) => p.playerId === id)?.teamId ?? null;
-  const to = { ...transit.to };
-  switch (transit.outcome) {
-    case PASS_OUTCOMES.COMPLETED:
-      return { ...ball, position: to, state: TS.CONTROLLED, control: transit.intendedTargetId, possessingTeamId: transit.targetTeamId, transit: undefined };
-    case PASS_OUTCOMES.INTERCEPTED:
-      if (transit.interceptorId) {
-        return { ...ball, position: to, state: TS.CONTROLLED, control: transit.interceptorId, possessingTeamId: teamOf(transit.interceptorId), transit: undefined };
-      }
-      return { ...ball, position: to, state: TS.FREE, control: null, possessingTeamId: null, transit: undefined };
-    case PASS_OUTCOMES.BLOCKED:
-      if (transit.blockerId) {
-        return { ...ball, position: to, state: TS.CONTROLLED, control: transit.blockerId, possessingTeamId: teamOf(transit.blockerId), transit: undefined };
-      }
-      return { ...ball, position: to, state: TS.FREE, control: null, possessingTeamId: null, transit: undefined };
-    case PASS_OUTCOMES.INACCURATE:
-    default:
-      return { ...ball, position: to, state: TS.FREE, control: null, possessingTeamId: null, transit: undefined };
-  }
-}
-
 /**
  * 推进 PASS 飞行（simulation time；纯函数）。
+ * **委托 C-39**：中间 Tick → C-03 Physics；完成 Tick → C-23 Completion Boundary + Finalize（不写 Position）。
  * @param {object} matchCore
  * @param {number} deltaTime 推进的模拟时间（>=0；非有限值视为 0）
- * @returns {object} 新的 matchCore
+ * @param {object} [options] { players?, config? }
+ * @returns {object} 新的 matchCore（失败时返回原 matchCore，不产生部分更新）
  */
-export function advancePassTransit(matchCore, deltaTime) {
-  const ball = matchCore?.ball;
-  const transit = ball?.transit;
-  if (!ball || !transit) return matchCore;
-  const dt = Number.isFinite(deltaTime) && deltaTime > 0 ? deltaTime : 0;
-  const elapsed = (Number(transit.elapsed) || 0) + dt;
-  const duration = Math.max(1e-6, Number(transit.duration) || 0);
-  const progress = clamp01(elapsed / duration);
-  const players = Array.isArray(matchCore.players) ? matchCore.players : [];
-  if (progress >= 1) {
-    const nextBall = finalize(cloneBall(ball), transit, players);
-    return { ...matchCore, ball: nextBall };
-  }
-  const nextTransit = { ...transit, from: { ...transit.from }, to: { ...transit.to }, elapsed, progress };
-  return { ...matchCore, ball: { ...ball, position: { ...ball.position }, transit: nextTransit } };
+export function advancePassTransit(matchCore, deltaTime, options = {}) {
+  const res = advanceContinuousBallMovement(matchCore, deltaTime, options);
+  return res.ok ? res.matchCore : matchCore;
 }
 
 /** 便捷：一次性算完整个飞行（用于测试 / 快模）。 */
