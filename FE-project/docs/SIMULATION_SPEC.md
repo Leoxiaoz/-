@@ -2964,3 +2964,87 @@ FREE Velocity 修改、closingSpeed 公式修改、SECOND_BALL 算法修改、Ph
 3. **GOAL 仅有 Transit Completion 一条生产入口**：已覆盖；未来若新增 GOAL State Writer，须复用同一 Boundary（W8）。
 
 **STOP — 不得进入 C-56，不得自行处理新的 Velocity 问题，不得修改 FREE / closingSpeed。等待 Owner 验收。**
+
+## §63 Terminal Velocity Post-Implementation Architecture Audit（Step 39F-M-C-56）
+
+**Gate Result = PASS / SEALED（只读审计）。** **src/** = 0，**tests/** = 0；唯一改动 = 本 §63。Regression **1540 通过 / 0 失败**。审计确认 C-55 的 **W8**（CONTROLLED / GOAL → `velocity={0,0}`）**无任何隐藏副作用**。
+
+### 一、W8 唯一职责（只写 velocity）
+[terminal-ball-velocity.js `normalizeTerminalBallVelocity`](file:///workspace/FE-project/src/core/match/terminal-ball-velocity.js#L46-L52) 唯一 mutation = `{ ...ball, velocity:{x:0,y:0} }`。**不修改** position / state / transit / control / possessingTeamId / lastTouchPlayerId / contacting / score / goal / possession / player data / movement。纯函数、Immutable、无 RNG / 墙钟。
+
+### 二、State Guard
+| State | W8 行为 |
+| --- | --- |
+| CONTROLLED | normalize → `{0,0}` |
+| GOAL | normalize → `{0,0}` |
+| FREE | **preserve**（不进入 W8 变更路径） |
+| IN_TRANSIT | **preserve** |
+
+`isTerminalVelocityState` 仅对 `CONTROLLED` / `GOAL` 返回 true → **FREE / IN_TRANSIT 永不被 normalize**。
+
+### 三、Transit 隔离
+W8 不触碰 `transit.from / to / duration / elapsed / progress` / completion / Transit Seed / Physics Integration；C-23 仍唯一 Completion Position Boundary。
+- **T1** IN_TRANSIT：非零 velocity，W8 **不执行**（preserve）。
+- **T2** Completion → CONTROLLED：`position=transit.to`、`velocity={0,0}`、`transit=undefined`（W8 执行）。
+- **T3** Completion → FREE：W8 **不执行**，velocity 保留。
+
+### 四、Physics 隔离
+W8 为独立纯函数：**不调用** `stepBallPhysics` / `velocityFromTransit` / Contact Resolution / Friction / Boundary Reflection / Swept Contact。**不是 Physics Step**（Physics 仅在 CONTINUOUS_TRANSIT 阶段跑；W8 只在 State Transition 边界执行）。
+
+### 五、Position 隔离
+W8 **不写 `ball.position`**；仅写 velocity。Transit Completion 的 Position 仍由 C-23（经 `applyBallMovementPositionUpdate`）唯一写入。
+
+### 六、Contact 隔离
+IN_TRANSIT 阶段 Contact Reflection 后的 `velocity ≠ {0,0}` 仍成立；仅到 **Completion → CONTROLLED** 才由 W8 清零。W8 **不触发 Contact、不清除 `contacting`、不写 lastTouch、不改 Contact Geometry**；`contacting[]` 仍遵守 C-50（Physics-Window Derived Diagnostic）。
+
+### 七、Interaction 隔离
+C-05 CONTROLLED / FREE 的既有 State Mutation 语义**未改写**。CONTROLLED：C-05 写 `{0,0}` + W8 写 `{0,0}` → **幂等、无行为差异、无第二 Velocity Truth**。FREE：C-05 既有 `{0,0}` 仅为**既有 Interaction 行为**；W8 **未将 FREE=zero 升级为 Contract**（FREE Legal Value 仍为任意有限向量）。
+
+### 八、SECOND_BALL 隔离
+W8 不改 `closingSpeed` / `computeCompetitionScore` / winner。
+- **SB1** FREE + 非零 velocity → closingSpeed 正常（TV-13）。
+- **SB2** FREE + `{0,0}` → closingSpeed 正常为对应值。
+- **SB3** CONTROLLED → 无 SECOND_BALL（C-05/SECOND_BALL 仅 FREE）。
+- **SB4** GOAL → 无 SECOND_BALL。
+
+### 九、GOAL 隔离
+GOAL → `velocity={0,0}`；Goal Geometry / Crossing / Resolution / Score / Match Result **不变**。W8 **不参与 Goal 判定**，只在 GOAL State 成立后做 Velocity Normalization。
+
+### 十、State Transition 矩阵（全仓唯一写入点）
+| State | Entry Path | W8 | Velocity Result |
+| --- | --- | --- | --- |
+| CONTROLLED | `finalizeTransitSettlement`（PASS/SHOT Completion） | ✅ | `{0,0}` |
+| CONTROLLED | `applyInteractionStateUpdate`（Interaction / SECOND_BALL WON） | ✅ | `{0,0}` |
+| GOAL | `finalizeTransitSettlement`（SHOT GOAL） | ✅ | `{0,0}` |
+| FREE | `finalizeTransitSettlement`（INACCURATE / MISS / no-id） | —（preserve） | 最后 Physics Velocity |
+| FREE | `applyInteractionStateUpdate`（loose / deflect） | ✅ 入口但 **preserve** | `{0,0}`（既有 Interaction 语义） |
+| IN_TRANSIT | `pass-resolution` / `shot-state-update` / 非完成 Tick | — | Physics Velocity |
+- **每条 CONTROLLED / GOAL 生产入口最终均经 W8**（`second-ball-resolution` 只产 `state`，其 Result 经 C-05 落地 → W8）。**无绕过 W8 的 CONTROLLED / GOAL 入口。**
+
+### 十一、Velocity Writer Matrix
+W1 `sanitizeBall`｜W2 Physics 积分｜W3 Contact Reflection｜W4 Physics 早退（CONTROLLED/GOAL → {0,0}）｜W5 Transit Seed｜W6 Interaction State Mutation｜W7 PASS/SHOT State Update｜**W8 Terminal Velocity Normalization**。W8 **非** Physics / Transit / State / Position Writer，**仅 Contract Enforcement**。
+
+### 十二、Control / Possession 隔离
+W8 不改 `control` / `possessingTeamId`；`velocity={0,0}` **不被任何代码解释**为 Lost Possession / Tackle / Interception / Second Ball / Ball Stop Event；**未新增 Event**。
+
+### 十三、Save / Result / UI 审计
+`ball.velocity` 唯一读者 = `deriveBallFacts`（只读投影，[ball-facts.js](file:///workspace/FE-project/src/core/match/ball-facts.js#L21-L37)）→ `tactical-context.ballSpeed/ballVelocity`、`player-situation`、`deriveBallRelation.closingSpeed`。**不进入 Match Result / Goal Result / Save / Match History / UI**。**无新消费者。**
+
+### 十四、Reference Stability
+已是 `{x:0,y:0}` 的 velocity → W8 原样返回（引用稳定，不创建新对象）；其余终态 velocity → 创建新对象。符合 C-55 约定。
+
+### 十五、Determinism / Regression / Files
+- Determinism：Transit→CONTROLLED / FREE / GOAL、Contact→Completion→CONTROLLED、Interaction→CONTROLLED、FREE→SECOND_BALL 重复运行 `identical=true`（TV-14b 覆盖）；无 `Math.random` / `Date.now` / 墙钟 / 非确定性排序。
+- `node tests/run.js` → **1540 通过 / 0 失败**。
+- Files Changed：仅 `docs/SIMULATION_SPEC.md`（本 §63）。**src/** = 0，**tests/** = 0。
+- Contract Changes：**无**（未改 C-54 / C-55 及任何 Frozen Gate）。
+
+### 十六、Out of Scope
+FREE Velocity 修改、closingSpeed / SECOND_BALL 修改、Physics / Contact / Position / Transit 修改、以及 C-55 已列 Out of Scope 项。
+
+### 十七、Remaining Risks（仅记录，不修改）
+1. C-05 对 CONTROLLED 与 W8 双写 `{0,0}`（幂等，无风险）。
+2. C-05 对 FREE 写 `{0,0}` 为既有 Interaction 语义（非 FREE Contract 强制，FREE Legal Value 不变）。
+3. 未来若新增 GOAL / CONTROLLED State Writer，须复用同一 W8 Boundary（当前无缺口）。
+
+**STOP — 不得进入 C-57，不得修改任何发现的问题；如发现架构缺口只报告并 BLOCK。等待 Owner 验收。**
