@@ -1,0 +1,147 @@
+/* 移动端优先的基础样式。仅提供骨架级布局，不做视觉设计。 */
+
+:root {
+  --color-bg: #0f1419;
+  --color-surface: #1a2129;
+  --color-border: #2b3641;
+  --color-text: #e6edf3;
+  --color-muted: #8b98a5;
+  --color-accent: #3ba55d;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --radius: 8px;
+  --font-base: 15px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: var(--font-base);
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: env(safe-area-inset-top) var(--space-3) env(safe-area-inset-bottom);
+}
+
+.app__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app__title { font-size: 1.05rem; margin: 0; }
+
+.app__badge {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 2px var(--space-2);
+}
+
+.app__main {
+  flex: 1;
+  padding: var(--space-3) 0;
+  overflow-y: auto;
+}
+
+.app__footer {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.btn {
+  flex: 1;
+  min-height: 44px; /* 触摸友好 */
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: var(--font-base);
+  cursor: pointer;
+}
+
+.btn:active { background: var(--color-accent); }
+
+.btn--small { min-height: 36px; flex: 0 1 auto; font-size: 0.82rem; }
+.btn--mini { min-height: 30px; flex: 0 0 auto; padding: 2px var(--space-2); font-size: 0.72rem; }
+
+/* 我的球队：阵型/战术选择与阵容列表 */
+.select {
+  min-height: 40px;
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  max-width: 60%;
+}
+.field-rows { display: flex; flex-direction: column; gap: var(--space-2); margin: var(--space-2) 0; }
+.field-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.field-row__label { color: var(--color-muted); font-size: 0.85rem; }
+.row-actions { display: flex; gap: var(--space-2); margin: var(--space-2) 0; }
+
+.lineup__item { display: flex; flex-direction: column; gap: 2px; }
+.lineup__row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.lineup__name { font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lineup__actions { display: flex; gap: var(--space-1); flex: 0 0 auto; }
+/* 球员统计行（Step 21-B）：紧凑、可换行、避免横向溢出 */
+.lineup__stats { display: flex; flex-wrap: wrap; gap: 0 var(--space-3); font-size: 0.7rem; color: var(--color-muted); }
+.lineup__stat { white-space: nowrap; }
+.lineup__stat--sub { opacity: 0.8; }
+
+.muted { color: var(--color-muted); }
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.card__title { margin: 0 0 var(--space-2); font-size: 0.95rem; }
+.card__subtitle { margin: var(--space-3) 0 var(--space-1); font-size: 0.85rem; color: var(--color-muted); }
+
+/* 积分榜：移动端紧凑表格 */
+.table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.table th, .table td { padding: 4px 2px; text-align: right; white-space: nowrap; }
+.table thead th { color: var(--color-muted); font-weight: 500; border-bottom: 1px solid var(--color-border); }
+.table tbody tr { border-bottom: 1px solid var(--color-border); }
+.table tbody tr:last-child { border-bottom: none; }
+.table__team { text-align: left; max-width: 96px; overflow: hidden; text-overflow: ellipsis; }
+
+.kv { display: grid; grid-template-columns: auto 1fr; gap: var(--space-1) var(--space-3); margin: 0; }
+.kv dt { color: var(--color-muted); }
+.kv dd { margin: 0; }
+
+.list { list-style: none; margin: 0; padding: 0; }
+.list li { padding: var(--space-1) 0; border-bottom: 1px solid var(--color-border); }
+.list li:last-child { border-bottom: none; }
+
+.error { color: #f85149; white-space: pre-wrap; }

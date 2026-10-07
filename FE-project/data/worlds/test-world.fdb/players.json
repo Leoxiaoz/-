@@ -1,0 +1,112 @@
+[
+  {
+    "id": "ply_001",
+    "name": "Player A1",
+    "teamId": "clb_a1",
+    "position": "GK",
+    "birthDate": "2009-02-16",
+    "potential": {
+      "pace": 62,
+      "technique": 65,
+      "passing": 57,
+      "defending": 59,
+      "finishing": 61,
+      "goalkeeping": 68
+    },
+    "personality": {
+      "professionalism": 95,
+      "determination": 52,
+      "ambition": 58,
+      "consistency": 83,
+      "injuryProneness": 65
+    }
+  },
+  {
+    "id": "ply_002",
+    "name": "Player A2",
+    "teamId": "clb_a1",
+    "position": "DF",
+    "birthDate": "2000-05-10",
+    "potential": {
+      "pace": 53,
+      "technique": 53,
+      "passing": 54,
+      "defending": 54,
+      "finishing": 55,
+      "goalkeeping": 52
+    },
+    "personality": {
+      "professionalism": 60,
+      "determination": 46,
+      "ambition": 84,
+      "consistency": 40,
+      "injuryProneness": 41
+    }
+  },
+  {
+    "id": "ply_003",
+    "name": "Player A3",
+    "teamId": "clb_a2",
+    "position": "MF",
+    "birthDate": "1992-01-21",
+    "potential": {
+      "pace": 51,
+      "technique": 51,
+      "passing": 51,
+      "defending": 51,
+      "finishing": 52,
+      "goalkeeping": 52
+    },
+    "personality": {
+      "professionalism": 53,
+      "determination": 79,
+      "ambition": 85,
+      "consistency": 53,
+      "injuryProneness": 43
+    }
+  },
+  {
+    "id": "ply_004",
+    "name": "Player B1",
+    "teamId": "clb_b1",
+    "position": "FW",
+    "birthDate": "2006-06-08",
+    "potential": {
+      "pace": 59,
+      "technique": 60,
+      "passing": 60,
+      "defending": 65,
+      "finishing": 60,
+      "goalkeeping": 62
+    },
+    "personality": {
+      "professionalism": 51,
+      "determination": 84,
+      "ambition": 88,
+      "consistency": 79,
+      "injuryProneness": 48
+    }
+  },
+  {
+    "id": "ply_005",
+    "name": "Player B2",
+    "teamId": "clb_b2",
+    "position": "MF",
+    "birthDate": "2008-05-05",
+    "potential": {
+      "pace": 60,
+      "technique": 63,
+      "passing": 63,
+      "defending": 66,
+      "finishing": 60,
+      "goalkeeping": 62
+    },
+    "personality": {
+      "professionalism": 74,
+      "determination": 72,
+      "ambition": 44,
+      "consistency": 76,
+      "injuryProneness": 84
+    }
+  }
+]

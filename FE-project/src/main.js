@@ -1,0 +1,70 @@
+/**
+ * 组合根（Composition Root）。
+ * 负责装配各层依赖并启动应用；**不含业务规则**。
+ *
+ * 此处体现目标架构的装配关系：
+ *   UI Layer → Game Controller → Game State → Simulation Core → Data Layer / Save Layer
+ */
+
+import { createLogger } from './shared/logger.js';
+import { reportError } from './shared/errors.js';
+import { DataLoader } from './data/data-loader.js';
+import { IndexedDbSaveManager, LocalStorageSaveManager, MemorySaveManager } from './save/save-manager.js';
+import { SimulationCore } from './core/simulation.js';
+import { GameController } from './controller/game-controller.js';
+import { AppView } from './ui/app-view.js';
+
+/** MVP 阶段的默认世界（单联赛 8 队双循环，DECISIONS D-10）。 */
+const DEFAULT_WORLD_DIR = 'data/worlds/mvp-league.fdb';
+
+/**
+ * 存档介质优先级（决策 A7）：IndexedDB（主）→ localStorage（降级）→ 内存（兜底）。
+ * 不静默失败：每次降级都记录原因。
+ */
+function pickSaveManager(logger) {
+  try {
+    return new IndexedDbSaveManager();
+  } catch (err) {
+    logger?.warn?.('IndexedDB 不可用，降级到 localStorage', err?.message);
+  }
+  try {
+    return new LocalStorageSaveManager();
+  } catch (err) {
+    logger?.warn?.('localStorage 不可用，降级到内存存档', err?.message);
+    return new MemorySaveManager();
+  }
+}
+
+async function bootstrap() {
+  const logger = createLogger('app', { level: 'debug' });
+  const root = document.getElementById('view-root');
+
+  const controller = new GameController({
+    dataLoader: new DataLoader({ basePath: '' }),
+    saveManager: pickSaveManager(logger),
+    simulation: new SimulationCore({ logger }),
+    logger,
+  });
+
+  const view = new AppView({ root, controller, logger });
+  view.mount();
+
+  try {
+    await controller.startNewGame(DEFAULT_WORLD_DIR);
+    // 清除"正在启动…"占位，改为明确的就绪状态
+    view.setStatus(`已载入世界：${controller.getSnapshot()?.worldName ?? ''}`);
+    logger.info('启动完成');
+  } catch (err) {
+    // 启动失败时给出可定位的错误，而不是静默白屏（mobile-ui-ux：边界态必须完整）
+    const text = reportError(err, logger);
+    if (root) {
+      root.textContent = '';
+      const p = document.createElement('p');
+      p.className = 'error';
+      p.textContent = `启动失败：\n${text}`;
+      root.appendChild(p);
+    }
+  }
+}
+
+bootstrap();
