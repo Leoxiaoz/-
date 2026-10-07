@@ -2574,3 +2574,124 @@ Contact→Completion、Contact→Completion→Next Tick、Contact→Interaction�
 3. Stage Order 已足够仲裁 Contact↔Interaction velocity 覆盖，**无需**新增 Arbitration API（记录，非风险）。
 
 **STOP — 不得进入 C-52，不得自行清零 Velocity，不得修改 C-03/C-05/C-06/C-39/C-46/C-47/C-48/C-50。等待 Owner 验收。**
+
+## §59 Terminal Ball Velocity Semantics / FREE & CONTROLLED Decision Foundation（Step 39F-M-C-52）
+
+**Gate Result = BLOCKED / SEALED。Architecture Conclusion = BLOCKED / SEALED（`TERMINAL_VELOCITY_SEMANTICS_UNDEFINED` → OWNER_DECISION_REQUIRED）。** **src/** = 0，**tests/** = 0；唯一改动 = 本 §59。Regression **1525 通过 / 0 失败**。全部为 read-only Probe `/tmp/c52-terminal-velocity-probe.mjs`（未被生产代码引用）。
+
+> 承接 C-51（`CONTROLLED_VELOCITY_SEMANTICS_UNDEFINED`）。本 Gate **只冻结语义**，**不清零、不新增 Writer / Boundary / API**。
+
+### 一、Gate 目标
+确定球离开 IN_TRANSIT 后，`velocity` 在 **FREE / CONTROLLED / GOAL** 中的正式语义，并回答「哪些终态允许非零 velocity」「FREE 的 closingSpeed 需要何种 velocity」「Completion 与 Interaction 是否必须一致」「是否需要未来单独的 Velocity Completion Boundary」。
+
+### 二、Velocity State Domain（Ball State 枚举恰为 4）
+`BALL_STATE = {CONTROLLED, IN_TRANSIT, FREE, GOAL}`（[ball-physics-config.js L22-27](file:///workspace/FE-project/src/core/match/ball-physics-config.js#L22-L27)），**无其他状态**。
+| Domain | Velocity 是否 Truth | 是否行为输入 | 是否需保留 | 是否必须为零 | Writer | Reader | 生命周期终点 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| A IN_TRANSIT | **是（Physics Truth）** | 是（驱动 position / 决策几何） | 是 | 否 | W2/W3（Physics）、W5（seed）、W7 | C-03、ball-facts | 本次 Transit 完成 / Interaction |
+| B CONTROLLED | **未定义**（无活跃 Physics Writer） | **否（无行为消费者）** | — | **未定义** | W4/W6 写 {0,0}；**W-finalize 不写（保留残留）** | 仅 ball-facts（诊断投影） | 无（dormant） |
+| C FREE | **未定义**（完成保留 / Interaction 置零） | **是**（`closingSpeed`） | 是（若作行为输入） | **未定义** | W6 写 {0,0}；**W-finalize 不写** | ball-facts → second-ball `closingSpeed` | 被 SECOND_BALL 消费 / 下一 Interaction |
+| D GOAL | **未定义**（完成保留残留） | **否（无消费者）** | — | **未定义** | W4 写 {0,0}（若被调用）；**W-finalize 不写** | 无 | 死球（无清理） |
+
+### 三、CONTROLLED Audit（4 来源）
+| 来源 | outcome | state | velocity | transit | control | poss |
+| --- | --- | --- | --- | --- | --- | --- |
+| A Transit Completion | `COMPLETED` | CONTROLLED | **`{0.0025798,-0.0175509}`（≠0）** | 无 | `h_t` | `H` |
+| B INTERCEPTION_SUCCESS | `INTERCEPTION_SUCCESS` | CONTROLLED | **`{0,0}`** | 无 | `a_d` | `A` |
+| C DRIBBLE_COMPLETED | `DRIBBLE_COMPLETED` | CONTROLLED | **`{0,0}`** | 无 | `h_a` | `H` |
+| D SECOND_BALL_WON | `SECOND_BALL_WON` | CONTROLLED | **`{0,0}`** | 无 | `a_d` | `A` |
+→ A 与 B/C/D 的差异**无法唯一归类**为「正式允许的不同来源语义」：无任何 Frozen Contract 声明「完成来源保留 / Interaction 来源置零」。→ **维持 `CONTROLLED_VELOCITY_SEMANTICS_UNDEFINED`，BLOCKED。**
+
+### 四、FREE Audit（完成 vs Interaction）
+| 来源 | state | velocity | control/poss |
+| --- | --- | --- | --- |
+| A Transit Completion（INACCURATE / INTERCEPTED-无 interceptor / MISS） | FREE | **保留残留 `{0.0025798,-0.0175509}`** | null/null |
+| B Interaction → FREE（Deflection 等） | FREE | **`{0,0}`（W6）** | null/null |
+- **两个 FREE 来源 velocity 不一致**（同 CONTROLLED 问题）。
+- FREE **不是**「只是非 IN_TRANSIT 的另一状态」：其 velocity 与 CONTROLLED 语义**必须分开判断**（见 §六）。
+
+### 五、GOAL Audit
+`SHOT.GOAL` 完成 → state GOAL、**velocity 保留残留 `{0.0025798,-0.0175509}`**、无 transit、control null。
+- 全仓确认：`velocity` **不进入** Goal Resolution / Goal Geometry / Goal Crossing / Match Result / Save / UI（`*goal*.js`、`*match-result*.js`、`*save*.js` 均 0 匹配）。
+- 结论：GOAL 残余 velocity 为 **Dormant State Metadata（无消费者）**；**本 Gate 不清除**。
+
+### 六、closingSpeed 专项
+1. **Producer**：[`deriveBallRelation`](file:///workspace/FE-project/src/core/match/ball-facts.js#L60-L88)（`closingSpeed = -(relVel · dirToBall)`）。
+2. **Input**：`relVel = ball.velocity − playerVelocity`；`dirToBall`（几何）。
+3. **Reader**：`deriveSecondBallCandidates` → `computeCompetitionScore`（[second-ball-resolution.js L171-178](file:///workspace/FE-project/src/core/match/second-ball-resolution.js#L171-L178)，`CLOSING_WEIGHT * closing`）→ 排序 → winner。
+4. **Reader Stage / State 条件**：Action 阶段的 SECOND_BALL follow-up；**仅 eligible（`isBallFree` ⇒ state=FREE ∧ control=null ∧ poss=null ∧ !transit）**候选参与打分（[L217](file:///workspace/FE-project/src/core/match/second-ball-resolution.js#L217)）。
+5. 是否只用 FREE：**是**（非 FREE 候选 `eligibility=BALL_NOT_FREE`，不计分）。
+6. 依赖 Ball Velocity：**是**（探针 `dependsOnBallVelocity=true`，velocity 0.3 → closingSpeed 0.3，velocity 0 → 0）。
+7. 依赖 Player Velocity：**是**（`dependsOnPlayerVelocity=true`）。
+8. 依赖相对速度：**是**。
+- **关键判定**：FREE 完成产生的**旧 velocity 会直接改变 `closingSpeed`**（探针 `free_from_completion.differs=true`：同一批候选，残余 velocity 下 closingSpeed `[-0.00248,0.00371,...]`，置零后 `[-0.000054,0.00113,...]`）。→ **FREE 残余 velocity 不是纯 Diagnostic Metadata，而是潜在 Behavioral Input。**（本 Gate 的探针中 winner 未翻转，但 `closingSpeed` 分量确已改变；胜负是否翻转取决于数值，不得据此排除风险。）
+
+### 七、Velocity Reader Matrix
+| Reader | State | Input | Behavior | Truth 需求 |
+| --- | --- | --- | --- | --- |
+| C-03 Ball Physics | IN_TRANSIT（∉{CONTROLLED,GOAL}） | ball.velocity | **Behavioral**（position 积分 / 反射 / 摩擦） | **Truth** |
+| C-39 完成路径 | 完成 Tick | **不读** velocity | — | — |
+| C-05 Interaction | 任意 | 覆写（非读） | Behavioral（终态置零） | — |
+| SECOND_BALL（closingSpeed） | **仅 FREE** | ball.velocity + playerVel | **Behavioral**（winner 打分） | **Truth（若消费）** |
+| tactical-context（ballSpeed/ballVelocity/ballRelation） | 任意 | ball.velocity | **Diagnostic Projection**（src 内无读取者） | 无 |
+| player-situation（ballRelation） | 任意 | ball.velocity | Diagnostic Projection（无行为分支） | 无 |
+| ball-facts（deriveBallFacts） | 任意 | ball.velocity | 派生投影 | — |
+| Match Result / Goal / Save / UI / Controller | 任意 | **不读** | — | — |
+- **Behavioral Consumer（仅 1 个）= SECOND_BALL `closingSpeed`，且仅 FREE**。其余均为 Diagnostic Projection。
+
+### 八、Velocity Writer Matrix（沿用 C-51，全仓复核无新增）
+W1 `sanitizeBall`｜W2 C-03 Physics 积分｜W3 C-03 Contact Reflection｜W4 C-03 CONTROLLED/GOAL 早退（{0,0}）｜W5 C-39 Transit Velocity Seed（仅 `!velocity`）｜W6 C-05 Interaction State Mutation（CONTROLLED/FREE→{0,0}）｜W7 PASS/SHOT `apply*StateUpdate`（进 IN_TRANSIT 清除 velocity）。
+**终态关键缺失**：**不存在 Terminal/Completion Velocity Writer** —— `finalizeTransitSettlement`（[L70-94](file:///workspace/FE-project/src/core/match/continuous-ball-movement-integration.js#L70-L94)）只改 state/control/poss 并清 transit，**对 velocity 完全沉默**，故 CONTROLLED / FREE / GOAL 保留最后一次 Physics 快照。**本 Gate 未新增任何 Writer。**
+
+### 九、Terminal Velocity Options（三方案评估）
+| 方案 | 定义 | 与当前代码事实 | 评估 |
+| --- | --- | --- | --- |
+| A 所有终态清零 | CONTROLLED/FREE/GOAL = {0,0} | **冲突**：需要新增 Completion Velocity Writer（违反本 Gate 禁令）；且 FREE 会丢失 `closingSpeed` 的物理信息 | **否决**（需新增 Writer / 改 Frozen） |
+| B 终态保留 Physics Velocity | 完成不清零，velocity 为最后 Physics Snapshot | **最贴合代码事实**；需明确「是否允许行为读取」——CONTROLLED/GOAL 无消费者（dormant），FREE 有 `closingSpeed` 消费者 | **部分成立**，但无法解释 Completion↔Interaction 的 FREE/CONTROLLED 不一致 |
+| C State-Specific | IN_TRANSIT=Truth；FREE=Truth（供 closingSpeed）；CONTROLLED=必须为零；GOAL=dormant | 「CONTROLLED 必须为零」**与代码冲突**（完成 CONTROLLED 带残留） | **与事实冲突**（除非把完成 CONTROLLED 判为缺陷，需 Owner 决策） |
+→ 三方案**均无法唯一匹配当前代码事实**：B 贴合事实但遗留不一致；C 语义自洽但与事实冲突；A 需新增 Writer。→ **语义未定义**。
+
+### 十、Completion / Interaction 一致性
+同一目标 State 下：
+| 路径 | state | velocity |
+| --- | --- | --- |
+| Transit Completion | CONTROLLED | `{0.0025798,-0.0175509}` |
+| Interaction（INTERCEPTION_SUCCESS） | CONTROLLED | `{0,0}` |
+- `sameState = true`，`velocityEqual = false`。
+- **判定**：无法归类为「合法不同来源」——无 Frozen Contract 定义该差异。**属 State Contract 缺口（未定义）。** 若 Owner 判定为违规，则未来需要一个统一的 **Terminal Velocity Boundary**；**本 Gate 不实现**。
+
+### 十一、State Velocity Contract（尝试冻结 → 部分未定义）
+| State | Truth / Derived / Dormant | Behavioral Consumer | Legal Value | Writer | Reader | Lifecycle |
+| --- | --- | --- | --- | --- | --- | --- |
+| IN_TRANSIT | **Truth（Physics）** | 有（Physics / 决策几何） | 任意有限（clamp） | W2/W3/W5/W7 | C-03、ball-facts | Transit 完成 / Interaction 取代 |
+| CONTROLLED | **未定义（Dormant 候选）** | **无** | **未定义**（完成→残留；Interaction→{0,0}） | W4/W6 / 无终态 Writer | ball-facts（诊断） | 无 |
+| FREE | **未定义（Potential Behavioral）** | **有（closingSpeed，仅 FREE）** | **未定义**（完成→残留；Interaction→{0,0}） | W6 / 无终态 Writer | ball-facts→second-ball | 被 SECOND_BALL 消费 / 下一 Interaction |
+| GOAL | **未定义（Dormant）** | 无 | **未定义** | 无终态 Writer | 无 | 死球 |
+→ **CONTROLLED / FREE / GOAL 的 Legal Value 均无法唯一冻结** → `TERMINAL_VELOCITY_SEMANTICS_UNDEFINED`。
+
+### 十二、Invariant Audit
+现有 Ball Invariant（[`checkBallInvariants`](file:///workspace/FE-project/src/core/match/interaction-integration.js#L80-L97) / `checkMatchInvariants` / `checkTickInvariants`）：
+- FREE ⇒ `control=null ∧ poss=null`；IN_TRANSIT ⇒ `control=null ∧ poss=null`；CONTROLLED ⇒ `control≠null ∧ poss≠null`。
+- **不存在** `CONTROLLED ⇒ velocity==0`、`FREE ⇒ velocity==0`、`GOAL ⇒ velocity==0` 任何约束。
+- **本 Gate 不新增任何 Invariant。** → CONTROLLED+非零 velocity **不违反形式化 Invariant**（排除「明确违约」）。
+
+### 十三、Determinism
+Transit→CONTROLLED、Transit→FREE、Transit→GOAL、FREE→closingSpeed、Contact→Completion→CONTROLLED、Contact→Completion→FREE 重复运行 → **6/6 identical=true**。无 `Math.random` / `Date.now` / 墙钟 / 非确定性排序。
+
+### 十四、Regression / Files Changed / Contract Changes
+- `node tests/run.js` → **1525 通过 / 0 失败（共 1525）**。
+- Files Changed：仅 `docs/SIMULATION_SPEC.md`（追加本 §59）；**src/** = 0，**tests/** = 0。
+- Contract Changes：**无**。C-03 / C-05 / C-06 / C-08 / C-23 / C-29 / C-39 / C-44 / C-46 / C-47 / C-48 / C-50 / C-51 与 Physics Equation / Friction / Contact Reflection / Transit Completion / Ball State Schema / closingSpeed 算法 / Possession 均未改；未新增 Velocity Writer / Velocity Cleanup API / Completion Velocity API / Terminal Velocity Boundary。
+
+### 十五、Out of Scope
+`contacting[]`、Contact Geometry、Swept Contact、Transit Endpoint、Player Movement、Possession、LastTouch、Goal Resolution、Interaction Success Probability、Friction、Velocity Equation、NewGen、Match Result 的**生产修改**。本 Gate 只做**终态 velocity 语义冻结**（且冻结失败 → BLOCK）；**不实现任何清零 / 边界**。
+
+### 十六、Remaining Risks
+1. **`TERMINAL_VELOCITY_SEMANTICS_UNDEFINED`（Block）**：CONTROLLED / FREE / GOAL 三终态的 velocity Legal Value 均无 Frozen Contract。需 Owner 决策：
+   (a) **Terminal Preserve + Dormant**：接受完成保留 Physics Snapshot，且**禁止** CONTROLLED/GOAL 作行为读取，**仅** FREE 的 closingSpeed 可合法读取（须补 FREE 专属消费窗口定义）；
+   (b) **Terminal Zero with authorized Writer**：授权未来 Gate 新增统一 Terminal Velocity Boundary（需 Owner 明确授权，突破本 Gate 禁令）。
+2. **Completion ↔ Interaction 不一致**：同一 CONTROLLED/FREE 由两条生产路径产生不同 velocity（完成=残留、Interaction={0,0}）。若 Owner 判定为违规，需未来统一 Terminal Velocity Boundary。
+3. **FREE 的 closingSpeed 已具备 Behavioral 依赖**：完成产生的 FREE 残旧 velocity **会改变** `closingSpeed`；虽当前生产 Tick 中 SECOND_BALL 恒在 Interaction（W6 置零）之后触发，使残留被覆盖，但该**语义依赖真实存在**，未来任何绕过 W6 的 FREE 读取路径都将受影响。→ 建议 FREE 语义优先收敛。
+4. **GOAL / CONTROLLED 残余 velocity 为 Dormant**：无消费者、不进 Save / Result，但**不得由本 Gate 清除**。
+
+**STOP — 不得进入 C-53，不得实现 Velocity Cleanup，不得统一清零，不得修改 C-03/C-05/C-06/C-23/C-39。等待 Owner 验收。**
