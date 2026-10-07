@@ -2902,3 +2902,65 @@ Terminal Velocity Boundary 的实现、velocity 清零、closingSpeed 公式修�
 3. **FREE “Legal = Both”依赖语义而非实现强制**：无 Boundary 强制 FREE 值来源一致；当前语义自洽，若未来引入绕过 C-05 的 FREE 写入路径需重新评估。
 
 **STOP — 不得进入 C-55，不得实现 Terminal Velocity Boundary，不得修改 Velocity 或 closingSpeed。等待 Owner 验收。**
+
+## §62 Terminal Velocity Normalization Implementation（Step 39F-M-C-55）
+
+**Gate Result = PASS / SEALED。** 实现 C-54 §61 冻结契约：**CONTROLLED / GOAL → `velocity = {0,0}`**；**FREE / IN_TRANSIT 保留**。Regression **1540 通过 / 0 失败**（1525 既有 + 15 新增）。
+
+### 一、Terminal Velocity Normalization Boundary（唯一实现）
+- 新增模块 [terminal-ball-velocity.js](file:///workspace/FE-project/src/core/match/terminal-ball-velocity.js)：
+  - `normalizeTerminalBallVelocity(ball)`：**CONTROLLED / GOAL** → `velocity={x:0,y:0}`（已是 `{0,0}` 则原样返回，引用稳定）；**FREE / IN_TRANSIT / 未知** → **原样返回（preserve）**。
+  - `isTerminalVelocityState(state)` / `TERMINAL_VELOCITY_STATES = ['CONTROLLED','GOAL']` / `TERMINAL_ZERO_VELOCITY`。
+  - `TERMINAL_VELOCITY_NORMALIZATION_SOURCE='TERMINAL_VELOCITY_NORMALIZATION'`，`ruleVersion='terminal-velocity-normalization-v1'`。
+- **只写 velocity**：不改 position / transit / control / possession / lastTouch / state / score / contact。
+
+### 二、接入点（两个官方 State Transition 边界，**单一 Boundary 复用**）
+| 边界 | 文件 | 覆盖 |
+| --- | --- | --- |
+| Transit Completion Finalize | [continuous-ball-movement-integration.js `finalizeTransitSettlement`](file:///workspace/FE-project/src/core/match/continuous-ball-movement-integration.js#L70-L105) | Transit → CONTROLLED / FREE / GOAL |
+| Interaction State Mutation | [interaction-state-update.js `applyInteractionStateUpdate`](file:///workspace/FE-project/src/core/match/interaction-state-update.js#L48-L71) | Interaction / SECOND_BALL → CONTROLLED / FREE |
+- **C-23 Position Contract 不变**：Boundary 置于 C-23 之外，`finalize` 仍**只结算 State，不写 Position**。
+- **无独立 Tick Stage**，未改 C-08 Stage Order（VALIDATE → SNAPSHOT → PLAYER_MOVEMENT → CONTINUOUS_TRANSIT → ACTION → INTERACTION_RESOLVE → INTERACTION_INTEGRATE → SECOND_BALL → INVARIANTS）。
+- C-05 既有 `velocity:{0,0}` 保留为上游 mutation；Terminal Boundary 作为**最终 Contract Enforcement**（重复写入无冲突、无第二 Truth、无额外行为变化）。
+
+### 三、State Guard（FREE 保护，最高优先级）
+| State | 行为 |
+| --- | --- |
+| CONTROLLED | **normalize → `{0,0}`** |
+| GOAL | **normalize → `{0,0}`** |
+| FREE | **preserve**（`{0.3,0}` / `{-0.2,0.1}` / `{0,0}` 均保持） |
+| IN_TRANSIT | **preserve**（Physics Velocity 不受影响） |
+
+### 四、Velocity Writer Matrix（更新）
+W1 `sanitizeBall`｜W2 Physics 积分｜W3 Contact Reflection｜W4 Physics 早退（CONTROLLED/GOAL → {0,0}）｜W5 Transit Velocity Seed｜W6 Interaction State Mutation｜W7 PASS/SHOT State Update｜**W8 Terminal Velocity Normalization Boundary（新增，仅 CONTROLLED/GOAL；不覆盖 FREE）**。**W8 未成为「所有非 IN_TRANSIT 状态的 Velocity Writer」——严格限于 CONTROLLED / GOAL。**
+
+### 五、Transit Completion / Contact 验证
+- **Transit → CONTROLLED**：`position=transit.to`，`state=CONTROLLED`，`velocity={0,0}`，`transit=undefined`。
+- **Transit → FREE**：保留最后 Physics Velocity（**不被清零**）。
+- **Contact Reflection → Completion → CONTROLLED**：反射产生的非零残留 velocity 最终归零。
+- **Transit → GOAL**：`state=GOAL`，`velocity={0,0}`。
+
+### 六、Interaction / closingSpeed 保持
+- INTERCEPTION_SUCCESS / DRIBBLE_COMPLETED / SECOND_BALL_WON → CONTROLLED `{0,0}`。
+- TACKLE_LOOSE / PRESS_SUCCESS / INTERCEPTION_DEFLECTED → FREE `{0,0}`（现有 Interaction 路径产生，**非 FREE Contract 强制**；FREE Legal Value 仍为任意有限向量）。
+- `closingSpeed`（FREE → SECOND_BALL）**行为不变**：FREE 非零 velocity 仍参与 `deriveBallRelation` 与 `computeCompetitionScore`；候选集合与资格不变。
+
+### 七、Tests（新增 15 个用例：TV-01 .. TV-14b）
+TV-01 CONTROLLED normalization｜TV-02 GOAL normalization｜TV-03 FREE non-zero preservation｜TV-04 FREE zero preservation｜TV-05 IN_TRANSIT preservation｜TV-06 Transit→CONTROLLED｜TV-07 Transit→FREE｜TV-08 Contact→Completion→CONTROLLED｜TV-09 Transit→GOAL｜TV-10 INTERCEPTION_SUCCESS｜TV-11 DRIBBLE_COMPLETED｜TV-12 SECOND_BALL_WON｜TV-13 FREE→closingSpeed｜TV-14 Writer ownership / 无重复 Terminal Writer｜TV-14b Determinism。**15/15 通过。**
+- Determinism：Boundary / Completion 重复运行 `identical=true`；无 `Math.random` / `Date.now` / 墙钟。
+
+### 八、Files Changed / Contract Changes
+- **新增**：`src/core/match/terminal-ball-velocity.js`、`tests/terminal-ball-velocity.test.js`。
+- **修改**：`src/core/match/continuous-ball-movement-integration.js`（finalize 委托 Boundary，switch 改为赋值后统一 normalize）、`src/core/match/interaction-state-update.js`（State Mutation 后委托 Boundary）、`tests/run.js`（注册新测试）、`docs/SIMULATION_SPEC.md`（本 §62）。
+- **Contract Changes**：实现 C-54 §61 冻结契约（CONTROLLED/GOAL 归零）；**未修改** C-54 语义本身，未修改 C-03/C-05 Stage 语义/C-06/C-08/C-23/C-29/C-39/C-44/C-46/C-47/C-48/C-50/C-51/C-52/C-53 生产契约，未改 Physics Equation / Friction / Contact Geometry / Goal Geometry / Transit semantics / closingSpeed 公式 / SECOND_BALL 算法 / Ball State Schema / Possession / LastTouch。
+- **Invariant**：**未新增** Ball State Invariant（C-54 为 Semantic Contract，本 Gate 仅 Enforcement）。
+
+### 九、Out of Scope
+FREE Velocity 修改、closingSpeed 公式修改、SECOND_BALL 算法修改、Physics Equation / Friction / Contact 修改、新增独立 Tick Stage、C-54 Contract 修改。
+
+### 十、Remaining Risks
+1. **C-05 与 Boundary 双写 CONTROLLED 速度**：C-05 上游置 `{0,0}` 与 W8 Enforcement 重复但无冲突（`normalize` 幂等、引用稳定）；保留以**最小改动**满足「保持现有行为 + 统一 Boundary」。
+2. **C-05 对 FREE 仍写 `{0,0}`**：属既有 Interaction 语义（C-54 §十六 明确保留）；**非** FREE Contract 强制，FREE Legal Value 不变。
+3. **GOAL 仅有 Transit Completion 一条生产入口**：已覆盖；未来若新增 GOAL State Writer，须复用同一 Boundary（W8）。
+
+**STOP — 不得进入 C-56，不得自行处理新的 Velocity 问题，不得修改 FREE / closingSpeed。等待 Owner 验收。**

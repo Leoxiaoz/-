@@ -31,6 +31,7 @@ import { createBallMovementState } from './ball-movement-state.js';
 import { applyBallMovementPositionUpdate } from './ball-movement-integration.js';
 import { PASS_OUTCOMES } from './pass-resolution-config.js';
 import { SHOT_OUTCOMES } from './shot-resolution-config.js';
+import { normalizeTerminalBallVelocity } from './terminal-ball-velocity.js';
 
 export const CONTINUOUS_BALL_MOVEMENT_SOURCE = 'CONTINUOUS_BALL_MOVEMENT';
 export const CONTINUOUS_BALL_MOVEMENT_RULE_VERSION = 'continuous-ball-movement-v1';
@@ -74,23 +75,34 @@ export function finalizeTransitSettlement(ball, transit, players) {
   const controlled = (id, teamId) => ({ ...base, state: BALL_STATE.CONTROLLED, control: id, possessingTeamId: teamId });
   const free = { ...base, state: BALL_STATE.FREE, control: null, possessingTeamId: null };
 
+  let settled;
   switch (t.outcome) {
     case PASS_OUTCOMES.COMPLETED:
-      return controlled(t.intendedTargetId ?? null, t.targetTeamId ?? null);
+      settled = controlled(t.intendedTargetId ?? null, t.targetTeamId ?? null);
+      break;
     case PASS_OUTCOMES.INTERCEPTED:
-      return t.interceptorId ? controlled(t.interceptorId, teamOf(arr, t.interceptorId)) : free;
+      settled = t.interceptorId ? controlled(t.interceptorId, teamOf(arr, t.interceptorId)) : free;
+      break;
     case PASS_OUTCOMES.BLOCKED:
     case SHOT_OUTCOMES.BLOCKED:
-      return t.blockerId ? controlled(t.blockerId, teamOf(arr, t.blockerId)) : free;
+      settled = t.blockerId ? controlled(t.blockerId, teamOf(arr, t.blockerId)) : free;
+      break;
     case SHOT_OUTCOMES.SAVE:
-      return t.goalkeeperId ? controlled(t.goalkeeperId, teamOf(arr, t.goalkeeperId)) : free;
+      settled = t.goalkeeperId ? controlled(t.goalkeeperId, teamOf(arr, t.goalkeeperId)) : free;
+      break;
     case SHOT_OUTCOMES.GOAL:
-      return { ...base, state: BALL_STATE.GOAL, control: null, possessingTeamId: null };
+      settled = { ...base, state: BALL_STATE.GOAL, control: null, possessingTeamId: null };
+      break;
     case PASS_OUTCOMES.INACCURATE:
     case SHOT_OUTCOMES.MISS:
     default:
-      return free;
+      settled = free;
+      break;
   }
+
+  // Terminal Velocity Normalization Boundary（C-55）：CONTROLLED / GOAL → velocity {0,0}；FREE 保留 Physics Velocity。
+  // Position 仍由 C-23 Completion Boundary 写入（本处不改 Position）。
+  return normalizeTerminalBallVelocity(settled);
 }
 
 /**

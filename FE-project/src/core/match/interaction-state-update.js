@@ -21,6 +21,7 @@
  */
 
 import { INTERACTION_BALL_STATE as BS } from './interaction-resolution-config.js';
+import { normalizeTerminalBallVelocity } from './terminal-ball-velocity.js';
 
 /** 深拷贝 ball（避免与输入共享引用）。 */
 function cloneBall(ball) {
@@ -65,5 +66,6 @@ export function applyInteractionStateUpdate(matchCore, result) {
     lastTouchPlayerId: controlled ? (result.possession?.toPlayerId ?? null) : (result.actorId ?? null),
   };
   delete nextBall.transit;
-  return { ...matchCore, ball: nextBall };
+  // Terminal Velocity Normalization Boundary（C-55）：CONTROLLED / GOAL → velocity {0,0}；FREE 保留（本层既有语义）。
+  return { ...matchCore, ball: normalizeTerminalBallVelocity(nextBall) };
 }
