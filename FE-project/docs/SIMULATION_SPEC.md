@@ -3414,3 +3414,164 @@ Goal 链（C-15 → C-20 → C-21 → C-14）**不读** `lastTouchPlayerId`：
 3. **CONTROLLED 下 lastTouch == control 的巧合**：C-05 CONTROLLED 分支令 `lastTouchPlayerId === possession.toPlayerId === control`。三者概念独立但实现上当前恒等，未来若控制者与最后触球者需可分离（如门将手抛球后控制但未触球），须审视此巧合。
 
 **STOP — 不得进入 C-61，不得修改发现的问题；如发现 LastTouch Semantic Gap 只报告并 BLOCK。等待 Owner 验收。**
+
+## §68 LastTouch Ownership / Lifecycle Contract Freeze（Step 39F-M-C-61）
+
+**Gate Result = PASS / SEALED（Contract Investigation / Freeze）。** **src/** = 0，**tests/** = 0；唯一改动 = 本 §68。**Architecture Conclusion = BLOCKED / OWNER_DECISION_REQUIRED。** Regression **1540 通过 / 0 失败**。
+
+**核心发现：** 当前 `lastTouchPlayerId` 由 C-03（物理接触）与 C-05（Interaction 落地）共同写入，但两者语义**不一致**——C-05 在 PRESS SUCCESS 与 SECOND_BALL WON 两种 outcome 下写入的 playerId **不代表实际物理触球**。此外 PASS/SHOT Transit Start 通过对象替换隐式丢弃该字段，属非显式 Clear。由于「实际触球者」与「Interaction Actor / Competition Winner」在部分路径上不是同一概念，无法在不修改代码的前提下将 `lastTouchPlayerId` 冻结为单一语义，须 Owner 决策。
+
+---
+
+### 一、LastTouch Truth（当前实际语义）
+**实际 = Candidate C（综合 Physics Contact + Interaction 的「最近正式涉及者」），非纯物理触球。**
+
+- C-03 写入 = 实际物理接触者。
+- C-05 写入 = Interaction Resolution 的 `possession.toPlayerId`（CONTROLLED）或 `actorId`（FREE）。
+- 两者混用同一字段，且在部分路径上语义发散（见 §四、§五）。
+
+### 二、C-03 Contact Writer 调查
+| 项 | 结论 |
+| --- | --- |
+| 写入位置 | [ball-physics.js#L182](file:///workspace/FE-project/src/core/match/ball-physics.js#L182) `stepBallPhysics` |
+| 写入条件 | 某球员首次进入 contact 窗口（`!contacting.has(playerId)`）；continuing contact 不更新 |
+| 写入值 | `hit.player.playerId`（实际接触球体的球员） |
+| 是否代表实际 Ball Contact | **是**（swept/discrete 接触命中） |
+| Contact Reflection 是否同时发生 | 是（法向相对速度反射 + 切向保留，L183-194） |
+| 可发生的 State | FREE、IN_TRANSIT（CONTROLLED/GOAL 在 L114 early-return，不跑 Physics） |
+| 写入后是否被覆盖 | 是——C-05 State Update 可在后续 INTERACTION_INTEGRATE 阶段覆盖；Transit Start 可隐式清除 |
+| 是否可继续作为正式 Writer | **可以**（语义明确 = 实际触球者） |
+
+**调用链：** `runMatchTick` → `advanceContinuousBallMovement`（C-39）→ `stepBallPhysics`（C-03）→ `lastTouch = hit.player.playerId`。
+
+### 三、C-05 Interaction Writer 调查
+写入位置：[interaction-state-update.js#L66](file:///workspace/FE-project/src/core/match/interaction-state-update.js#L66)
+```js
+lastTouchPlayerId: controlled ? (result.possession?.toPlayerId ?? null) : (result.actorId ?? null)
+```
+
+**各 Interaction 写入值与是否等价于实际触球：**
+
+| Interaction | Outcome | State | lastTouch = | 等价于实际触球？ |
+| --- | --- | --- | --- | --- |
+| DRIBBLE | COMPLETED | CONTROLLED | possession.toPlayerId = 运球者 | **是** |
+| DRIBBLE | LOST | CONTROLLED | possession.toPlayerId = 抢断者 | **是**（抢断者触球） |
+| DRIBBLE | KNOCKED_LOOSE | FREE | actorId = 运球者 | **是**（运球者自失） |
+| TACKLE | WON | CONTROLLED | possession.toPlayerId = 抢断者 | **是** |
+| TACKLE | LOST | CONTROLLED | possession.toPlayerId = 持球者 | **是** |
+| TACKLE | LOOSE | FREE | actorId = 抢断者 | **存疑**（可能是持球者捅出） |
+| PRESS | SUCCESS | FREE | actorId = 压迫者 | **否**（压迫者未必物理触球） |
+| PRESS | PRESSURE_ONLY | CONTROLLED | possession.toPlayerId = 持球者 | **是** |
+| PRESS | FAILED | CONTROLLED | possession.toPlayerId = 持球者 | **是** |
+| INTERCEPTION | INTERCEPTED | CONTROLLED | possession.toPlayerId = 拦截者 | **是** |
+| INTERCEPTION | DEFLECTED | FREE | actorId = 拦截者 | **是**（折射即触球） |
+| INTERCEPTION | FAILED | IN_TRANSIT | （preserve，不写） | N/A |
+| SECOND_BALL | WON | CONTROLLED | possession.toPlayerId = winner | **否**（winner 由竞争分决定，非触球） |
+| SECOND_BALL | NO_WINNER | FREE | actorId = null → **清除为 null** | N/A（隐式 Clear） |
+
+**关键结论：**
+- PRESS SUCCESS 与 SECOND_BALL WON 下，C-05 写入的 **不是实际物理触球者**，而是 Interaction Actor / Competition Winner。
+- 因此 C-05 Writer 的语义 = 「Interaction 正式确认的最后涉及球员」，**≠** 「实际触球者」。
+- 这是正式语义还是历史副作用？从代码看，`applyInteractionStateUpdate` 的注释（L6）明确把 `lastTouch` 列为 State Mutation 的一部分，且 `actorId` 是 Interaction 的固有概念，**不是偶然写入**——但它未声明「lastTouch = 实际触球」的契约。
+
+### 四、PASS / SHOT Transit Start Hidden Clear 调查
+| 项 | 结论 |
+| --- | --- |
+| 对象创建路径 | [pass-state-update.js#L22](file:///workspace/FE-project/src/core/match/pass-state-update.js#L22) `transitBall`、[shot-state-update.js#L16](file:///workspace/FE-project/src/core/match/shot-state-update.js#L16) `transitBall` |
+| 机制 | 构造**全新** ball 对象（仅含 position/control/possessingTeamId/state/transit），**不含** `lastTouchPlayerId` 字段 |
+| 性质 | **无意副作用**（非有意 Clear，无注释、无 `= null`、无专门清除逻辑） |
+| PASS/SHOT Start 是否需要 Clear | **语义上不需要**：Action Actor ≠ Last Touch ≠ Current Possession。传球者最后触球的事实在 Transit 期间仍成立 |
+| 是否与 C-03/C-05 语义一致 | **不一致**：清除丢失了「传球者最后触球」的合法历史事实 |
+| 其他类似 Object Replacement | 经全量搜索，仅 PASS/SHOT `transitBall` 两处会丢弃 lastTouch；其余 ball 写入（ball-movement-integration、instant-ball-position-integration、ball-physics、finalizeTransitSettlement）均通过 `{...ball, ...}` spread 保留 |
+
+### 五、Transit Completion 调查
+| 项 | 结论 |
+| --- | --- |
+| 实现 | [finalizeTransitSettlement](file:///workspace/FE-project/src/core/match/continuous-ball-movement-integration.js#L71)：`base = {...ball, transit: undefined}`，preserve lastTouch |
+| 是否自动重写 | **否**，不把 Transit Actor 写成 lastTouch |
+| 是否符合推荐 | **符合**（仅当发生新的正式 Touch/Contact/Interaction Touch 时才更新） |
+| Implementation Gap | 无 |
+
+### 六、State-Specific Contract
+| State | lastTouchPlayerId 约束 | 结论 |
+| --- | --- | --- |
+| IN_TRANSIT | 允许非 null（历史触球事实）；Transit Start 当前隐式清除为 null | **Gap**：Transit Start 不应清除 |
+| FREE | 允许 `FREE + lastTouchPlayerId`；不代表球归该球员 | **合法**（C-60 已确认） |
+| CONTROLLED | 允许；`lastTouch ≠ control`（概念独立，实现上当前巧合相等） | **合法但巧合** |
+| GOAL | 当前保留 Transit 期间值（通常 null，除非中途有 Contact） | **保留，不自动 Clear**（推荐） |
+
+### 七、Clear Authority 调查
+| 清除路径 | 机制 | 显式？ | 合法？ |
+| --- | --- | --- | --- |
+| PASS Transit Start | 对象替换丢弃字段 | **隐式** | **不合法**（无意副作用） |
+| SHOT Transit Start | 对象替换丢弃字段 | **隐式** | **不合法**（无意副作用） |
+| SECOND_BALL NO_WINNER | C-05 FREE 分支 `actorId=null` → 写 null | 半显式 | **存疑**（无 Clear 契约） |
+| C-03 sanitizeBall `?? null` | 字段缺失时归 null | 防御性 | 合法（非主动清除） |
+
+**当前无任何模块拥有显式、契约化的 Clear Authority。** 所有清除均为隐式或副作用。
+
+### 八、Possession / Control / SECOND_BALL / Goal Relationship（冻结）
+- LastTouch **≠** Possession（`possessingTeamId` 由 C-05/C-39 独立写入）
+- LastTouch **≠** Control（`control` 由 C-05/C-39 独立写入）
+- LastTouch **≠** Ball State（无 `lastTouch → state` 推导）
+- LastTouch **≠** SECOND_BALL（`isBallFree` 不读 lastTouch）
+- LastTouch **≠** Goal Truth（`scoringPlayerId` 来自显式 candidate，非 lastTouch）
+以上均 **PASS**（C-60 已确认，本次未变）。
+
+### 九、Lifecycle（冻结 C-60 结论）
+**D — Runtime Ball Fact。** 跨 Tick 保留；不进 Save / History / Replay；不作为 Derived Cache；无第二 Truth。
+
+### 十、Consumer Contract（冻结 C-60 结论）
+ball-facts / tactical-context / player-situation 均为 Read-only Projection，不得修改/缓存/推导 Possession/Control/State/SECOND_BALL/Goal。
+
+### 十一、Determinism
+所有 Writer/Consumer 纯函数；C-03 用 playerId 字典序 + 确定性 tie-break；无 `Math.random`/墙钟/非确定性遍历。**PASS。**
+
+---
+
+### 十二、Decision Matrix
+| Decision | Frozen Result |
+| --- | --- |
+| LastTouch Truth | **BLOCKED**：当前实际 = Candidate C（综合），但 C-05 在 PRESS SUCCESS / SECOND_BALL WON 下不代表实际触球，语义发散。需 Owner 选择冻结为 A（纯物理触球）还是 C（综合涉及者） |
+| C-03 Contact Writer | **保留**，语义 = 实际物理触球者，明确无歧义 |
+| C-05 Interaction Writer | **BLOCKED**：写入「Interaction Actor / Possession Winner」，对 PRESS SUCCESS / SECOND_BALL WON 不代表实际触球。需 Owner 决定：(a) 保留并冻结语义为「最后涉及者」；(b) 移除该 Writer（未来 Gate 改代码）；(c) 限定仅在确有触球的 outcome 写入 |
+| PASS/SHOT Clear | **Implementation Gap**：隐式对象替换清除，无意且语义不合理（传球者最后触球事实应保留）。需 Owner 决定是否未来修复 |
+| Transit Completion | **冻结**：不自动重写 lastTouch，仅 preserve |
+| FREE | `FREE + lastTouchPlayerId` 合法，不代表球权 |
+| CONTROLLED | 合法；`lastTouch ≠ control`（概念独立，实现巧合） |
+| IN_TRANSIT | 允许非 null；Transit Start 隐式清除为 Gap |
+| GOAL | 保留，不自动 Clear |
+| Possession Relationship | LastTouch ≠ Possession |
+| Control Relationship | LastTouch ≠ Control |
+| SECOND_BALL Relationship | LastTouch ≠ SECOND_BALL eligibility |
+| Goal Relationship | LastTouch ≠ Goal Truth |
+| Save / History | 不持久化 |
+| Lifecycle | D — Runtime Ball Fact |
+| Clear Authority | **BLOCKED**：当前无显式 Clear Authority，所有清除均为隐式/副作用。需 Owner 定义谁有权 Clear |
+
+### 十三、Implementation Gaps（仅记录，不在 C-61 修复）
+1. **C-05 语义发散**：PRESS SUCCESS / SECOND_BALL WON 写入非实际触球者。
+2. **PASS/SHOT Transit Start 隐式 Clear**：对象替换丢弃 `lastTouchPlayerId`，丢失传球者最后触球事实。
+3. **SECOND_BALL NO_WINNER 隐式 Clear**：C-05 FREE 分支将 lastTouch 写为 null，无 Clear 契约。
+4. **无显式 Clear Authority**：清除逻辑分散且隐式。
+
+### 十四、需要 Owner 决策的最小问题集合
+1. **LastTouch Truth 语义**：冻结为 Candidate A（纯物理触球者）还是 Candidate C（综合最后涉及者）？
+2. **C-05 Writer 去留**：若选 A，是否移除 C-05 对 lastTouch 的写入（未来 Gate 实现）？若选 C，是否显式冻结 C-05 语义为「最后涉及者」并接受与物理触球的发散？
+3. **PASS/SHOT Transit Start Clear**：是否修复为保留 lastTouch（即传球者仍为最后触球者）？
+4. **Clear Authority**：是否定义显式 Clear 规则？哪些 State Transition 允许 Clear？
+
+### 十五、Regression / Files / Contract Changes
+- `npm test` → **1540 通过 / 0 失败**。
+- Files Changed：仅 `docs/SIMULATION_SPEC.md`（本 §68）。**src/** = 0，**tests/** = 0。
+- Contract Changes：**无**（本 Gate 为 Investigation / Freeze，未改任何已 SEALED Contract；因语义发散未冻结新 Contract）。
+
+### 十六、Out of Scope
+任何代码修改、C-05 Writer 移除/调整、PASS/SHOT Clear 修复、新增显式 Clear 逻辑、新增字段、重开 C-03/C-05/C-46/C-60。
+
+### 十七、Remaining Risks
+1. 在 Owner 决策前，`lastTouchPlayerId` 语义保持发散状态（C-03 物理触球 vs C-05 涉及者），任何新增 Consumer 若误读为「实际触球者」将引入语义错误。
+2. PASS/SHOT Transit Start 隐式清除可能导致 Goal Attribution（若未来依赖 lastTouch）丢失传球者信息。
+3. SECOND_BALL NO_WINNER 隐式清除可能丢失上一次触球者事实。
+
+**STOP — 不得进入 C-62，不得修改发现的问题；如发现 LastTouch Contract Gap 只报告并 BLOCK。等待 Owner 验收与决策。**
