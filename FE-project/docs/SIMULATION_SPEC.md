@@ -3196,3 +3196,78 @@ module-level / object property / MatchCore / Player / Ball / Context 字段中**
 3. `movement-update.lastBall` 存球 position（非 velocity），用于 re-eval 阈值；不属本 Gate 但如未来改为存 velocity 需重新审计。
 
 **STOP — 不得进入 C-59，不得修改发现的问题；如发现 Derived Value Lifecycle Gap 只报告并 BLOCK。等待 Owner 验收。**
+
+## §66 Physics STOP/REST Event vs Ball State Boundary Audit（Step 39F-M-C-59）
+
+**Gate Result = PASS / SEALED（只读审计）。** **src/** = 0，**tests/** = 0；唯一改动 = 本 §66。Regression **1540 通过 / 0 失败**。审计确认：C-03 Physics 的 STOP / REST / `BALL_AT_REST` / `speedOf` / `STOP_THRESHOLD` 均为 **Physics Domain Event / Derived Value**，**未被升级为任何 Ball State / Possession / Control / Goal / Transit / Second-Ball Truth**。
+
+### 一、Physics Event Matrix
+| Event / Derived | Producer | Input | Lifetime | Consumer | Behavioral Effect |
+| --- | --- | --- | --- | --- | --- |
+| `BALL_AT_REST` | `stepBallPhysics` | `speedOf(outBall.velocity) === 0 && events.length === 0` | **Physics-Window-local**（`events[]`） | **无**（唯一调用方丢弃） | **无** |
+| `BALL_CONTACT` | `stepBallPhysics` | Contact 命中 | Physics-Window-local | **无**（唯一调用方丢弃） | 无 |
+| `BOUNDARY_CONTACT` | `stepBallPhysics` | 边界反射 | Physics-Window-local | **无**（唯一调用方丢弃） | 无 |
+| `speedOf(velocity)` | `ball-physics`（内部） | velocity | **Expression-local** | 摩擦 / 子步 / 停止判定 | **Physics**（仅 IN_TRANSIT/FREE 物理域） |
+| `STOP_THRESHOLD`（`0.006`） | `ball-physics-config` | 静态配置 | 常量 | 摩擦停止（`ns<=th → 0`） | **Physics** |
+| `stepBallPhysics` 返回 `.ball` | `ball-physics` | Physics 积分 | Tick-local | C-39 写入 `nextBall` | Position/Velocity Physics Truth |
+
+### 二、BALL_AT_REST Audit
+`BALL_AT_REST` 仅在 [ball-physics.js](file:///workspace/FE-project/src/core/match/ball-physics.js#L245-L246) 作为 **Physics Domain Event** push 进本地 `events[]`；**不写 `ball.state`**，**≠ CONTROLLED / FREE / GOAL / IN_TRANSIT**。唯一生产调用方 [continuous-ball-movement-integration](file:///workspace/FE-project/src/core/match/continuous-ball-movement-integration.js#L174-L191) 只消费 `stepped.ball`，**丢弃 `stepped.events` / `stepped.contacts`** → 无消费者。**PASS。**
+
+### 三、STOP Event Audit
+无独立「STOP Event」对象；停止仅表现为 `velocity` 归零（Physics 内部）。它**不**自动意味着 possession acquired/lost、controlled、free、dead ball、goal、second ball、tackle、interception；**无 Consumer**。**PASS。**
+
+### 四、Rest Threshold Audit
+`STOP_THRESHOLD = 0.006`（静态配置）仅用于 Physics 摩擦停止判定（[ball-physics.js](file:///workspace/FE-project/src/core/match/ball-physics.js#L147) `if (!(ns > config.STOP_THRESHOLD)) ns = 0` 与 L212/L226/L245）。**不属于** Ball State Threshold；**不写入** MatchCore State；**不成为** SECOND_BALL Eligibility（该资格由 `isBallFree` 决定）；**不成为** Possession Eligibility。**未跨域共享。PASS。**
+
+### 五、Zero Velocity vs REST Audit
+- **R1** FREE + `{0,0}` → 仍为 FREE（无 FREE→CONTROLLED 的零速自动转换）。
+- **R2** CONTROLLED + `{0,0}` → Physics early return（[ball-physics.js](file:///workspace/FE-project/src/core/match/ball-physics.js#L114)），无再次 State Transition。
+- **R3** IN_TRANSIT 减速：C-39 非完成 Tick **强制 `state: IN_TRANSIT`**（L180），Transit 仅由 `elapsed >= duration` 结束（Frozen Transit Contract），**绝不因瞬时速度≈0 结束**。
+- **R4** GOAL + `{0,0}` → Physics early return，Goal State 不变。**PASS。**
+
+### 六、State Mutation Audit
+`BALL_AT_REST / STOP / REST` 附近**无** `ball.state = / setBallState / applyInteractionStateUpdate`。State Writer 仅：`finalizeTransitSettlement`（由 **`transit.outcome`** 决定，非物理 rest）、`pass/shot-state-update`（IN_TRANSIT）、`second-ball-resolution`（结果经 C-05）、`interaction-state-update`。**Physics Event 非 State Writer。PASS。**
+
+### 七、Possession Audit
+无 `REST → Possession` / `STOP → Lost Possession`。`control / possessingTeamId / possession / lastTouchPlayerId` 仅由 `finalizeTransitSettlement`（transit contract）/ C-05 写入；`lastTouch` 由 C-03 Contact 更新（Frozen C-46）。**PASS。**
+
+### 八、SECOND_BALL Audit
+无 `isAtRest → SECOND_BALL`。SECOND_BALL 资格仍由 `isBallFree` + `requiresFollowUp` 决定（C-54 冻结窗口）。**PASS。**
+
+### 九、Goal Audit
+`BALL_AT_REST / STOP` **不参与** Goal Geometry / Crossing / Resolution / Score。Goal Truth 仍由 C-15 / C-20 / C-21 / C-14 链负责。**PASS。**
+
+### 十、Transit Audit
+REST / STOP **不修改** `transit / elapsed / progress / completion / transit.to / from`；Physics Stop **不被**误认为 Transit Completion（Completion 仅由 `elapsed >= duration` → C-23）。**PASS。**
+
+### 十一、Position Audit
+Physics Position 更新仍属 C-03 既有职责（`stepBallPhysics` → `stepped.ball.position`），无 `REST Event → 独立 Position Writer`，无第二 Position Truth。**PASS。**
+
+### 十二、Event Lifecycle Audit
+`BALL_AT_REST / BALL_CONTACT / BOUNDARY_CONTACT` 仅存在于当前 Physics Window 的本地 `events[]`，**被唯一调用方丢弃**；不跨 Tick、不入 MatchCore Event History（`TICK_EVENT_TYPES` 为独立 Tick 事件，非 Physics 事件）、不入 Match History / Save / Replay、不成长效 Runtime State。**PASS。**
+
+### 十三、Contact / Interaction Boundary
+Contact 改变 `position / velocity / lastTouch / contacting`（C-03/C-46 Frozen），但**不绕过 C-05**：Contact **不**产生 CONTROLLED/FREE（无 `Contact → STOP → CONTROLLED` 路径）；State 始终由 C-39 Settlement / C-05 负责。**PASS。**
+
+### 十四、Derived Fact Audit
+`speed / isStopped / isAtRest / BALL_AT_REST` 均为 **Physics Derived Value / Event**；**不写回 `ball.state`**；**无** `effectiveBallState / physicsBallState / restState` 第二 Ball State Truth。**PASS。**
+
+### 十五、Zero / Near-Zero Audit
+`velocity === {0,0}`（语义零）、`speed === 0`（数值零）、`speed <= STOP_THRESHOLD`（Physics 停止）**三者未被混同**：Threshold 仅用于 Physics；Ball State 由 State Contract 决定。**无 `speed <= threshold → state`。PASS。**
+
+### 十六、Determinism / Regression / Files / Contract Changes
+- Determinism：FREE+zero / FREE+non-zero / IN_TRANSIT deceleration / Contact reflection / CONTROLLED zero / GOAL zero 重复运行 `identical=true`；无 `Math.random` / `Date.now` / 墙钟 / 非确定性遍历。
+- `node tests/run.js` → **1540 通过 / 0 失败**。
+- Files Changed：仅 `docs/SIMULATION_SPEC.md`（本 §66）。**src/** = 0，**tests/** = 0。
+- Contract Changes：**无**（未改 C-03/C-05/C-08/C-14/C-15/C-19~C-23/C-54~C-58/STOP_THRESHOLD/BALL_AT_REST/Possession/SECOND_BALL/Control/Goal）。
+
+### 十七、Out of Scope
+任何 Physics Event / Threshold 实现修改、新增 Event / State / Threshold、Velocity / Possession / SECOND_BALL / Goal 修改，及 C-54~C-58 已列 Out of Scope 项。
+
+### 十八、Remaining Risks（仅记录，不修改）
+1. `stepped.events`（含 `BALL_AT_REST`）当前被 C-39 丢弃——属 Physics 内部诊断，无消费者；未来若接入行为须显式定义 State Guard，避免 REST→State 升级。
+2. `stepMatchBall`（Headless/Unit 入口）同样丢弃 events，无持久化风险。
+3. `STOP_THRESHOLD` 为唯一 Physics 停止阈值；若未来跨域复用须重新审计（当前不共享）。
+
+**STOP — 不得进入 C-60，不得修改发现的问题；如发现 Physics Event Semantic Gap 只报告并 BLOCK。等待 Owner 验收。**
