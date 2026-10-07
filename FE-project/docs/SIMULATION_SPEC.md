@@ -2276,3 +2276,101 @@ Contact `writesTransit=false`（不中断、不强制完成；C-39 冻结）。C
 3. Completion Tick 永不 Contact（C-39 冻结，同 §53/§54）。
 
 **STOP — 不得自行进入 C-49，不得修改任何已 SEALED Contract，不得因发现语义问题自行实现新规则。等待 Owner 验收。**
+
+## §56 Post-Contact Ball State Lifecycle / Cross-Tick Consistency Audit（Step 39F-M-C-49）
+
+**Gate Result = PASS / SEALED。Architecture Conclusion = BLOCKED / SEALED**（唯一 Block Condition = `CONTACTING_LIFECYCLE_LEAK`，**惰性 / 无消费者**）。**src/** = 0 modifications，**tests/** = 0 modifications**；唯一改动 = 本 §56。Regression **1525 通过 / 0 失败**。全部为 read-only Probe `/tmp/c49-post-contact-lifecycle-probe.mjs`。
+
+### 一、Ball Lifecycle Model（Truth / Derived / Transient / Metadata）
+| 字段 | 分类 | 说明 |
+| --- | --- | --- |
+| `ball.position` | **Truth（单字段）** | Writer：C-03（中间）、C-23（完成）、C-29（Instant Interaction） |
+| `ball.velocity` | **Truth（物理）** | C-03 反射；C-39 仅在 `!velocity` 时 seed |
+| `ball.state` | **Truth（枚举）** | CONTROLLED / IN_TRANSIT / FREE / GOAL —— **无 CONTACT state** |
+| `ball.transit` | **Derived / Truth（完成调度）** | from / to / duration / elapsed / progress |
+| `ball.control` / `possessingTeamId` | **Truth（Possession）** | 仅 Interaction / SECOND_BALL（C-05 mutation 层）写 |
+| `ball.lastTouchPlayerId` | **Metadata（Last Touch Truth）** | C-03 首次接触写；Interaction 后阶段可覆盖 |
+| `ball.contacting` | **Transient Derived（Diagnostic）** | 仅 C-03 产生；**无消费者** |
+
+### 二、Contact Tick State（场景 A/B，transit `0.2→0.8`、`duration=4`、`dt=1`）
+| | position | velocity | state | transit | lastTouch | contacting | control/poss |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| A 无 Contact | `0.24688` | `{0,0}` | IN_TRANSIT | 保留(elapsed1) | null | `[]` | null/null |
+| B 有 Contact | `0.205` | `{0,0}` | IN_TRANSIT | 保留(elapsed1) | `p1` | `['p1']` | null/null |
+Contact 只写 position/velocity/lastTouch/contacting；state/transit/control/poss 不变。
+
+### 三、Next Tick State（Contact 后多 Tick）
+- **V/T**：Contact 后 ball 停在 `0.2043`，velocity `{0,0}`，ticks2-4 位置冻结；transit `elapsed 1→4`、`progress .1667→.6667`、`to` 不变；state 恒 IN_TRANSIT。
+- **D（方向发散）**：pos 恒 `0.2057`（ticks1-4 冻结），tick5 完成时 **snap 到 `to=0.8`**、state→CONTROLLED、transit 清除。
+- Tick N 的 Contact **不会**在 Tick N+1 自动重复（除非球员仍在窗口内）。
+
+### 四、Velocity Lifecycle
+- C-39 非完成 Tick：`if (!stepping.velocity) seed`（[continuous-ball-movement-integration.js L158-161](file:///workspace/FE-project/src/core/match/continuous-ball-movement-integration.js#L158-L161)）。任意物理 Tick 后 velocity 恒为对象（truthy）→ **不再被 transit 重新 seed**。
+- **V2 直接证明**：球 vel `0.6` → Contact 反射 `−0.32225` → tick2 `−0.31225` → tick3 `−0.30225`（仅摩擦衰减；`velocityFromTransit` 应为 `+0.03`，未被采用）。
+- 分类：**C-03 Physics Truth**（非 Transit Seed、非 Interaction Override、非 Transient）。→ 非 `VELOCITY_LIFECYCLE_CONFLICT`。
+
+### 五、Transit Lifecycle
+Contact **不改** transit 任何字段（`from`/`to`/`duration`/`elapsed`/`progress`）；积分器每 Tick 原样保留 `from`/`to` 并推进 `elapsed`/`progress`。非完成 Tick [L166-176](file:///workspace/FE-project/src/core/match/continuous-ball-movement-integration.js#L166-L176) 强制 `state=IN_TRANSIT`。→ 非 `TRANSIT_CONTACT_LIFECYCLE_CONFLICT`。
+
+### 六、State Lifecycle
+Contact 后 velocity 可与 transit 方向相反，而 state 仍 IN_TRANSIT —— **设计允许**：C-39 冻结「`progress=clamp01(elapsed/duration)`，不由 Physics 距离反推」[L18-19](file:///workspace/FE-project/src/core/match/continuous-ball-movement-integration.js#L18-L19)。即 **Transit Completion Truth ≠ Physics Velocity Direction**。
+
+### 七、Contact / Transit Direction Probe（重点）
+Contact 反射后：C-39 继续以 `from/to/duration` **按时间**推进 completion，同时 C-03 以 Contact 后 velocity 运动。二者可长期分歧（探针 D：pos `0.2057` vs `to=0.8`，4 Tick）。**单一 Position 字段**，完成时 C-23 写 `to` 收敛。→ **Frozen 架构正式允许，非 `CONTINUOUS_MOVEMENT_DUAL_TRUTH`**。
+
+### 八、Completion Lifecycle
+完成 Tick：跳过 Physics（[L136-155](file:///workspace/FE-project/src/core/match/continuous-ball-movement-integration.js#L136-L155)），C-23 写 `position=transit.to`，`finalizeTransitSettlement` 只结算 state/control/poss 并清 transit。**观察**：finalize **不写 velocity** → Contact 残余 velocity 在完成后仍保留（探针 C：`{8.8e-6,−0.01158}` 于 CONTROLLED 球）；`contacting`/`lastTouch` 亦保留。
+
+### 九、Contact + Interaction + Next Tick
+| 组合 | Tick N 结果 | Tick N+1（无 Action） |
+| --- | --- | --- |
+| Contact→TACKLE / PRESS | `*_CANCELLED`；state IN_TRANSIT、transit 推进 | 正常消费 |
+| Contact→INTERCEPTION | `INTERCEPTION_SUCCESS`；CONTROLLED（control a_d、poss A、lastTouch a_d、transit 清除） | 稳定保持 |
+| Contact→SECOND_BALL（seed sb17） | `INTERCEPTION_DEFLECTED → SECOND_BALL_WON` | 稳定保持 |
+Interaction 最终状态可被下一 Tick 正常消费。
+
+### 十、contacting[] Lifecycle（专项）
+| 场景 | Tick N | Tick N+1 | 结论 |
+| --- | --- | --- | --- |
+| Contact 后 physics 仍运行（IN_TRANSIT，无球员） | `['p1']` | `[]`（C-03 窗口清理） | **正确 Tick-Transient** |
+| Contact→Interaction→CONTROLLED | `['p1']` | `['p1']`（N+1、N+2 均不变） | **残留 = `CONTACTING_LIFECYCLE_LEAK`** |
+根因：球转 CONTROLLED / 无 transit 后 C-39 跳过 Physics（`CONTINUOUS_TRANSIT_SKIPPED`），C-03 不再运行，`contacting` 窗口清理逻辑不执行。**该字段无任何语义消费者**（C-48 确认），故为**惰性泄漏**。
+
+### 十一、lastTouch Lifecycle
+Contact `lastTouch=p1`；下一 Tick 无 Contact 仍 `p1`（**正确**：Metadata 保持，不得随 contacting 清空而清除）。Contract 定义。→ 非 `LAST_TOUCH_LIFECYCLE_UNDEFINED`。
+
+### 十二、Possession Lifecycle
+Interaction/SECOND_BALL 在 Tick N 产生 `control`/`poss`；Tick N+1 稳定保持；Contact 不清除/不夺取/不修改。→ 非 `POSSESSION_LIFECYCLE_CONFLICT`。
+
+### 十三、State / Transit / Control Matrix
+| state | transit | control/poss | Contact | 说明 |
+| --- | --- | --- | --- | --- |
+| IN_TRANSIT | 有 | null | 可发生 | 唯一可 Contact 状态 |
+| CONTROLLED | 无 | 有 | 不可能 | Physics 早退 |
+| FREE | 无 | null | 不可能 | 无 transit → 不跑 Physics |
+| GOAL | 无 | null | 不可能 | 死球 |
+**不存在未定义的 “Contact State”**；Contact 不产生新 Ball State。
+
+### 十四、Physics / Transit Truth Audit
+Position Truth = `MatchCore.ball.position`（单字段）。Transit Truth = 完成调度 + 最终目标（`to`）。C-03 Physics 为中间位置；Contact 仅改 position/velocity（物理量）。**非两套 Position Truth**。Velocity 与 transit 方向可长期分歧 —— C-39 冻结已明确允许（时间型 completion）。
+
+### 十五、Determinism
+Contact Tick / Contact→Next Tick / Contact→Interaction→Next Tick / Contact→Completion 重复运行 → **4/4 identical=true**。无 `Math.random` / `Date.now` / 墙钟 / 非确定性排序。
+
+### 十六、Probe / Regression
+- `/tmp/c49-post-contact-lifecycle-probe.mjs`（read-only，未被生产代码引用）。
+- `node tests/run.js` → **1525 通过 / 0 失败（共 1525）**。
+
+### 十七、Files Changed
+- 仅 `docs/SIMULATION_SPEC.md`（追加本 §56）。**src/** = 0，**tests/** = 0。
+
+### 十八、Contract Changes
+**无**。C-03 / C-39 / C-44 / C-46 / C-47 / C-48 / Ball State Schema / Contact Geometry / Friction / Reflection / Transit Completion / Possession / Last Touch 均未改；未新增 Contact Lifecycle API / ContactResult / Ball·Velocity·Contact Truth。
+
+### 十九、Remaining Risks（含 Block）
+1. **`CONTACTING_LIFECYCLE_LEAK`（Block，惰性）**：球转 CONTROLLED / 离开 transit 后 `contacting[]` 不再清空，跨 Tick 残留旧接触者；当前无消费者。需 Owner 决策：(a) 接受为惰性诊断，或 (b) 未来 Gate 定义“离开物理域即清空”。
+2. Contact 残余 velocity 在 Completion 后**未被清除**（CONTROLLED 球可带非零 velocity），与 Interaction 产生的 CONTROLLED（velocity `{0,0}`）语义不一致。
+3. CONTINUING 接触下球被**钉在接触面**（位置每子步重设至 surface，velocity 仅衰减不驱动位移），反射 velocity 不必然转化为运动。
+4. 完成 Tick 的 `position` 从物理中间位置**跳变**到 `transit.to`（时间型 completion 的既定行为）。
+
+**STOP — 不得进入 C-50，不得修复上述问题，不得修改 C-46 / C-47 / C-48。等待 Owner 验收。**
