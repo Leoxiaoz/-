@@ -2374,3 +2374,81 @@ Contact Tick / Contact→Next Tick / Contact→Interaction→Next Tick / Contact
 4. 完成 Tick 的 `position` 从物理中间位置**跳变**到 `transit.to`（时间型 completion 的既定行为）。
 
 **STOP — 不得进入 C-50，不得修复上述问题，不得修改 C-46 / C-47 / C-48。等待 Owner 验收。**
+
+## §57 Contact Transient Metadata Lifecycle Decision（Step 39F-M-C-50）
+
+**Gate Result = PASS / SEALED。Architecture Conclusion = PASS / SEALED（Option B Frozen）。** src/** = 0，tests/** = 0；唯一改动 = 本 §57。Regression **1525 通过 / 0 失败**。Probe：`/tmp/c50-contacting-lifecycle-probe.mjs`（read-only，未被生产代码引用）。
+
+### 一、Current Classification
+- C-46 冻结：`contacting[]` = **D — Tick-Transient Derived**（不得升格为 Truth）。
+- 实测（C-49/C-50）：**仅在 C-03 Physics 执行时重算**；离开 Physics Domain 后保留旧值 → 字面 “每 Tick 清空” 并不成立。
+- 提出并冻结：**E — Physics-Window Derived Diagnostic**（见 §57 十）。
+
+### 二、Consumer Audit（全仓 grep `contacting`，6 文件）
+| 位置 | 读取/写入 | 类别 |
+| --- | --- | --- |
+| `src/core/match/ball-physics.js` | 唯一 **Writer** + 唯一 src Reader | **C-03 单一 owner** |
+| `tests/match-ball-physics.test.js` | 断言 sanitize 去重排序 | Diagnostic/Test |
+| `tests/ball-physics-fixtures.js` | fixture 初值 `[]` | Test |
+| `tests/player-position-tick-integration.test.js` | 断言 `contacting.length===0` | Test |
+| `tests/player-ball-contact-production-integration.test.js` | CP-04/CP-11/CP-13 行为断言 | Test |
+| `docs/SIMULATION_SPEC.md` | 文档 | Doc |
+- **未出现**于：Save / Match Result / `ball-facts.js` / `interaction-resolution.js` / `interaction-integration.js` / `second-ball-resolution.js` / Transit / Score / Goal。
+- **生产语义消费者 = 无**（除 C-03 自身）。→ 不存在 Consumer 冲突，**不 BLOCK**。
+
+### 三、Option A — Strict Tick-Transient（评估后**否决**）
+“任何 Tick 结束后若不在 Contact/Physics Domain 则 `contacting=[]`” 需要新的 Clear 边界。按 §57 九，以下均被冻结禁止：A2（C-03 末尾，无法覆盖 CONTROLLED）／A3（C-39 完成时，新增 Interaction/Transit 写 Contact 字段，违反 C-46 单一 owner）／A4（Tick 末尾统一清理，新增 Writer，需改 C-08）／A5（状态离开 IN_TRANSIT 时清理，需新 Hook / Writer）。→ **需要新增 Writer / Stage，与 Frozen Contract 冲突 → 否决（若强行采用则为 BLOCKED）**。
+
+### 四、Option B — Physics-Window Transient（**采纳**）
+`contacting[]` 不是严格每 Tick 清空，而是**Physics-Window Derived Diagnostic**：仅在下一次 C-03 `stepBallPhysics` 执行时重算（含 `sanitizeBall` 去重排序 + L229-236 窗口清理）；离开 Physics Domain 后允许旧值保留。
+- 不需要新增清理机制；完全贴合当前实现；零额外生产写入；保持 C-03 单一 owner；不新增 Writer / Stage / API。
+
+### 五、State Transition Audit（read-only Probe）
+| 转换 | Tick N | Tick N End | Tick N+1 | 说明 |
+| --- | --- | --- | --- | --- |
+| IN_TRANSIT → IN_TRANSIT（球员仍在窗口） | `['p1']` | `['p1']` | `['p1']` | 仍在接触窗口，正确 |
+| IN_TRANSIT → IN_TRANSIT（球员移除） | `['p1']` | `['p1']` | `[]` | C-03 窗口清理（唯一自然清除） |
+| IN_TRANSIT → INTERCEPTION_SUCCESS → CONTROLLED | `['p1']` | `['p1']` | `['p1']` | 离开 Physics Domain → 保留 |
+| IN_TRANSIT → FREE（Contact 后完成 INACCURATE） | `['p1']` | `['p1']` | `['p1']` | 完成 Tick 跳过 Physics → 保留 |
+| IN_TRANSIT → GOAL（Contact 后完成 GOAL） | `['p1']` | `['p1']` | `['p1']` | 同上 |
+| IN_TRANSIT → SECOND_BALL（seed sb25） | `['p1']` | `['p1']` | `['p1']` | 同上 |
+| 完成 Tick（`duration=1`，无 Contact） | `[]` | `[]` | — | 完成 Tick 不跑 Physics（CP-04） |
+**权威时间点 = 最近一次 C-03 Physics 执行内的 Tick N End**；一旦离开 Physics Domain，其值为**非权威快照**。
+
+### 六、Validity Window
+自产生它的那次 C-03 `stepBallPhysics` 起，有效至**下一次 C-03 执行**（若此后不再执行 Physics，则维持不变）。窗口内反映 “radius × hysteresis 内的接触球员集合”。
+
+### 七、Clear Boundary
+**唯一清除边界内嵌于 C-03**：[ball-physics.js L229-236](file:///workspace/FE-project/src/core/match/ball-physics.js#L229-L236) 窗口清理 + `sanitizeBall` 去重排序（[L53-54](file:///workspace/FE-project/src/core/match/ball-physics.js#L53-L54)）。**无状态离开清理**。本 Gate **不新增**任何 Writer / Stage / API。
+
+### 八、Interaction Responsibility Audit
+Interaction（C-05/C-06）**不得**承担 Contact Metadata Cleanup：C-46 冻结 Contact 属 C-03 Physics，与 Interaction 无数据依赖（CP-15 源码守卫）。**本 Gate 不提出** “让 C-05/C-06 清除 contacting”。→ 无需 `OWNER_DECISION_REQUIRED`。
+
+### 九、Stage Architecture Audit
+**不新增** `CONTACT` / `CONTACT_CLEANUP` Stage（CP-13 守卫：`TICK_STAGES` 不得含 `contact`）。生命周期规则完全嵌入现有 Stage（C-03 于 CONTINUOUS_TRANSIT 内）。
+
+### 十、Final Frozen Definition
+- **Contacting Definition**：`ball.contacting[] = Physics-Window Derived Contact Diagnostic`（C-46 的 “Tick-Transient Derived” 的**操作定义澄清**：tick-scoped 于 C-03 Physics 执行，而非 “每 Tick 强制清空”）。
+- **Validity Window**：见 §57 六。
+- **Clear Boundary**：见 §57 七（唯一，内嵌 C-03）。
+- **Consumer Rule**：**生产代码禁止**将 `contacting` 作为 Truth 读取；C-03 为唯一 owner；仅测试/诊断可读。
+- **Persistence Rule**：**不得**进入 Save / Match Result / Ball Facts / Interaction Result / 长期状态（实测已满足，保持现状）。
+- **Invariants**：`contacting ≠ Contact Truth / Position Truth / Possession Truth / LastTouch Truth / Interaction Result`。
+
+### 十一、Determinism
+Contact→Next Tick、Contact→Interaction→Next Tick 重复运行 → **identical=true**；无 `Math.random` / `Date.now` / 墙钟 / 非确定性排序。
+
+### 十二、Regression / Files Changed / Contract Changes
+- `node tests/run.js` → **1525 通过 / 0 失败（共 1525）**。
+- Files Changed：仅 `docs/SIMULATION_SPEC.md`（追加本 §57）；**src/** = 0，**tests/** = 0。
+- Contract Changes：**无 red-line 变更**。C-46/C-47/C-48/C-49 的红线（不作为 Truth、不持久化、C-03 单一 owner、无新 Stage）**全部保持不变**；本 Gate 仅**澄清** “Tick-Transient” 的操作定义。**须 Owner 追认该澄清不构成 C-46 修改**。
+
+### 十三、Out of Scope
+**Post-Contact Velocity Lifecycle**（C-49 §20 Risk #2：Contact 残余 velocity 可进入 CONTROLLED）。本 Gate **不分析、不决策、不修复**。
+
+### 十四、Remaining Risks
+1. CONTROLLED / FREE / GOAL 球可携带上一次 Physics 的 `contacting` 快照 —— 由 Option B 定义**正式允许**；因无生产消费者，不影响语义权威。
+2. 若未来有系统读取 `contacting`，须先经新 Gate 定义读取语义（当前禁止）。
+3. “Tick-Transient” 术语仍可能与 “每 Tick 清空” 字面混淆 —— 以本 §57 十的 Physics-Window 定义为准。
+
+**STOP — 不得进入 C-51，不得实现任何清理方案，不得处理 Velocity，不得修改 C-46/C-47/C-48/C-49。等待 Owner 验收。**
