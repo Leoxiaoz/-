@@ -3048,3 +3048,74 @@ FREE Velocity 修改、closingSpeed / SECOND_BALL 修改、Physics / Contact / P
 3. 未来若新增 GOAL / CONTROLLED State Writer，须复用同一 W8 Boundary（当前无缺口）。
 
 **STOP — 不得进入 C-57，不得修改任何发现的问题；如发现架构缺口只报告并 BLOCK。等待 Owner 验收。**
+
+## §64 State-Specific Velocity Consumer Semantics Audit（Step 39F-M-C-57）
+
+**Gate Result = PASS / SEALED（只读审计）。** **src/** = 0，**tests/** = 0；唯一改动 = 本 §64。Regression **1540 通过 / 0 失败**。审计确认 C-54 的 **State-Specific Velocity Contract** 在 **Consumer 侧未被错误统一解释**，无 Consumer Semantic Gap。
+
+### 一、Velocity Consumer Matrix
+| Consumer | Input | State Guard | Usage | Behavioral Effect |
+| --- | --- | --- | --- | --- |
+| C-03 `sanitizeBall` / `stepBallPhysics` | `ball.velocity` | IN_TRANSIT（transit 域） | 积分 / 摩擦 / 反射 | **Behavioral**（Physics，仅 IN_TRANSIT） |
+| `deriveBallFacts` | `MatchCore.ball.velocity` | 无（纯投影） | 派生只读快照 | **无**（Read Projection） |
+| `deriveBallRelation.closingSpeed` | `ballFacts.velocity − playerVel` | 无（纯派生） | 派生相对速度指标 | 取决于消费者 |
+| SECOND_BALL `computeCompetitionScore` | `cand.closingSpeed` | **FREE**（`isBallFree` 硬门） | 竞争分 `closing` 分量 | **Behavioral**（仅 FREE） |
+| `tactical-context` | `ballFacts.speed / velocity` | 无（只读） | 暴露 `ballSpeed/ballVelocity/ballRelation` | **无**（无 src 内读者） |
+| `player-situation` | `ballFacts.*` | 无（只读） | 暴露 `ballState`/`spatialContext.ballRelation` | **无**（无 src 内读者） |
+| `action-definitions` | `s.ballState.position / .control` | 无 | 决策几何 / 持球判定 | 读 **position / control**，**不读 velocity** |
+| Goal 模块（C-14/C-15/C-19~C-23） | `ballState`（**state 字符串**） | state 门 | 越线 / 生效判定 | **不读 velocity** |
+| `ball-physics` `STOP_THRESHOLD` / `BALL_AT_REST` | `speedOf(velocity)` | Physics 域 | 摩擦停止 / 事件 | Physics 域（IN_TRANSIT/FREE 物理） |
+
+### 二、deriveBallFacts 审计
+[deriveBallFacts](file:///workspace/FE-project/src/core/match/ball-facts.js#L21-L37) 为**纯只读投影**：不修改 ball / velocity，不归一化 FREE，不改写 CONTROLLED / GOAL，不推第二 Velocity Truth，不触发 Physics / Contact / Interaction / SECOND_BALL。无条件暴露 `velocity` 属允许的只读事实；**下游是否有 State Guard** 另行审计（见 §七～§九）。
+
+### 三、IN_TRANSIT Consumer
+合法 Consumer（C-03 Physics）读取**当前** Physics Velocity；`velocityFromTransit` 仅作 `!ball.velocity` 时的兼容 seed，非每 Tick Truth（C-39）；W8/C-55 **不会**在 IN_TRANSIT 提前清零。
+
+### 四、FREE Consumer
+FREE Velocity = Loose-Ball Physics Truth，`{0,0}` 与非零**均合法**。全仓**不存在**「FREE ⇒ velocity==0」/「FREE ⇒ velocity 不重要」/「FREE ⇒ 必须 normalize」的错误假设。W8 对 FREE 一律 preserve。
+
+### 五、closingSpeed 审计（重点）
+`closingSpeed` 仅作为 `deriveBallRelation` 派生值存在；**行为性消费仅 1 处** = SECOND_BALL `computeCompetitionScore`，且其候选仅在 `isBallFree`（state=FREE ∧ control=null ∧ poss=null ∧ !transit）下产生。输入口径 = `relVel = ball.velocity − playerVelocity` 在 `dirToBall` 上的投影，**未被替换**为 ball speed / 绝对速度 / transit 方向 / 归零终态值。CONTROLLED / GOAL / IN_TRANSIT **均不通过 closingSpeed 产生行为**。
+
+### 六、SECOND_BALL 审计（Consumption Window）
+- **SB-A** FREE + 非零 velocity → 影响 Competition Score（TV-13）。
+- **SB-B** FREE + `{0,0}` → 合法参与（closing=0 分量）。
+- **SB-C** CONTROLLED + `{0,0}` → 不入 SECOND_BALL（`ballFree=false`）。
+- **SB-D** GOAL → 不入 SECOND_BALL。
+- **SB-E** IN_TRANSIT + 非零 velocity → 因 `ballFree=false` **不触发** SECOND_BALL。
+消费窗口严格 = `requiresFollowUp ∧ ball FREE`（与 C-54 冻结一致）。
+
+### 七、tactical-context 审计
+[tactical-context](file:///workspace/FE-project/src/core/match/tactical-context.js#L150-L190) 仅将 `ballSpeed/ballVelocity/ballState/ballRelation` 作为**只读投影**暴露；CONTROLLED/GOAL 的 `{0,0}` 未被解释为 Ball Stopped / Dead Ball / Possession Loss / Interception / Tackle / Second Ball。src 内**无行为读者** → 无 State 污染。
+
+### 八、player-situation 审计
+[player-situation](file:///workspace/FE-project/src/core/match/player-situation.js#L103-L127) 只读暴露 `ball.velocity/speed/state/control` 与 `spatialContext.ballRelation`；`hasBall = ball.control === playerId`（基于 **control**，非 velocity）。**不存在** `velocity === {0,0}` 的隐式状态判断（无 Can Contest / Ball Is Free / Closing / Chase / Second Ball 类推断）。无 State 污染。
+
+### 九、Zero Velocity 等价审计（核心防污染）
+全仓 State 判定**一律基于 `state` 字符串**（`state === BS.*` / `BALL_STATE.*`）：`interaction-state-update`、`interaction-integration`、`ball-physics`、`match-tick`、`second-ball-resolution` 均如此。**不存在** `velocity === {0,0} → state inference`。**Velocity Zero ≠ Ball State**；`FREE + velocity={0,0}` 合法且成立。
+
+### 十、Derived Velocity 审计
+`speed = hypot(velocity)`（ball-facts）、`relativeVelocity` / `closingSpeed` / `movingTowardPlayer` / `movingAwayFromPlayer` / `timeToArrival`（ball-facts）、`velocityFromTransit`（ball-physics 兼容 seed）、`ball-trajectory.velocity`（派生，非 Truth）均为 **Derived Value**，**不写回 MatchCore**。`isMoving`（`movingToward/Away`）无行为消费者。**无** `derivedVelocity/effectiveVelocity/behaviorVelocity/tacticalVelocity` 第二 Truth。`BALL_AT_REST` 事件由 Physics 域 `speed===0` 产生（事件，非 state 推断）。
+
+### 十一、Writer / Consumer 边界
+W1～W8 = Writers / Enforcement。Consumer 全部 **Read-only**：不回写 velocity、不 clone 后改 Ball、不隐式 normalize、不改 State / Position。**无 Consumer Mutation。**
+
+### 十二、No New Truth 审计
+未出现第二 Velocity Truth；局部 `relVel/closingSpeed/speed/direction` 均为临时 Derived Value，不写回 MatchCore。
+
+### 十三、Determinism / Regression / Files / Contract Changes
+- Determinism：Consumer 对相同 MatchCore 输入输出一致（无 `Math.random` / `Date.now` / 墙钟 / 非确定性遍历；`second-ball-resolution` 候选按 `playerId` 稳定排序）。
+- `node tests/run.js` → **1540 通过 / 0 失败**。
+- Files Changed：仅 `docs/SIMULATION_SPEC.md`（本 §64）。**src/** = 0，**tests/** = 0。
+- Contract Changes：**无**（未改 C-03/C-05/C-08/C-14/C-15/C-19~C-23/C-54/C-55/W8/closingSpeed/SECOND_BALL/tactical-context/player-situation）。
+
+### 十四、Out of Scope
+任何 Velocity Consumer 实现修改、closingSpeed / SECOND_BALL 修改、以及 C-54/C-55/C-56 已列 Out of Scope 项。
+
+### 十五、Remaining Risks（仅记录，不修改）
+1. `tactical-context.ballVelocity / ballRelation`、`player-situation.spatialContext.ballRelation` 当前 src 内**无行为读者**（dormant 诊断投影）；未来若接入行为，须显式加 State Guard。
+2. `deriveBallFacts` 无条件暴露 `velocity`（含 CONTROLLED/GOAL 的 `{0,0}`）——符合只读投影契约；未来新消费者须遵守「Zero Velocity ≠ State」原则。
+3. `ball-facts` 的 `movingTowardPlayer/timeToArrival` 当前未被消费（dormant）；若未来用于行为需重新评估。
+
+**STOP — 不得进入 C-58，不得修改发现的问题；如发现 Consumer Semantic Gap 只报告并 BLOCK。等待 Owner 验收。**
