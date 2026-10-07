@@ -2810,3 +2810,95 @@ FREE Velocity 的**实现修改**、closingSpeed Reader 修改、任何清零 / 
 5. **CONTROLLED / GOAL** 仍延续 C-51 / C-52 的 Undefined（本 Gate 未触碰其语义）。
 
 **STOP — 不得进入 C-54，不得实现 Velocity Cleanup，不得修改 FREE Velocity 或 closingSpeed。等待 Owner 验收。**
+
+## §61 Terminal Ball Velocity Semantics Owner Decision / Contract Freeze（Step 39F-M-C-54）
+
+**Gate Result = PASS / SEALED（Owner Decision 已作出）。** **src/** = 0，**tests/** = 0；唯一改动 = 本 §61。Regression **1525 通过 / 0 失败**。
+
+> 本 Gate 结束 C-51 `CONTROLLED_VELOCITY_SEMANTICS_UNDEFINED`、C-52 `TERMINAL_VELOCITY_SEMANTICS_UNDEFINED`、C-53 `FREE_VELOCITY_SEMANTICS_UNDEFINED` + `CLOSING_SPEED_CONSUMPTION_WINDOW_UNDEFINED`。
+> **本 Gate 只冻结语义，不实现。** CONTROLLED / GOAL 的归零属 **CONTRACT_FROZEN / IMPLEMENTATION_PENDING**（未来 Implementation Gate 实现），**当前代码尚未实现该归零**（明确标注为未实现，非既成事实）。
+
+### 一、Owner Decision（正式选择）
+**选择 Candidate C — State-Specific Velocity Contract**，并吸纳 Candidate A 对 CONTROLLED / GOAL 的处理：
+- **IN_TRANSIT = Physics Truth**（沿用 C-52，不改）。
+- **FREE = Physics Truth**（Loose-Ball Physics Velocity）——唯一仍具**真实物理行为意义**的非 IN_TRANSIT 状态。
+- **CONTROLLED = Normalized Zero `{0,0}`**（不具 Physics 意义；无行为消费者）。
+- **GOAL = Normalized Zero `{0,0}`**（Dormant；无消费者）。
+
+判定依据（**非**“代码恰好如此”）：
+- **Principle 1**：Physics Velocity 仅在拥有真实 Physics 行为意义的生命周期内为 Truth → 仅 IN_TRANSIT 与 FREE。
+- **Principle 2/3**：CONTROLLED 由持球者驱动、GOAL 已越过门线，二者**均不再由 Ball Physics 驱动**，其“自身速度”无物理意义 → 归零。
+- **Principle 4**：FREE 保留 Physics Velocity，因为唯一行为消费者 `closingSpeed`（SECOND_BALL）需要它表达**球与球员之间的真实接近/远离速度**。
+- **未**以“Interaction 现写 `{0,0}`”反推 FREE 必须为零（Principle 5）；**未**以“Completion 残留非零”反推必须保留（Principle 6）。
+
+### 二、Ball Velocity State Contract（冻结）
+| State | Classification | Legal Value | Behavioral Read | Consumer |
+| --- | --- | --- | --- | --- |
+| IN_TRANSIT | Physics Truth | 任意有限向量 | **Yes** | C-03 Ball Physics（驱动 position） |
+| FREE | Physics Truth（Loose-Ball） | **任意有限向量（含 `{0,0}`）** | **Yes（受限）** | `closingSpeed` → SECOND_BALL |
+| CONTROLLED | Normalized Zero（Dormant/Ignored） | **`{0,0}`** | **No** | 无 |
+| GOAL | Normalized Zero（Dormant/Ignored） | **`{0,0}`** | **No** | 无 |
+
+### 三、FREE Velocity Contract
+- **Classification**：Physics Truth（Loose-Ball Physics Velocity）。
+- **Legal Value**：**任意有限向量**（`{0,0}` 亦合法——FREE 契约即“承载当前球物理速度，无论其值”）。
+- **来源**：C-03 Physics Snapshot（Transit Completion 保留）或 C-05 Interaction（当前置 `{0,0}`）——二者**均为合法 FREE 值**，不构成冲突。
+- **Behavioral Read**：**授权**，但**仅限** `closingSpeed`（见 §四 / §五）。
+- **无归零边界需求**：FREE 不需要 Terminal Velocity Boundary。
+
+### 四、FREE closingSpeed Contract（冻结）
+| 项 | 内容 |
+| --- | --- |
+| Input | `relVel = ball.velocity − playerVelocity`；`dirToBall`（几何） |
+| Producer | [`deriveBallRelation`](file:///workspace/FE-project/src/core/match/ball-facts.js#L60-L88) |
+| Legal State | **仅 FREE**（eligible：state=FREE ∧ control=null ∧ poss=null ∧ !transit） |
+| Consumer | `deriveSecondBallCandidates` → `computeCompetitionScore`（`CLOSING_WEIGHT * closing`） |
+| Consumption Window | **Window A**：仅在 SECOND_BALL Resolution 期间读取（`requiresFollowUp` 成立且球为 FREE） |
+| Behavioral Effect | **仅**影响 **SECOND_BALL winner**；**不得**扩展至 Goal / Match Result / Save / Possession 之外 / Tactical Context / UI |
+
+- **§四 情况 A 成立**：FREE + closingSpeed **合法**；合法消费窗口 = **Window A（仅 SECOND_BALL Resolution）**。
+- 明确声明：**不是“当前代码碰巧读到”，而是 Contract 授权**。当前生产路由（Interaction-FREE 由 W6 置零、Completion-FREE 对 FREE 球发起 Action 常被 CANCELLED）使非零 FREE velocity 很少进入 SECOND_BALL，但**契约已授权**其在 FREE + SECOND_BALL 窗口被读取。
+
+### 五、CONTROLLED Velocity Contract
+- **Classification**：Normalized Zero（Dormant / Ignored）。
+- **Legal Value**：**`{0,0}`**。
+- **Behavioral Read**：**No**（不存在 Physics Movement；不存在 `closingSpeed` 消费；velocity 不作为 CONTROLLED 行为输入）。
+- **Writer Boundary**：**CONTRACT_FROZEN / IMPLEMENTATION_PENDING**——进入 CONTROLLED 时未来必须拥有**明确的归零边界**（由未来 Implementation Gate 实现）。**当前代码未实现此归零**：Transit Completion → CONTROLLED 会残留最后 Physics Snapshot；此残留为**未实现的契约偏差（deviation）**，非合法状态。
+- 理由：CONTROLLED 由持球者驱动，球“自身速度”无物理/行为意义 → 归零（Principle 2）。
+
+### 六、GOAL Velocity Contract
+- **Classification**：Normalized Zero（Dormant / Ignored）。
+- **Legal Value**：**`{0,0}`**。
+- **Behavioral Read**：**No**。不得参与 Goal Resolution / Match Result / Save / UI 行为，亦不进入后续 Physics。
+- **Writer Boundary**：**CONTRACT_FROZEN / IMPLEMENTATION_PENDING**（同 CONTROLLED）；当前 Completion → GOAL 残留为**未实现的契约偏差**。
+
+### 七、Completion / Interaction 一致性（正式解释）
+| 目标 State | Transit Completion | Interaction（W6） | 判定 |
+| --- | --- | --- | --- |
+| **FREE** | 保留 Physics Snapshot（可非零） | `{0,0}` | **二者均 CONTRACT-CONFORMANT**（FREE Legal = 任意有限向量）→ 无需统一 Boundary |
+| **CONTROLLED** | 残留 Snapshot（可能非零） | `{0,0}` | Interaction **合规**；Completion **偏差（待实现归零边界）** |
+| **GOAL** | 残留 Snapshot（可能非零） | —（无 Interaction 路径） | Completion **偏差（待实现归零边界）** |
+- 选择 **方案 2（同一 State 统一 Contract）**用于 CONTROLLED / GOAL：契约一律 `{0,0}`，未来需统一 **Terminal Velocity Boundary**（本 Gate 不实现）。
+- 选择 **“Legal = Both”**用于 FREE：`{0,0}` 与非零皆合法，**来源差异被正式解释**，**不**需要 Boundary。
+
+### 八、SECOND_BALL Relation（冻结）
+`closingSpeed` = **【FREE Ball Physics Velocity 与 Player Velocity 的相对运动指标】**，**不是**普通 Ball Velocity Snapshot。仅参与 `computeCompetitionScore`，最终影响 **SECOND_BALL winner**。**不得**扩展至 Goal / Match Result / Save / Possession 之外 / Tactical Context / UI（除非未来另有 Gate）。
+
+### 九、Implementation Boundary
+本 Gate **未改动任何生产代码**：未实现 Terminal Velocity Boundary，未修改 velocity / closingSpeed / C-03 / C-05 / C-23 / C-39。CONTROLLED / GOAL 归零边界列为本契约的 **IMPLEMENTATION_PENDING**，由**下一 Implementation Gate** 单独完成。
+
+### 十、Determinism / Regression / Files / Contract Changes
+- 本次 Contract Freeze **未触及生产行为**（src=0 / tests=0），确定性不受影响。
+- `node tests/run.js` → **1525 通过 / 0 失败（共 1525）**。
+- Files Changed：仅 `docs/SIMULATION_SPEC.md`（追加本 §61）。
+- Contract Changes：**新增 §61 Ball Velocity State Contract**（IN_TRANSIT/FREE/CONTROLLED/GOAL + FREE closingSpeed Contract）；未修改既有 C-03 / C-05 / C-06 / C-08 / C-23 / C-29 / C-39 / C-44 / C-46 / C-47 / C-48 / C-50 / C-51 / C-52 / C-53 生产契约。
+
+### 十一、Out of Scope
+Terminal Velocity Boundary 的实现、velocity 清零、closingSpeed 公式修改、SECOND_BALL 算法修改、以及 C-51 / C-52 / C-53 已列 Out of Scope 项。
+
+### 十二、Remaining Risks
+1. **CONTROLLED / GOAL 归零边界未实现**：当前 Transit Completion 会在 CONTROLLED / GOAL 残留非零 velocity，属**未实现的契约偏差**。无行为消费者（C-51~C-53 审计确认），故**不产生游戏影响**；但需未来 Implementation Gate 落地归零边界以消除偏差。
+2. **FREE 非零 velocity 生产可达性低**：W6 置零与 SECOND_BALL 触发条件使 FREE 残旧值很少被 `closingSpeed` 读取；契约已授权，属**可接受的前向契约**，非缺陷。
+3. **FREE “Legal = Both”依赖语义而非实现强制**：无 Boundary 强制 FREE 值来源一致；当前语义自洽，若未来引入绕过 C-05 的 FREE 写入路径需重新评估。
+
+**STOP — 不得进入 C-55，不得实现 Terminal Velocity Boundary，不得修改 Velocity 或 closingSpeed。等待 Owner 验收。**
