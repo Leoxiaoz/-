@@ -2165,3 +2165,114 @@ C-03 未改 · C-05 未改 · C-06 未改 · C-08 仅 +players 输入、无 CONT
 4. 潜在重复 Contact 入口 `stepMatchBall` / `advancePassTransit` / `advanceShotTransit` 须持续保持非生产。
 
 **STOP — 不得自行进入 C-48，不得扩展 Contact 机制，不得修改 C-46 Frozen Contract。等待 Owner 验收。**
+
+## §55 Player-Ball Contact / Interaction Semantic Boundary Audit（Step 39F-M-C-48）
+
+**Gate Result = PASS / SEALED。Architecture Conclusion = CONSISTENT（无 Block Condition）。** 本 Gate **不实现新功能**；仅审计 C-47 生产 Contact 接入后，Player-Ball Contact 与 Interaction / Possession / Last Touch / Ball Control 之间是否存在隐藏语义冲突。**src/** = 0 modifications，**tests/** = 0 modifications**；唯一改动 = 本 §55。Regression **1525 通过 / 0 失败**。
+
+### 一、Production Tick Semantic Audit（Stage → Reads → Writes → Semantic Role）
+
+| Stage | Reads | Writes | Semantic Role |
+| --- | --- | --- | --- |
+| VALIDATE | `matchCore.ball` 存在性 | — | 输入校验 |
+| SNAPSHOT | `deriveBallFacts`（state/control/poss/transit） | —（transient snapshot） | 只读快照 |
+| PLAYER_MOVEMENT（C-44） | players / `movement` | `players[].positionOnPitch` | **唯一球员位置写入**；不触碰 Ball |
+| CONTINUOUS_TRANSIT（C-39→C-03/C-23） | `ball.transit`、players（post-PLAYER_MOVEMENT） | 非完成：`ball.position`/`velocity`/`contacting`/`lastTouch`（C-03 Contact）；完成：`ball.position`（C-23）+ state/control/poss/transit（finalize） | **物理层 / 连续运动** |
+| ACTION（C-04） | matchCore | —（产出 `ActionInstance`） | 决策 |
+| INTERACTION_RESOLVE（C-05） | `ball.control`、`ball.transit`、`ball.position`、players、transit 几何 | —（纯 Result） | **比赛语义决策** |
+| INTERACTION_INTEGRATE（C-06） | `InteractionResolutionResult` | `ball.position`（C-32→C-29；IN_TRANSIT 跳过）、state/control/poss/lastTouch/velocity、`transit` 清除 | **状态提交（唯一 mutation 层）** |
+| SECOND_BALL（C-07，可选） | `ball-facts` / 球员几何 | control/poss/lastTouch/velocity（**不写 position**） | **二点球语义** |
+| INVARIANTS | matchCore | — | 校验 |
+
+**无独立 `CONTACT` Stage**：Contact 隐藏于 `CONTINUOUS_TRANSIT → C-39 非完成 → stepBallPhysics`（C-46 §53 / C-47 §54 冻结）。
+
+### 二、Contact Output Audit
+生产实测（探针 A/A2，transit `0.2→0.8`、`duration=3`、`dt=1`）：
+- **产生**：`ball.position`（去穿透）、`ball.velocity`（A2：无 Contact `+0.96` → 有 Contact `−0.51675`）、`ball.lastTouchPlayerId='p1'`、`contacting=['p1']`。
+- **不产生**：`state`（保持 IN_TRANSIT）、`control`、`possessingTeamId`、`transit`、`score`、`goal`。
+- Contact 输出进入后续 Interaction 时：Interaction Resolution **只读 `ball.position`**（INTERCEPTION 路径），**不读** `lastTouchPlayerId` / `contacting` / `ball.velocity`（源码扫描 F + grep 确认）。
+
+### 三、Interaction Input Audit（是否读取 Contact 输出）
+| Interaction | 是否读 Contact 输出 | 独立判定证据 |
+| --- | --- | --- |
+| DRIBBLE | 否 | 仅读 `ball.control`（`BALL_NOT_CONTROLLED_BY_ACTOR` 取消） |
+| TACKLE | 否 | 独立 `dist(actor,carrier)` + `TACKLE_RANGE` 几何 + 属性；**Contact 不自动=抢断成功** |
+| PRESS | 否 | 独立距离 / 几何 + `PRESS_OUTCOMES` |
+| INTERCEPTION | **读 `ball.position`（物理输入）** | 成功概率由 transit 线段 `closestPointOnSegment` + 属性决定；`ball.position` 仅用于 FAILED 分支 carry-forward，该分支 IN_TRANSIT → **Position Ownership 边界跳过 → 无 Position 权威影响**（分类：物理输入、无权威耦合） |
+| PASS / SHOT | 否 | Interaction 不支持 → `INTERACTION_UNSUPPORTED`（由 C-39/PASS·SHOT 路径处理） |
+| SECOND_BALL | 否 | 经 `deriveBallFacts`/`deriveBallRelation` 读 position/velocity；**不读** `contacting`/`lastTouch` |
+
+**结论**：Physical Contact 与 Interaction Outcome 属两个层级；Contact **不**自动等于 Tackle / Interception / Press 成功。
+
+### 四、Contact + Interaction Probe（确定性）
+- **Contact + DRIBBLE**：`DRIBBLE_CANCELLED`（`BALL_NOT_CONTROLLED_BY_ACTOR`）；Contact 已发生（`lastTouch='p1'`、`contacting=['p1']`）。
+- **Contact + TACKLE / PRESS**：`*_CANCELLED`（`TARGET_NOT_CARRIER`，transit 球无 carrier）。
+- **Contact + INTERCEPTION**：`INTERCEPTION_SUCCESS`；Interaction 后阶段覆盖 → `control='a_d'`、`poss='A'`、`lastTouch='a_d'`、`state=CONTROLLED`、`transit` 清除。**证明 Stage 顺序仲裁**。
+- **Contact + PASS / SHOT**：`INTERACTION_UNSUPPORTED`；transit 保持（无 duplicate / overwrite / clear）。
+- **受控球对照（C）**：`CONTROLLED`（无 transit）→ **Contact 不可能发生**；`TACKLE_LOOSE`/`PRESS_FAILED`/`DRIBBLE_COMPLETED` 正常 resolve。证明物理层与语义层**互斥分离**。
+- **Contact + SECOND_BALL（D）**：扫描确定性 seed `sb9` → `INTERCEPTION_DEFLECTED` → `second_ball_resolve`/`second_ball_integrate` → `SECOND_BALL_WON`。**同 Tick 三系统共存**。
+
+### 五、LastTouch Arbitration
+Contact（CONTINUOUS_TRANSIT）写 `lastTouchPlayerId`；Interaction（INTERACTION_INTEGRATE）为**后阶段**，`applyInteractionStateUpdate` 写 `lastTouchPlayerId`（CONTROLLED→`possession.toPlayerId`；FREE→`result.actorId`）。**Stage Order 足以定义最终值**：Interaction 合法写时覆盖 Contact（探针 B/INTERCEPTION：`p1`→`a_d`）。IN_TRANSIT 未拦截时保留 Contact 值。**未发明新 Last Touch Priority**。→ 非 `LAST_TOUCH_SEMANTICS_UNDEFINED`。
+
+### 六、Position Arbitration
+同 Tick 两名 Position Writer 顺序存在：`C-03`（CONTINUOUS_TRANSIT 非完成，写中间位置）→ `C-29`（INTERACTION_INTEGRATE，经 C-32 边界写 Interaction Target；**IN_TRANSIT 跳过**）。二者写**同一字段** `MatchCore.ball.position`，属 **Frozen Stage Order 下的合法后续覆盖**，非双 Position Truth。C-29 仍只服务 Interaction Instant Position（未改）。→ 非 `POSITION_STAGE_CONFLICT`。
+
+### 七、Velocity Arbitration
+Writer 链 = `C-03`（Physics+Contact）→ `C-39`（缺省播种）→ `C-05`（Interaction：CONTROLLED/FREE 置 `{0,0}`，后阶段覆盖）。探针 B/INTERCEPTION：Contact 后最终 `velocity={0,0}`。**Stage 顺序足以仲裁**，未新增 Velocity Priority。→ 非 `VELOCITY_STAGE_CONFLICT`。
+
+### 八、Possession Audit
+Contact **不写** `control` / `possessingTeamId`（探针 A：`writesPossession=false`）。Possession 仅由 Interaction `applyInteractionStateUpdate` / SECOND_BALL（同一 mutation 层）产生。同 Tick Contact 不偷改 possession。→ 非 `POSSESSION_CONTACT_LEAK`。
+
+### 九、Transit Audit
+Contact `writesTransit=false`（不中断、不强制完成；C-39 冻结）。Contact+PASS/SHOT：Interaction 不支持 → 无 duplicate / overwrite / clear / target mismatch；`transit` 原样保持。→ 非 `TRANSIT_CONTACT_LEAK`。
+
+### 十、SECOND_BALL Audit
+- 不读 `contacting[]`（`ball-facts` 不含该字段）。
+- 读 `ball.position`/`velocity`（经 C-04 几何派生；Contact 可写 velocity = 物理输入）。
+- **不覆盖 Position**（C-31 冻结 NO_POSITION_CHANGE；不经 Position Ownership 边界）。
+- 可覆盖 control/poss/lastTouch（经 C-05 mutation 层）。
+- 产生 Possession 由自身 Frozen Contract 决定，非 Contact 自动产生。→ 非 `SECOND_BALL_CONTACT_CONFLICT`。
+
+### 十一、contacting[] Audit
+`contacting[]` 全仓仅出现在 `src/core/match/ball-physics.js`（C-03）；**未被 Interaction / SECOND_BALL / Save 读取**。语义 = **纯 Contact Diagnostic / Tick-Transient Derived Output**。**未升格为 Truth**（不进 `ball-facts`、不持久化）。观察：Interaction / SECOND_BALL 集成后 `contacting` 可携带 Contact 时的残留值进入 CONTROLLED 球（探针 final `contacting=['p1']`），但**无任何语义层读取**，故不构成冲突。→ 非 `CONTACTING_TRUTH_PROMOTION`。
+
+### 十二、Semantic Matrix（以真实代码为准）
+| 层 | 负责 | 不负责 |
+| --- | --- | --- |
+| C-03 Contact | 物理接触（position/velocity/lastTouch/contacting） | Possession / Interaction Outcome |
+| C-05 Interaction State | 状态提交（state/control/poss/lastTouch/velocity） | Contact Detection |
+| C-06 Interaction Resolution | 比赛交互结果（DRIBBLE/TACKLE/PRESS/INTERCEPTION） | Contact Physics |
+| C-39 Transit | Continuous Transit | Possession |
+| SECOND_BALL | 二点球竞争语义 | Contact Detection |
+
+### 十三、Writer Matrix（生产；无新 Truth）
+| 字段 | Writer | Stage | 条件 | Contact 参与 | 最终 Authority |
+| --- | --- | --- | --- | --- | --- |
+| `ball.position` | C-03 / C-29 | CONTINUOUS_TRANSIT / INTERACTION_INTEGRATE | 非完成 vs Interaction Target（IN_TRANSIT 跳过） | **是**（C-03） | 后阶段 Stage Order |
+| `ball.velocity` | C-03 / C-39 / C-05 | 同上 | Physics·Contact / 播种 / Interaction 置零 | **是** | 后阶段 Stage Order |
+| `ball.transit` | C-39 / C-05 | CONTINUOUS_TRANSIT / INTERACTION_INTEGRATE | 推进 / finalize 清除 | 否 | C-39 冻结 |
+| `ball.lastTouchPlayerId` | C-03 / C-05 | 同上 | Contact / Interaction 结果 | **是** | Interaction（后阶段） |
+| `ball.control` | C-05 | INTERACTION_INTEGRATE | CONTROLLED/FREE | 否 | C-05 / SECOND_BALL |
+| `ball.possessingTeamId` | C-05 | INTERACTION_INTEGRATE | CONTROLLED/FREE | 否 | C-05 / SECOND_BALL |
+| `ball.contacting` | C-03 | CONTINUOUS_TRANSIT | 接触窗口 | **是** | 纯 Diagnostic（无消费者） |
+
+### 十四、Determinism
+探针 E：相同 MatchCore + Tick Input + Simulation Time 重复运行 → `matchCore` 逐值一致（`identical=true`）。无 `Math.random` / `Date.now` / 墙钟 / 非确定性排序。→ 非 `NONDETERMINISTIC_CONTACT_INTERACTION`。
+
+### 十五、Probe / Regression
+- 仓库外 read-only 探针：`/tmp/c48-contact-interaction-probe.mjs`（未被生产代码引用）。
+- `node tests/run.js` → **1525 通过 / 0 失败（共 1525）**。
+
+### 十六、Files Changed
+- 仅 `docs/SIMULATION_SPEC.md`（追加本 §55）。**src/** = 0，**tests/** = 0。
+
+### 十七、Contract Changes
+**无**。C-03 / C-05 / C-06 / C-08 / C-29 / C-39 / C-44 / C-46 / Possession / Last Touch 语义均未改；未新增 Contact→Possession / Contact→Interaction 规则，未新增 Tackle / Press / Interception 概率，未新增 `ContactResult` / Ball Control Truth / Ownership Truth。
+
+### 十八、Remaining Risks（不阻断）
+1. `contacting[]` 在 Interaction / SECOND_BALL 集成后**不被清除**（可残留至 CONTROLLED 球）；当前无消费者，若未来某系统读取须先经新 Gate 定义清理时机。
+2. INTERCEPTION RESOLVE 读 `ball.position` 仅用于 FAILED 分支 carry-forward（无权威影响）；若未来改为影响成功概率，须新 Gate。
+3. Completion Tick 永不 Contact（C-39 冻结，同 §53/§54）。
+
+**STOP — 不得自行进入 C-49，不得修改任何已 SEALED Contract，不得因发现语义问题自行实现新规则。等待 Owner 验收。**
