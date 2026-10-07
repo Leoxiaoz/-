@@ -3119,3 +3119,80 @@ W1～W8 = Writers / Enforcement。Consumer 全部 **Read-only**：不回写 velo
 3. `ball-facts` 的 `movingTowardPlayer/timeToArrival` 当前未被消费（dormant）；若未来用于行为需重新评估。
 
 **STOP — 不得进入 C-58，不得修改发现的问题；如发现 Consumer Semantic Gap 只报告并 BLOCK。等待 Owner 验收。**
+
+## §65 Derived Velocity Lifecycle / Cross-Tick Persistence Audit（Step 39F-M-C-58）
+
+**Gate Result = PASS / SEALED（只读审计）。** **src/** = 0，**tests/** = 0；唯一改动 = 本 §65。Regression **1540 通过 / 0 失败**。审计确认：所有 Velocity Derived Value 均为 **Expression / Tick / Physics-Window / Resolution-local**，**无跨 Tick / 跨 State / 跨 Physics Window 持久化，无隐藏 Runtime State，无第二 Velocity Truth**。
+
+### 一、Derived Value Matrix
+| Derived Value | Producer | Input | Lifetime | Storage | Consumer |
+| --- | --- | --- | --- | --- | --- |
+| `ballFacts.speed` = `hypot(velocity)` | `deriveBallFacts` | `ball.velocity` | **Expression-local**（每次调用重建） | 无 | tactical-context / player-situation（只读投影） |
+| `relativeVelocity` | `deriveBallRelation` | `ballFacts.velocity − playerVel` | **Expression-local** | 无 | closingSpeed / SECOND_BALL 候选快照 |
+| `closingSpeed` | `deriveBallRelation` | `relVel · dirToBall` | **Resolution-local**（SECOND_BALL Window） | 无 | `computeCompetitionScore`（仅 FREE） |
+| `movingTowardPlayer / movingAwayFromPlayer` | `deriveBallRelation` | `closingSpeed` 符号 | **Expression-local** | 无 | 无行为读者（dormant） |
+| `timeToArrival` | `deriveBallRelation` | `distance / closingSpeed` | **Expression-local** | 无 | 无行为读者（dormant） |
+| `directionToBall` | `deriveBallRelation` | `relativePosition` 归一 | **Expression-local** | 无 | SECOND_BALL 候选 |
+| `ballFacts`（position/state/…） | `deriveBallFacts` | `MatchCore.ball` | **Tick-local 快照** | 无（每次重建） | 下游只读 |
+| `velocityFromTransit` | `ball-physics` | `transit.from/to/duration` | **Physics-Window-local Seed** | 不持久化 | 仅 `!ball.velocity` 一次性 |
+| `trajectory.velocity` | `deriveBallTrajectory` | `start/end/duration` | **Result-payload-local** | **不写回 MatchCore** | 仅 C-19 校验（`INVALID_TRAJECTORY`） |
+| `sanitizeBall` 归一化 velocity | C-03 | `ball.velocity` | **Physics-Window-local** | 写回 Ball（属 Physics Truth，非 derived cache） | Physics |
+| `playerVelocity`（`playerVelocityFromMovement`） | ball-facts | `movement.players[id]` | **Expression-local** | 无 | 相对速度 |
+
+### 二、Lifetime Classification
+全部 Derived Value ∈ **A（Expression-local）/ B（Tick-local）/ C（Physics-Window-local）/ D（Resolution-local）**。**无任何 E（Persisted / Runtime State）类。** 唯一「写回 MatchCore」的是 `ball.velocity` 本身（W1～W8 属既有 Velocity Writer/Enforcement，非 derived lifecycle 新增）。
+
+### 三、Cross-Tick Audit
+无 `previousBall / lastBall(velocity) / lastVelocity / cachedVelocity / ballRelationCache` 等缓存。`deriveBallFacts` / `deriveBallRelation` **每次调用由 `MatchCore.ball` 重新派生**；`closingSpeed / relativeVelocity / movingToward / movingAway / timeToArrival / speed / direction` 均不跨 Tick 继承。**PASS。** （注：`movement-update.js` 的 `lastBall` 仅存**球 position** 用于 re-eval 阈值，**非 velocity derived value**，不属本 Gate 范围。）
+
+### 四、Cross-State Audit
+State Transition（IN_TRANSIT→CONTROLLED/FREE/GOAL、FREE→CONTROLLED 等）后无旧 State 的 Derived Velocity 复用：CONTROLLED 进入即 W8 置 `{0,0}`（C-55），`closingSpeed` 仅在 `isBallFree` 下产生/消费，离开 FREE 即不再消费。**PASS。**
+
+### 五、Physics-Window Audit
+C-03 每 substep 读取**当前** `ball.velocity`（`stepBallPhysics` 内 `let vel = {...b.velocity}`，substep 间递推），**无 substep 级缓存**；`velocityFromTransit` 仅在 `!ball.velocity` 时作为一次 Seed，之后当前 Physics Velocity 为 Truth。**PASS。**
+
+### 六、Trajectory Velocity Audit
+`trajectory.velocity` 为 `deriveBallTrajectory` **返回对象字段（派生值，非 Truth）**；`ball-trajectory.js` 明确**不写回 MatchCore**（无 `ball.trajectory / samples / path / history`）；`trajectory` 仅作为 `trajectory-goal-match-tick` 的 **transient result payload**（校验用），**≠ `MatchCore.ball.velocity`**，不跨 Tick 持久化。**PASS。**
+
+### 七、velocityFromTransit Audit
+仅 2 处调用：`ball-physics.stepBallPhysics`（`state===IN_TRANSIT && !ball.velocity && ball.transit`）与 `continuous-ball-movement-integration`（`!stepping.velocity`）。均为 **`!velocity` 兼容 Seed**，非 persistent cache / historical velocity / future Tick truth。**PASS。**
+
+### 八、closingSpeed Lifecycle
+生命周期严格 ≤ `requiresFollowUp ∧ ball FREE` 的 SECOND_BALL Resolution Window；**不写入** MatchCore / Player / Ball State / Match History / Save，不跨 Tick / 跨 State 保存。**PASS。**
+
+### 九、ballRelation Lifecycle
+`deriveBallRelation` 返回 **Derived Snapshot**（`closingSpeed / distance / directionToBall / relativeVelocity`），每次调用新建；不持久化、不写回 MatchCore / Player、不缓存到下一 Tick。**PASS。**
+
+### 十、ballFacts Lifecycle
+`deriveBallFacts` 为**纯只读 Projection**；**无** `previousBallFacts / lastBallFacts / cachedBallFacts`；`ballFacts.velocity/state/position` 不被任何模块保存为未来 Tick Truth。**PASS。**
+
+### 十一、tactical-context / player-situation Audit
+无 `previousBall / previousVelocity / lastVelocity / lastBallRelation / cachedBallRelation / cachedBallFacts`。二者仅返回当前调用派生快照（C-57 已确认 src 内无行为读者）。**PASS。**
+
+### 十二、Snapshot Audit
+C-08 `SNAPSHOT`（match-tick）仅保存 `ballState / control / possessingTeamId / inTransit`（**不含 velocity**），且不保存 `closingSpeed / timeToArrival / movingToward / movingAway`。**PASS。**
+
+### 十三、Persistence / Save Audit
+`save/save-manager.js` **不序列化** `ball / velocity / closingSpeed / ballRelation / ballFacts / trajectory`（career 存档不含比赛瞬时派生值）。Derived Velocity 不进 Save / Game State / Match Result / Season Result / Match History / Replay / UI persistent state。**PASS。**
+
+### 十四、State Transition Cleanup Audit
+无需 cleanup：Derived Value 仅存在于当前函数 / Tick / Window，**No Persistence** 优先于 Persistence+Cleanup。**PASS。**
+
+### 十五、Hidden Runtime State Audit
+module-level / object property / MatchCore / Player / Ball / Context 字段中**无** `lastClosingSpeed / lastRelativeVelocity / cachedVelocity / previousVelocity / ballRelationCache / trajectoryVelocity`。（`core/ai/ai-development-signals.js` 的 `cache` 为 `clubId|season` 参赛数缓存，与 Velocity 无关。）**PASS。**
+
+### 十六、Determinism / Regression / Files / Contract Changes
+- Determinism：IN_TRANSIT Physics / Contact / Transit Completion / FREE SECOND_BALL / State Transition 重复运行 Derived Values `identical=true`；无 `Math.random` / `Date.now` / 墙钟 / 非确定性遍历。
+- `node tests/run.js` → **1540 通过 / 0 失败**。
+- Files Changed：仅 `docs/SIMULATION_SPEC.md`（本 §65）。**src/** = 0，**tests/** = 0。
+- Contract Changes：**无**（未改 C-03/C-05/C-08/C-14/C-15/C-19~C-23/C-54~C-57/closingSpeed/SECOND_BALL/tactical-context/player-situation）。
+
+### 十七、Out of Scope
+任何 Derived Value 实现修改、新增生命周期规则 / cleanup、Velocity / closingSpeed / SECOND_BALL 修改，及 C-54~C-57 已列 Out of Scope 项。
+
+### 十八、Remaining Risks（仅记录，不修改）
+1. `movingTowardPlayer / movingAwayFromPlayer / timeToArrival` 当前无行为读者（dormant）；未来接入行为须确保 Tick-local 重算。
+2. `trajectory.velocity` 仅作 C-19 校验 payload；若未来被误当作 `MatchCore.ball.velocity` 将构成第二 Truth 风险（当前无消费者）。
+3. `movement-update.lastBall` 存球 position（非 velocity），用于 re-eval 阈值；不属本 Gate 但如未来改为存 velocity 需重新审计。
+
+**STOP — 不得进入 C-59，不得修改发现的问题；如发现 Derived Value Lifecycle Gap 只报告并 BLOCK。等待 Owner 验收。**
