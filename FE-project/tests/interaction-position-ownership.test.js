@@ -155,6 +155,14 @@ function legacyC05(matchCore, result) {
   const position = { x: Number(result.ball.position?.x) || 0, y: Number(result.ball.position?.y) || 0 };
   if (result.ball.state === BS.IN_TRANSIT) return { ...matchCore, ball: cloneBall(current) };
   const controlled = result.ball.state === BS.CONTROLLED;
+  // C-62：PRESS SUCCESS / SECOND_BALL 不代表实际触球，保留既有 lastTouch。
+  const preservesLastTouch =
+    result.actionType === 'SECOND_BALL' ||
+    (result.actionType === 'PRESS' && !controlled);
+  const currentLastTouch = current.lastTouchPlayerId ?? null;
+  const lastTouchPlayerId = preservesLastTouch
+    ? currentLastTouch
+    : (controlled ? (result.possession?.toPlayerId ?? null) : (result.actorId ?? null));
   const nextBall = {
     ...cloneBall(current),
     position,
@@ -162,7 +170,7 @@ function legacyC05(matchCore, result) {
     state: result.ball.state,
     control: controlled ? (result.possession?.toPlayerId ?? null) : null,
     possessingTeamId: controlled ? (result.possession?.toTeamId ?? null) : null,
-    lastTouchPlayerId: controlled ? (result.possession?.toPlayerId ?? null) : (result.actorId ?? null),
+    lastTouchPlayerId,
   };
   delete nextBall.transit;
   return { ...matchCore, ball: nextBall };

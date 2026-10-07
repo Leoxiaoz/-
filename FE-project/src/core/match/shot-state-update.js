@@ -13,12 +13,16 @@
 
 import { advanceContinuousBallMovement } from './continuous-ball-movement-integration.js';
 
-function transitBall(result) {
+/**
+ * C-62：Transit Start 不得自动 Clear LastTouch——保留射门者作为最近一次实际触球者。
+ */
+function transitBall(result, lastTouchPlayerId) {
   return {
     position: { ...result.transit.from },
     control: null,
     possessingTeamId: null,
     state: 'IN_TRANSIT',
+    lastTouchPlayerId: lastTouchPlayerId ?? null,
     transit: {
       ...result.transit,
       from: { ...result.transit.from },
@@ -34,7 +38,7 @@ function transitBall(result) {
  */
 export function applyShotStateUpdate(matchCore, result) {
   if (!matchCore || !result || !result.ok || !result.transit) return matchCore;
-  return { ...matchCore, ball: transitBall(result) };
+  return { ...matchCore, ball: transitBall(result, matchCore?.ball?.lastTouchPlayerId ?? null) };
 }
 
 /**

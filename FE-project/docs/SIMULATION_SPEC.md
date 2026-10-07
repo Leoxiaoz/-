@@ -3575,3 +3575,57 @@ ball-facts / tactical-context / player-situation 均为 Read-only Projection，�
 3. SECOND_BALL NO_WINNER 隐式清除可能丢失上一次触球者事实。
 
 **STOP — 不得进入 C-62，不得修改发现的问题；如发现 LastTouch Contract Gap 只报告并 BLOCK。等待 Owner 验收与决策。**
+
+## §69 LastTouch Semantic Separation / Writer Correction（Step 39F-M-C-62）
+
+**Gate Result = PASS / SEALED（Implementation）。** Architecture Conclusion = **PASS**。
+
+**Owner Decision（C-61 FROZEN）：LastTouch Truth = Candidate A** — `lastTouchPlayerId` 唯一语义 = 最近一次被系统正式确认实际触碰 Ball 的球员。≠ Interaction Actor / Possession Winner / Pressing Player / SECOND_BALL Winner / Control Player / Possession Owner / Transit Owner。
+
+### 一、Writer Changes
+| Writer | Before | After |
+| --- | --- | --- |
+| C-03 Contact | 写 actual contacting player | **保留**（不变） |
+| C-05 Interaction（DRIBBLE/TACKLE/INTERCEPTION） | 写 possession.toPlayerId / actorId（均为实际触球） | **保留**（不变，这些 outcome 代表实际触球） |
+| C-05 PRESS SUCCESS | 写 pressingPlayerId（actorId） | **改为 preserve**：压迫者未必物理触球 |
+| C-05 SECOND_BALL WON | 写 competitionWinnerId | **改为 preserve**：winner 由竞争分决定，非触球 |
+| C-05 SECOND_BALL NO_WINNER | 写 null（隐式 Clear） | **改为 preserve**：不得因无赢家而清除 |
+| PASS Transit Start | 新对象丢弃字段（隐式 Clear） | **保留** `lastTouchPlayerId` 自原 ball |
+| SHOT Transit Start | 新对象丢弃字段（隐式 Clear） | **保留** `lastTouchPlayerId` 自原 ball |
+| Transit Completion | preserve（不重写） | **不变** |
+
+### 二、Frozen Contract
+- **LastTouch Truth** = 最近一次实际触球者。
+- **唯一正式 Writer**：C-03 Contact（物理触球）；C-05 仅在 DRIBBLE/TACKLE/INTERCEPTION 这类确有实际触球的 outcome 写入。
+- **PRESS SUCCESS**：不写 pressingPlayer 到 lastTouch。
+- **SECOND_BALL WON**：不写 winner 到 lastTouch。
+- **SECOND_BALL NO_WINNER**：不 Clear lastTouch。
+- **PASS/SHOT Transit Start**：不 Clear lastTouch（传球者/射门者仍为最近触球者）。
+- **Transit Completion**：不重写、不 Clear lastTouch。
+- **GOAL / FREE / CONTROLLED / IN_TRANSIT**：均不自动 Clear lastTouch。
+- **Lifecycle** = D — Runtime Ball Fact（不进 Save/History/Replay）。
+- **Consumer** = ball-facts / tactical-context / player-situation（Read-only Projection）。
+- **Determinism**：所有 Writer/Consumer 纯函数，无随机源。
+
+### 三、Implementation Details
+- [interaction-state-update.js](file:///workspace/FE-project/src/core/match/interaction-state-update.js#L66-L72)：新增 `preservesLastTouch` 判断（`actionType === 'SECOND_BALL'` 或 `PRESS && !controlled`），命中则保留 `current.lastTouchPlayerId`。
+- [pass-state-update.js](file:///workspace/FE-project/src/core/match/pass-state-update.js#L25-L46)：`transitBall` 接受 `lastTouchPlayerId` 参数并写入。
+- [shot-state-update.js](file:///workspace/FE-project/src/core/match/shot-state-update.js#L19-L41)：同上。
+
+### 四、Tests
+新增 [tests/last-touch-contract.test.js](file:///workspace/FE-project/tests/last-touch-contract.test.js)，覆盖 LT-01～LT-12（C-03 触球、PASS/SHOT 保留、Transit 完成不重写、PRESS SUCCESS 不写、SECOND_BALL WON/NO_WINNER 保留、FREE/CONTROLLED/GOAL 不清除、新触球覆盖、确定性）。
+更新 [interaction-position-ownership.test.js](file:///workspace/FE-project/tests/interaction-position-ownership.test.js#L152-L177) `legacyC05` 基线以对齐 C-62 契约。
+
+### 五、Regression / Files / Contract
+- `npm test` → **1552 通过，0 失败**（基线 1540 + 新增 12）。
+- Files Changed：`src/core/match/interaction-state-update.js`、`src/core/match/pass-state-update.js`、`src/core/match/shot-state-update.js`、`tests/last-touch-contract.test.js`、`tests/interaction-position-ownership.test.js`、`tests/run.js`、`docs/SIMULATION_SPEC.md`。
+- Contract Changes：LastTouch Truth 冻结为 Candidate A；C-05 PRESS/SECOND_BALL Writer 移除；PASS/SHOT Transit Start Clear 移除。未改 C-03/C-46/C-54~C-61 任何其他冻结结论。
+
+### 六、Out of Scope
+C-03 Physics / Contact / Interaction / Possession / SECOND_BALL / Transit / Goal 重构；新增字段/Event/State；C-54~C-60 已冻结语义。
+
+### 七、Remaining Risks
+1. Goal Attribution 当前不依赖 lastTouch；若未来引入 scorer/assister 推导，须另行审计。
+2. DRIBBLE/TACKLE/INTERCEPTION 的 lastTouch 写入依赖「Interaction outcome 等价于实际触球」的假设，未来若新增 Interaction 类型须逐个审计。
+
+**STOP — 不得进入 C-63，不得重开 C-61/C-60，不得顺便重构 Interaction/SECOND_BALL/Goal/Possession/Velocity。等待 Owner 验收。**

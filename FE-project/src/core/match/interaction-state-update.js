@@ -56,6 +56,20 @@ export function applyInteractionStateUpdate(matchCore, result) {
   }
 
   const controlled = result.ball.state === BS.CONTROLLED;
+  // C-62：LastTouch Truth = 最近一次实际触球者。
+  // 仅当 Interaction 确实代表一次已确认的实际 Ball Touch 时才写入 lastTouchPlayerId。
+  // 以下路径不代表实际触球，必须保留既有 lastTouch：
+  //   - PRESS SUCCESS（FREE）：压迫者未必物理触球；
+  //   - SECOND_BALL（WON / NO_WINNER）：winner 由竞争分决定，非触球事实。
+  // 其余 Interaction（DRIBBLE / TACKLE / INTERCEPTION）的 possession.toPlayerId / actorId
+  // 均对应一次正式确认的实际触球，保留原有写入。
+  const preservesLastTouch =
+    result.actionType === 'SECOND_BALL' ||
+    (result.actionType === 'PRESS' && !controlled);
+  const currentLastTouch = current.lastTouchPlayerId ?? null;
+  const lastTouchPlayerId = preservesLastTouch
+    ? currentLastTouch
+    : (controlled ? (result.possession?.toPlayerId ?? null) : (result.actorId ?? null));
   // C-32：不写 `position`（保留当前球位；Position 由 interaction-ball-position-ownership 边界负责）。
   const nextBall = {
     ...cloneBall(current),
@@ -63,7 +77,7 @@ export function applyInteractionStateUpdate(matchCore, result) {
     state: result.ball.state,
     control: controlled ? (result.possession?.toPlayerId ?? null) : null,
     possessingTeamId: controlled ? (result.possession?.toTeamId ?? null) : null,
-    lastTouchPlayerId: controlled ? (result.possession?.toPlayerId ?? null) : (result.actorId ?? null),
+    lastTouchPlayerId,
   };
   delete nextBall.transit;
   // Terminal Velocity Normalization Boundary（C-55）：CONTROLLED / GOAL → velocity {0,0}；FREE 保留（本层既有语义）。
