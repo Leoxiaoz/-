@@ -3271,3 +3271,146 @@ Contact 改变 `position / velocity / lastTouch / contacting`（C-03/C-46 Frozen
 3. `STOP_THRESHOLD` 为唯一 Physics 停止阈值；若未来跨域复用须重新审计（当前不共享）。
 
 **STOP — 不得进入 C-60，不得修改发现的问题；如发现 Physics Event Semantic Gap 只报告并 BLOCK。等待 Owner 验收。**
+
+## §67 LastTouch Lifecycle / State Boundary Audit（Step 39F-M-C-60）
+
+**Gate Result = PASS / SEALED（只读审计）。** **src/** = 0，**tests/** = 0；唯一改动 = 本 §67。Regression **1540 通过 / 0 失败**。审计确认：`ball.lastTouchPlayerId` 有 **两个正式 Writer**（C-03 Contact / C-05 Interaction State Update）+ 两个隐式 Clear（PASS/SHOT Transit Start），无 Consumer 将其当作 Possession / Control / Ball State / SECOND_BALL / Goal Truth。Lifecycle = **D — Runtime Ball Fact**（跨 Tick 保留，不进 Save / History / Replay）。
+
+### 一、LastTouch Truth 定义
+**当前真实语义（非纯 Physics Contact）：**
+`lastTouchPlayerId` = 「最后一个与球发生权威交互的球员」，由两类权威事件写入：
+1. **C-03 Physics Contact**：球被某球员实际接触时（swept/discrete contact 命中）。
+2. **C-05 Interaction State Update**：Interaction（dribble/tackle/press/interception）或 SECOND_BALL 解析落地时。
+
+**它不是：** 当前控球者（≠ `control`）、当前 Possession Owner（≠ `possessingTeamId`）、Ball State、SECOND_BALL Winner、Transit Actor、Goal Scorer。
+
+### 二、Writer Matrix
+| Writer | Module | Trigger | Ball State | Tick Stage | 写入值 |
+| --- | --- | --- | --- | --- | --- |
+| C-03 Contact | [ball-physics.js](file:///workspace/FE-project/src/core/match/ball-physics.js#L182) `stepBallPhysics` | Contact 命中（非 continuing） | FREE / IN_TRANSIT | CONTINUOUS_TRANSIT（C-39→C-03） | `hit.player.playerId` |
+| C-03 sanitizeBall | [ball-physics.js](file:///workspace/FE-project/src/core/match/ball-physics.js#L62) | 任何 Physics 调用入口 | 全部 | — | preserve 输入值（`?? null`） |
+| C-05 State Update | [interaction-state-update.js](file:///workspace/FE-project/src/core/match/interaction-state-update.js#L66) `applyInteractionStateUpdate` | Interaction / SECOND_BALL Resolution 落地 | CONTROLLED / FREE | INTERACTION_INTEGRATE | CONTROLLED → `result.possession.toPlayerId`；FREE → `result.actorId` |
+| PASS Transit Start（隐式 Clear） | [pass-state-update.js](file:///workspace/FE-project/src/core/match/pass-state-update.js#L22) `transitBall` | PASS Action 启动 | → IN_TRANSIT | ACTION | 新对象**不含**该字段 → 后续 sanitize 归 `null` |
+| SHOT Transit Start（隐式 Clear） | [shot-state-update.js](file:///workspace/FE-project/src/core/match/shot-state-update.js#L16) `transitBall` | SHOT Action 启动 | → IN_TRANSIT | ACTION | 同上 |
+
+**结论：C-03 Contact 不是唯一 Writer。** C-05 Interaction State Update 是第二个正式 Writer；PASS/SHOT Transit Start 是隐式 Clear（通过对象替换丢弃字段）。
+
+### 三、Consumer Matrix
+| Consumer | Module | Input | State Guard | Behavioral Effect | Lifetime |
+| --- | --- | --- | --- | --- | --- |
+| deriveBallFacts | [ball-facts.js](file:///workspace/FE-project/src/core/match/ball-facts.js#L34) | `ball.lastTouchPlayerId` | 无 | 派生只读快照字段 | Expression-local |
+| buildTacticalContext | [tactical-context.js](file:///workspace/FE-project/src/core/match/tactical-context.js#L175) | `ballFacts.lastTouchPlayerId` | 无 | 暴露为 context 只读字段 | Expression-local |
+| buildPlayerSituation | [player-situation.js](file:///workspace/FE-project/src/core/match/player-situation.js#L111) | `ballFacts.lastTouchPlayerId` | 无 | 暴露为 situation.ballState 只读字段 | Expression-local |
+
+**非 Consumer（明确不读 lastTouchPlayerId）：** SECOND_BALL resolution（`isBallFree` 仅看 state/control/possessingTeamId/inTransit）、Goal Resolution / Score（`scoringPlayerId` 来自显式 `candidate.playerId`）、Possession（`possessingTeamId`）、Control（`ball.control`）、Match Result、Match Tick Snapshot（仅 state/control/possessingTeamId/inTransit）、Save Layer。
+
+### 四、Lifecycle Classification
+**D — Runtime Ball Fact。**
+- 字段存于 `MatchCore.ball.lastTouchPlayerId`，跨 Tick 保留（除非被 Writer 覆盖或 Transit Start 隐式清除）。
+- **不进入 Save**（`serializeState` 只序列化 `runtime.{clubs,players,competitions,events,membership,managedClubId}`，不含 match/ball）。
+- **不进入 History / Replay / Event Ledger**（`TICK_EVENT_TYPES` 无 LastTouch 事件；`events[]` 为 transient）。
+- 不属于 Expression-local / Physics-Window-local / Tick-local。
+
+### 五、Contact Boundary Audit（C-46）
+- Contact **可以**更新 `lastTouchPlayerId`（C-03 L182）。✓
+- Contact **不**改变 Ball State（C-03 仅写 position/velocity/contacting/lastTouch）。✓
+- Contact **不**获得 Possession（`possessingTeamId` 不由 C-03 写）。✓
+- Contact **不**触发 CONTROLLED（State 由 C-05 / C-39 finalize 决定）。✓
+- Contact **不**触发 SECOND_BALL。✓
+- Contact **不**结束 Transit（Transit Completion 由 `elapsed >= duration`）。✓
+- Contact **不**触发 Goal。✓
+- Contact **不**生成 Action Event。✓
+**PASS。**
+
+### 六、Tick Lifecycle Audit
+- `lastTouchPlayerId` **跨 Tick 持续**（存于 MatchCore.ball）。
+- Tick Snapshot **不**捕获 lastTouch（[match-tick.js](file:///workspace/FE-project/src/core/match/match-tick.js#L129-L135) 仅 state/control/possessingTeamId/inTransit）。
+- Physics Window（C-03）中可被 Contact 更新。
+- Tick 结束后继续存在（持久于 MatchCore.ball）。
+- **无**自动清除阶段；清除仅发生在 PASS/SHOT Transit Start（隐式）。
+**结论：Runtime Ball Fact，非 Derived Value。**
+
+### 七、State Boundary Audit
+- **IN_TRANSIT**：Contact 可改 lastTouch；lastTouch **不**改变 Transit。✓（Transit Completion 由 elapsed/duration）
+- **FREE**：`FREE + lastTouchPlayerId` **合法**（C-05 FREE 分支写 `result.actorId`）。FREE **不**因存在 lastTouch 被视为属于该球员（`isBallFree` 不读 lastTouch）。✓
+- **CONTROLLED**：`CONTROLLED + lastTouchPlayerId` = `possession.toPlayerId` = `control`（三者巧合相等，但语义独立：lastTouch 由 C-05 写入，control 由 C-05 写入，二者来源相同但不互相推导）。**Last Touch ≠ Control Owner**（概念上独立，实现上当前巧合）。✓
+- **GOAL**：Goal 后 lastTouch 保留自 Transit 期间的值（通常 `null`，因 Transit Start 清除且无 Contact）。Goal State **不**通过 lastTouch 反向改变 Goal Truth / Score / Match Result。✓
+
+### 八、Possession Boundary Audit
+`lastTouchPlayerId` vs `possessingTeamId` vs `control`：三者**不是同一个 Truth**。
+- 无 `lastTouchPlayerId → possessingTeamId` 推导链。
+- 无 `lastTouchPlayerId → CONTROLLED` 推导链。
+- `possessingTeamId` 仅由 C-05（`result.possession.toTeamId`）和 C-39 finalize（`teamOf(players, id)`）写入。
+- `control` 仅由 C-05 和 C-39 finalize 写入。
+**PASS。**
+
+### 九、SECOND_BALL Boundary Audit
+`resolveSecondBall`（[second-ball-resolution.js](file:///workspace/FE-project/src/core/match/second-ball-resolution.js)）**不读** `lastTouchPlayerId`。
+- 资格 = `isBallFree`（state===FREE ∧ control===null ∧ possessingTeamId===null ∧ !inTransit）。
+- Winner = competition score（proximity + closingSpeed + ability + context）。
+- lastTouch **不**参与 eligibility / candidate filtering / winner selection / score / requiresFollowUp。
+**PASS。**（注：SECOND_BALL 落地后经 C-05 会**写** lastTouch = winner，但这是 Writer 而非 Consumer。）
+
+### 十、Interaction Boundary Audit
+`applyInteractionStateUpdate`（C-05）：
+- **不清除** lastTouch for IN_TRANSIT（preserve via cloneBall）。
+- **覆盖** lastTouch for CONTROLLED/FREE（显式写入）。
+- **不**从 lastTouch 推导 Actor / Possession / Control（Actor 来自 actionInstance.actorId；Possession 来自 resolution result）。
+- Interaction **不绕过** C-03 Contact 自行制造「最后触球者」——C-05 写入的是 Interaction Resolution 的语义结果，不是物理接触事实。
+**结论：C-05 是合法的第二 Writer，语义为「Interaction 落地后的最后涉及球员」。不构成第二 Truth。PASS。**
+
+### 十一、Transit Boundary Audit
+- **Transit Start**（PASS/SHOT）：隐式清除 lastTouch（`transitBall` 新对象不含字段）。**不**自动写 actor 为 lastTouch。✓
+- **Transit Physics（非完成 Tick）**：C-03 Contact 可改 lastTouch。✓
+- **Transit Completion**（[finalizeTransitSettlement](file:///workspace/FE-project/src/core/match/continuous-ball-movement-integration.js#L71)）：`base = {...ball, transit:undefined}` **preserve** lastTouch，**不**自动写 Transit Actor。✓
+- **Completion → CONTROLLED/FREE/GOAL**：lastTouch 保留自 Transit 期间值（不被重写为 actor）。
+**Action Actor ≠ Last Touch Player**（Transit Start 清除，Completion 不重写）。✓
+
+### 十二、Goal Boundary Audit
+Goal 链（C-15 → C-20 → C-21 → C-14）**不读** `lastTouchPlayerId`：
+- `scoringPlayerId` = `candidate.playerId`（来自显式 `options.playerId` / `goalCandidate.playerId`，非 lastTouch）。
+- Score update 仅改 `matchCore.score`。
+- lastTouch **不**成为第二套 Goal Truth。
+**PASS。**
+
+### 十三、Save / Replay / History Audit
+- `serializeState`（[save-manager.js](file:///workspace/FE-project/src/save/save-manager.js#L24)）不序列化 `ball` / `lastTouchPlayerId`。
+- 无 replay / event ledger / match history 持久化 lastTouch。
+- 无 persistent statistics 读取 lastTouch。
+**结论：lastTouch 为非持久化 Runtime Fact，生命周期 = 单次 Match Runtime。**
+
+### 十四、Derived Fact / Second Truth Audit
+- `deriveBallFacts` 暴露 `lastTouchPlayerId` 为只读派生快照（每次重算，不缓存）。
+- tactical-context / player-situation 透传该只读值，不写回 MatchCore。
+- **未发现** `effectiveLastTouch` / `currentTouchPlayer` / `currentTouchOwner` / `lastTouchState` / `physicsLastTouch` / `derivedLastTouch` 等隐性第二 Truth。
+**PASS。**
+
+### 十五、Reset / Clear Audit
+显式赋值仅两处（C-03 L182、C-05 L66）。隐式清除：
+- PASS Transit Start（pass-state-update `transitBall` 不含字段）。
+- SHOT Transit Start（shot-state-update `transitBall` 不含字段）。
+- C-03 `sanitizeBall` `?? null`（仅在字段缺失时归 null，非主动清除）。
+**无** `= null` / `= undefined` / `delete` 的主动清除语句。
+清除条件 = 「球进入 IN_TRANSIT（PASS/SHOT 启动）」，合理且与「球脱离当前接触者进入飞行」语义一致。无跨 Tick 随机清除。**PASS。**
+
+### 十六、Determinism Audit
+- Writer：C-03 Contact 排序（playerId 字典序，[ball-physics.js](file:///workspace/FE-project/src/core/match/ball-physics.js#L124-L127)）+ hit tie-break 确定性；C-05 纯函数。
+- Consumer：纯函数只读派生。
+- 无 `Math.random` / `Date.now` / `performance.now` / 墙钟 / 非确定性遍历。
+- 同一输入重复运行 → identical lastTouch 结果。
+**PASS。**
+
+### 十七、Regression / Files / Contract Changes
+- `npm test` → **1540 通过 / 0 失败**。
+- Files Changed：仅 `docs/SIMULATION_SPEC.md`（本 §67）。**src/** = 0，**tests/** = 0。
+- Contract Changes：**无**（未改 C-03/C-05/C-08/C-14/C-15/C-19~C-23/C-39/C-46/C-50/C-54~C-59）。
+
+### 十八、Out of Scope
+任何 lastTouch 写入/清除逻辑修改、新增 LastTouch Contract / State / Event / Threshold、Possession / SECOND_BALL / Goal / Transit 修改，及 C-54~C-59 已列 Out of Scope 项。
+
+### 十九、Remaining Risks（仅记录，不修改）
+1. **双 Writer 语义混用**：`lastTouchPlayerId` 当前由 C-03（物理接触）和 C-05（Interaction 落地）共同写入。语义为「最后权威交互者」而非纯「物理触球者」。若未来需要区分「物理最后触球」与「交互最后涉及者」，须显式拆分字段或冻结单一语义——当前 Consumer 未因此出错，但语义边界未被单独 Contract 冻结。
+2. **Transit Start 隐式 Clear**：PASS/SHOT `transitBall` 通过对象替换丢弃 `lastTouchPlayerId`，非显式 `= null`。当前行为正确（球进入飞行脱离接触者），但若未来 Transit Start 需保留 lastTouch（如用于 Goal Attribution），须显式定义而非依赖隐式丢弃。
+3. **CONTROLLED 下 lastTouch == control 的巧合**：C-05 CONTROLLED 分支令 `lastTouchPlayerId === possession.toPlayerId === control`。三者概念独立但实现上当前恒等，未来若控制者与最后触球者需可分离（如门将手抛球后控制但未触球），须审视此巧合。
+
+**STOP — 不得进入 C-61，不得修改发现的问题；如发现 LastTouch Semantic Gap 只报告并 BLOCK。等待 Owner 验收。**
