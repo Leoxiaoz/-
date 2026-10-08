@@ -155,6 +155,9 @@ function archiveRetired(state, player, season) {
       personality: { ...(player.personality ?? {}) },
     },
     career: rt ? { ...rt.stats.career } : { appearances: 0, minutes: 0, goals: 0, assists: 0 },
+    // C-72 Option B：归档"最后完成赛季"统计快照（退役早于 resetSeasonStats，故 season 即最后赛季）。
+    // 为只读 SNAPSHOT，非 Active Stats Truth；不保存派生的 averageRating（由 ratingSum + appearances 派生）。
+    finalSeasonStats: rt ? { ...rt.stats.season } : null,
     finalDeltas: rt ? { ...rt.ability.deltas } : {},
     // 最终合同快照（无合同时为 null；退役者不得再持有 active contract）。
     contract: contract ? { ...contract } : null,

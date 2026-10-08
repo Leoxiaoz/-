@@ -118,6 +118,37 @@ test('超硬上限强制退役，退役者移出 active 并写入归档（保留
   }
 });
 
+test('退役归档保留最后赛季 Season 快照（C-72 Option B）：结构完整、独立、无 averageRating', () => {
+  const state = agedState(8, ['FW']);
+  const forcedIds = activePlayers(state)
+    .filter((p) => state.static.players.find((s) => s.id === p.id)?.birthDate === '1986-06-15')
+    .map((p) => p.id);
+  assert(forcedIds.length > 0, '应有超龄球员');
+
+  new SimulationCore().advanceDays(state, 92);
+
+  const seasonFields = ['appearances', 'minutes', 'goals', 'assists', 'yellow', 'red', 'shots', 'shotsOnTarget', 'ratingSum'];
+  for (const id of forcedIds) {
+    const arc = state.runtime.retired[id];
+    assert(arc.finalSeasonStats && typeof arc.finalSeasonStats === 'object', `${id} 归档应含 finalSeasonStats 快照`);
+    for (const f of seasonFields) {
+      assert(typeof arc.finalSeasonStats[f] === 'number', `finalSeasonStats.${f} 应为数值`);
+    }
+    assert(!('averageRating' in arc.finalSeasonStats), 'finalSeasonStats 不得保存派生 averageRating');
+    assert(arc.finalSeasonStats !== arc.career, 'Season 快照与 Career 快照应为独立对象');
+    // 最后赛季是 career 的子集（career 已含最后赛季），故各累计字段 <= career。
+    assert(arc.finalSeasonStats.appearances <= arc.career.appearances, 'season.appearances <= career.appearances');
+    assert(arc.finalSeasonStats.goals <= arc.career.goals, 'season.goals <= career.goals');
+    assert(arc.finalSeasonStats.minutes <= arc.career.minutes, 'season.minutes <= career.minutes');
+  }
+
+  // 存档往返保持 finalSeasonStats（含旧档兼容：容器级兜底）。
+  const loaded = deserializeState(serializeState(state));
+  for (const id of forcedIds) {
+    assertEquals(loaded.runtime.retired[id].finalSeasonStats, state.runtime.retired[id].finalSeasonStats);
+  }
+});
+
 test('退役判定确定性：同输入两次得到同一批退役者', () => {
   const a = agedState(8, ['FW', 'DF']);
   const b = agedState(8, ['FW', 'DF']);

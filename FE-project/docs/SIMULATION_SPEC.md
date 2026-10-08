@@ -4654,4 +4654,62 @@ Season Archive 对以下有潜在价值：球员历史页 / 退役档案 / 历�
 ### 二十、Tests
 `npm test` → **1552 通过，0 失败（共 1552 个用例）**。
 
-**STOP — 不得进入 C-73，不得实现 Season Archive，不得修改 Archive Schema / Retirement / Player Stats，不得新增 Reader，不得修改 Save Schema，不得 Freeze Season Archive。等待 Owner 决策（「继续」或明确 Option A / B / C）。**
+### 二十一、OWNER DECISION RECORD（Step 39F-M-C-72）
+**Owner Decision = Option B — 归档退役球员最后赛季 Season Stats。**
+- 含义：Retirement → Career Snapshot + **Final Season Snapshot**。
+- 建议字段：`retired[id].finalSeasonStats`（建议值，待实现 Gate 确认）。
+- 约束（继承 C-70）：
+  1. `finalSeasonStats` 为 **SNAPSHOT**，非 Active Stats Truth；
+  2. **不得**保存 `averageRating`（派生，仅存 `ratingSum + appearances`）；
+  3. **不得** `finalSeasonStats → career` 反向重算；
+  4. `assists` 仍为 Aggregate Performance Statistic，不解释为真实助攻；
+  5. 归档内容为"最后完成赛季"统计（退役早于 `resetSeasonStats`）。
+- 状态：**OWNER DECISION 已记录**；**已实现（见 §80）**。
+- 本 Gate **未**实现任何代码（src/ = 0，tests/ = 0）。
+
+**STOP — 不得进入 C-73，不得实现 Season Archive，不得修改 Archive Schema / Retirement / Player Stats，不得新增 Reader，不得修改 Save Schema，不得 Freeze Season Archive。等待 Owner 明确实现指令（新 Gate 规格）。**
+
+## §80 Retirement Final Season Snapshot Implementation（Step 39F-M-C-73）
+
+**Gate Result = PASS / SEALED（Implementation：Owner Option B）。** 实施 C-72 的 Owner Decision（Option B）。
+
+### 一、Change
+`archiveRetired`（[player-lifecycle.js#L157-L160](file:///workspace/FE-project/src/core/player-lifecycle.js#L157-L160)）新增归档字段：
+```js
+finalSeasonStats: rt ? { ...rt.stats.season } : null,
+```
+- 内容 = 退役瞬间的 `rt.stats.season`（**最后完成赛季**；退役早于 `resetSeasonStats`，C-72 §五）；
+- **浅拷贝快照**（`{...}`），与 active season 无引用共享；
+- **SNAPSHOT，非 Active Stats Truth**；
+- **不含** `averageRating`（派生；按 C-70 由 `ratingSum + appearances` 派生）；
+- `assists` 仍为 Aggregate Performance Statistic（不解释为真实助攻）。
+
+### 二、Contract（= C-72 Option B）
+- 归档 = Career Snapshot（C-71）**+** Final Season Snapshot（本次新增）；
+- `finalSeasonStats` 与 `career` 为**独立对象**；禁止 `finalSeasonStats → career` 反向重算；
+- 退役后 archive 仍只读、不可再 `recordAppearance`；
+- Save/Load：随 `runtime.retired` 自动持久化，`retired ??= {}` 兜底 → **旧存档天然兼容**（缺字段 = undefined，不报错，无 migration）。
+
+### 三、Reader
+维持 **Write-only Snapshot**（无新增 Reader；与 `career` 现状一致，符合 C-72 §十）。
+
+### 四、Tests
+新增 [lifecycle.test.js#L121-L150](file:///workspace/FE-project/tests/lifecycle.test.js#L121-L150)：验证 finalSeasonStats 结构完整（9 字段）、无 `averageRating`、与 career 独立、`season ≤ career` 守恒、存档往返保持。既有归档一致性测试（`JSON.stringify(loaded.runtime.retired)`）继续通过。
+
+### 五、Regression
+`npm test` → **1553 通过，0 失败（共 1553 个用例）**（基线 1552 + 新增 1）。
+
+### 六、Files Changed
+- [src/core/player-lifecycle.js](file:///workspace/FE-project/src/core/player-lifecycle.js#L158-L160)
+- [tests/lifecycle.test.js](file:///workspace/FE-project/tests/lifecycle.test.js#L121-L150)
+- [docs/SIMULATION_SPEC.md](file:///workspace/FE-project/docs/SIMULATION_SPEC.md#L4670)（§80）
+
+### 七、Contract Changes
+新增 **Retirement Final Season Snapshot**（`retired[id].finalSeasonStats`）——Owner Option B 落地。未修改 C-70 Stats Contract 及任何既有 Frozen Contract。
+
+### 八、Remaining Risks
+1. `finalSeasonStats` 为 Write-only（无 Reader）；未来读取须先定义 Archive Read Contract。
+2. `averageRating` 若需展示必须派生，不得存储。
+3. `retired` 无 GC，长期增长（既有性质）。
+
+**STOP — 不得进入 C-74，不得新增 Archive Reader / UI，不得修改 Stats Contract / Retirement 概率 / Save Schema。等待 Owner 明确指令「继续」。**
