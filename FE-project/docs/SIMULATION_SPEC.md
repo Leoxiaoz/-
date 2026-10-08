@@ -3679,3 +3679,67 @@ C-62 实施后，`lastTouchPlayerId` 已确认为语义单一、生命周期稳�
 2. Goal Attribution 未来若引入 assister 推导可能希望读取 lastTouch；届时须独立定义 Contract，不得隐式依赖。
 
 **STOP — 不得进入 C-64，不得修复发现的问题，不得扩展 LastTouch / Goal Attribution / Scorer / Assister，不得重构 Interaction / Possession / SECOND_BALL。等待 Owner 验收。**
+
+## §71 Goal Attribution / Scorer Truth Boundary Audit（Step 39F-M-C-64）
+
+**Gate Result = PASS / SEALED（Read-Only Audit）。** Architecture Conclusion = **PASS / SEALED + ARCHITECTURE NOTE**。
+
+### 一、"scoringPlayerId" Writer / Reader
+| 角色 | 位置 | 说明 |
+| --- | --- | --- |
+| Writer（唯一） | [goal-resolution.js#L119](file:///workspace/FE-project/src/core/match/goal-resolution.js#L119) | `scoringPlayerId: candidate.playerId ?? null` |
+| noGoal 占位 | [goal-resolution.js#L98](file:///workspace/FE-project/src/core/match/goal-resolution.js#L98) | 失败路径返回 null |
+| 校验 | [goal-resolution.js#L175](file:///workspace/FE-project/src/core/match/goal-resolution.js#L175) | 类型校验 |
+| Reader（生产） | 无 | 仅测试 [goal-resolution.test.js#L87](file:///workspace/FE-project/tests/goal-resolution.test.js#L87) |
+| Persistence | 无 | 不写 MatchCore / Save / Stats |
+
+**唯一正式 Writer = `resolveGoal`，输入 = 显式 `candidate.playerId`。**
+
+### 二、Goal Resolution Data Flow
+`detectGoalLineCrossing`(C-15) → `createGoalCandidateFromCrossing`(C-15) → `resolveGoal`(C-14) → `applyGoalScoreUpdate`(C-14 唯一 Score Write)。
+
+`candidate.playerId` 仅来自 `options.playerId`（调用方显式传入，[goal-geometry.js#L133](file:///workspace/FE-project/src/core/match/goal-geometry.js#L133) / [goal-crossing-resolution.js#L67](file:///workspace/FE-project/src/core/match/goal-crossing-resolution.js#L67)），**不推断**（C-21 明示「缺则保持 null，不推断」）。
+
+三个层面 Truth 明确区分：Goal Geometry Truth（C-15）、Score Truth（C-14）、Scorer Attribution Truth（`candidate.playerId`，非独立模块）。
+
+### 三、边界审计结论
+| 边界 | 结论 |
+| --- | --- |
+| Goal Geometry (C-15/C-20) | 只提供 crossing/geometry，不携带也不推断 Scorer。**PASS** |
+| LastTouch | Goal Resolution 不读/写/Clear lastTouch；`scoringPlayerId` 非 lastTouch。**PASS** |
+| Possession | 不参与 scorer。**PASS** |
+| Interaction Actor | 不参与 scorer。**PASS** |
+| Transit / Shot Actor | 不自动成为 scorer（无 `actorId → scoringPlayerId` 链）。**PASS** |
+| Own Goal / Deflection / Rebound | 均**不存在**。**PASS（未实现）** |
+| Assister（Simulation Core） | **完全不存在**（无 assister/assistPlayerId/passer/creator 字段或推导）。**PASS（未实现）** |
+| Goal Event / Ledger | 无 goal ledger/history；`goalId` 为调用方透传（可 null），无 dedup ledger（C-21 明示依赖 nextScore 幂等）。**PASS** |
+| Score Authority | 仍为 C-14 `applyGoalScoreUpdate`。**PASS** |
+| Persistence | `scoringPlayerId` 为 transient envelope 字段，不入 Save/History/Replay。**PASS** |
+| Career Stats | Goal Resolution 不读 appearances/careerStats/seasonStats，不写统计。**PASS** |
+| Second Truth | 无 goalScorer/shotPlayerId/shooterId/finisherId/goalPlayerId 等竞争字段。**PASS** |
+| Determinism | 无随机源；scorer 由调用方输入决定。**PASS** |
+
+### 四、ARCHITECTURE NOTE — 独立 Season 模拟模块
+`src/core/match.js`（season 赛果聚合模拟，非 Simulation Core）拥有**独立的** scorer/assist 派生：
+- `selectScorer`（[match.js#L56-L73](file:///workspace/FE-project/src/core/match.js#L56-L73)）按位置/能力权重 + RNG 选进球者 → 事件 `actorId`。
+- 事件 `assistId` 恒为 null（[match.js#L99](file:///workspace/FE-project/src/core/match.js#L99)，注释「无可靠助攻来源」），但 `applyMatchPerformance` 用**独立 RNG** 派生 assists 统计（[match.js#L217-L227](file:///workspace/FE-project/src/core/match.js#L217-L227)）。
+- involvements → 生态反馈 → 球员 stats/career（[simulation.js#L142-L149](file:///workspace/FE-project/src/core/simulation.js#L142-L149)）。
+
+该模块**不属于** C-14/C-15/C-20/C-21 契约范围，与 `lastTouchPlayerId` **无任何耦合**（不含 ball physics/lastTouch），因此**不构成 `scoringPlayerId` 的第二 Truth**，也不构成 LastTouch→Scorer 隐式链。但其 scorer/assist 语义未以 Contract 形式文档化，与事件字段 `assistId`（恒 null）和统计级 assists（RNG 派生）之间存在表述不一致。
+
+**建议**：若 Owner 需要统一 scorer/assist attribution 语义，未来另立独立 Gate；本 Gate 不新增、不修改。
+
+### 五、Files Changed
+仅本文件（§71 追加）。**src/ = 0，tests/ = 0。**
+
+### 六、Regression
+`npm test` → **1552 通过，0 失败**，与基线一致（C-64 只读，测试数不变）。
+
+### 七、Contract Changes
+**无。**
+
+### 八、Remaining Risks
+1. `src/core/match.js` 的 scorer/assist 派生尚无 Contract 记录，且 `assistId`（恒 null）与统计级 assists（RNG）表述不一致——属独立模块，不影响 Simulation Core truth，但建议未来独立 Gate。
+2. Simulation Core 的 `scoringPlayerId` 完全依赖调用方传入 `options.playerId`；若调用方缺失则 scorer 恒为 null（无 fallback），此为 C-21 冻结行为。
+
+**STOP — 不得进入 C-65，不得实现 Scorer / Assister / Own Goal / Deflection / Rebound，不得修改 LastTouch / Goal Resolution / C-14 / C-15 / C-20 / C-21，不得重开 C-63。等待 Owner 验收。**
