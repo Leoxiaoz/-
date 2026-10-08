@@ -4521,3 +4521,137 @@ Archive 可保存数据但**不成为 Active Runtime Truth**。无 Second Truth�
 `npm test` → **1552 通过，0 失败（共 1552 个用例）**。
 
 **STOP — 不得进入 C-72，不得 Freeze Retirement / Archive，不得 Archive Season Stats，不得新增 Archive Reader，不得修改 Archive Schema / Retirement RNG / Player Lifecycle / Career Stats / Season Stats / NewGen。等待 Owner 明确指令「继续」。**
+
+## §79 Retirement Season Statistics Archive Decision Audit（Step 39F-M-C-72）
+
+**Gate Result = PASS / SEALED（Owner Decision / Architecture Investigation）。** Architecture Conclusion = **PASS / SEALED + OWNER_DECISION_REQUIRED**。本 Gate 不改任何代码。
+
+### 一、Current Season Stats Lifecycle
+- Active：`runtime.players[id].stats.season`（赛季累计，`recordAppearance` +1）。
+- Career：`runtime.players[id].stats.career`（跨赛季累计）。
+- Retirement：`archiveRetired` 只复制 `career` → `retired[id].career`，随后 `delete runtime.players[id]`。
+**Season Stats → 当前不进入 Archive → runtime Player 删除后消失。**
+确认**不存在** hidden/fixture/history/database/archive/historical 任何 Season Stats Copy（全局无第二副本）。
+
+### 二、Data Loss Audit（逐字段）
+退役时随 `rt` 删除而丢失的**该球员最后赛季** Season Stats 字段：
+| 字段 | 退役丢失 |
+| --- | --- |
+| appearances | 是（仅 season 线） |
+| minutes | 是 |
+| goals | 是 |
+| assists | 是 |
+| yellow | 是 |
+| red | 是 |
+| shots | 是 |
+| shotsOnTarget | 是 |
+| ratingSum | 是 |
+`averageRating`：不持久化（派生），**不需要也不得归档为独立字段**；若将来存在 Season Snapshot，只能由 `ratingSum + appearances` 重新派生。
+
+### 三、Semantic Analysis（§六选项代码事实）
+- A（赛季实时统计，退役后无需存在）：与 C-70「season=当前赛季累计」一致——season 定位为**当下赛季**，非历史载体。**当前实现符合 A。**
+- B（职业历史一部分，应入 Career Archive）：当前实现**不符合**（season 不并入 career）。
+- C（退休最后赛季 Snapshot 作为 Career Archive 附加）：**当前未实现**，需新 Schema。
+- D（无法判断）：不成立——代码事实清晰。
+**代码事实支持 A 为"当前语义"；B/C 属未来扩展。**
+
+### 四、Career / Season Boundary
+career = 跨赛季累计；season = 当前赛季累计。退休时 `career` = 最终生涯累计（**已含最后赛季**，因 career 在赛季中同步累加），`season` = 最后（已完成）赛季统计。
+**若保存 Season Snapshot：不改变 Career Truth；禁止 `archive.season → career` 反向重算。**
+
+### 五、Retirement Timing
+调用序（[simulation.js#L235-L252](file:///workspace/FE-project/src/core/simulation.js#L235-L252)）：`developPlayers → runPlayerLifecycle(=processRetirements→archiveRetired) → … → resetSeasonStats`。
+- 退役发生在**赛季边界**（rollover 内），**早于** `resetSeasonStats`；
+- 退役时 `rt.stats.season` = **刚结束赛季的完整统计**（非新赛季 0 数据）；
+- 不存在"退役时 season 已被 reset"的边界（reset 在其后）；
+- `state.currentDate` 已推进到新赛季日期，但 `processRetirements(state, fromSeason)` 使用 `fromSeason` 标签。
+**结论：若归档 Season Snapshot，其内容为"最后完成赛季"统计，语义干净。**
+
+### 六、Archive Schema Impact
+| 方案 | 语义清晰度 | 与 C-70 一致性 | Save/Load | Reader | Second Truth 风险 | 复杂度 | 体积 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 方案1 `retired[id].season` | 中（易与 career 混淆） | 需明确为 snapshot | 随 runtime 自动持久化 | 需新 Contract | 中（须标注非 Active Truth） | 低 | 小 |
+| 方案2 `retired[id].finalSeasonStats` | 高（名称自描述） | 高 | 同上 | 需新 Contract | 低 | 低 | 小 |
+| 方案3 复用现有结构 | 低（无合适容器） | 低 | — | — | 高 | — | — |
+**仅分析，不选择、不实现。**
+
+### 七、Average Rating Handling
+C-70 冻结 `averageRating = derived`。故 Archive **不得**保存 `season.averageRating`；若未来有 Season Snapshot，仅存 `ratingSum + appearances`，平均分由派生计算。**本 Gate 不实现 Reader。**
+
+### 八、Assist Handling
+若未来保存 Season Snapshot，`assists` 仍为 **Aggregate Match Performance Statistic**；**不得**因归档被重新解释为真实逐球助攻；**不得**提前冻结 Assist Attribution（C-70 保持 UNFROZEN）。
+
+### 九、Second Truth Audit（若未来存在 `archive.season`）
+| 对象 | 分类 |
+| --- | --- |
+| Active Season Stats | **Active Stats Truth**（`runtime.players[].stats.season`） |
+| Career Stats | **Active Stats Truth**（career 线） |
+| Archive Season Snapshot | **SNAPSHOT**（只读历史） |
+| Archive Career Snapshot | **SNAPSHOT**（只读历史，C-71） |
+| Involvements | **Transient** |
+| Historical Stats | **不存在** |
+**约束：`archive.season` 必须是 SNAPSHOT，非 Active Truth；禁止 Archive ↔ Active Stats 双向同步。**
+
+### 十、Reader Requirement
+C-71 已确认无 `retired[id].career` Content Reader。若增加 Season Snapshot：**可先作为 Write-only Snapshot 存在**，Reader 非立即必需（与 career 现状一致）；或后续独立 Gate 定义 Reader Contract。**本 Gate 不创建 Reader。**
+
+### 十一、Persistence Impact（若增加 Season Snapshot）
+- 属 `runtime.retired[id]` 子字段 → 随 `serializeState` 自动持久化；
+- `deserializeState` 现行 `retired ??= {}`（容器级兜底）→ **旧存档天然兼容**（旧归档无该字段 = undefined，不报错，不需 migration）；
+- 是否需要 normalize：**不必须**（与现有 archive 一致，读档不 normalize）；
+- 是否需 schema version：**不必**（向后兼容的增量字段）；
+- Save 体积：每退役球员 +1 条 statLine（~9 数字），**增量极小**；
+- **不会导致旧存档 load 失败**。
+
+### 十二、Long-Term Value
+Season Archive 对以下有潜在价值：球员历史页 / 退役档案 / 历史赛季统计 / 名人记录 / 生涯回顾 / 世界演化追溯。
+**仅判断"是否值得保留数据"：最后赛季表现是生涯回顾的自然组成部分，具保留价值。**（本 Gate 不设计 UI / 历史数据库。）
+
+### 十三、Storage / Performance（定性）
+- Save Size：每退役球员 +~9 数值字段 → 增量可忽略；
+- Load：随 `runtime` 整体反序列化 → 影响可忽略；
+- Runtime Memory：归档本就常驻 `runtime.retired`（C-71 已记录），增量微小；
+- 长期世界模拟：随时间累积退役条目 → 线性增长，但当前 `retired` 已无 GC，新增 1 字段不改变该性质。
+
+### 十四、Owner Decision Matrix
+**Option A — 不归档 Season Stats**
+- 含义：Retirement → Career Snapshot only → Season Stats discarded。
+- 优：Schema 最简单 / Archive 最小 / **当前实现无需改动**。
+- 缺：退役球员无法查看最后赛季完整表现。
+
+**Option B — 归档最后赛季 Season Stats**
+- 含义：Retirement → Career Snapshot → Final Season Snapshot。
+- 优：保留完整最后赛季表现 / 适合历史球员档案。
+- 缺：需新增 Archive Schema 字段 / 未来需 Reader Contract / Save Size 略增。
+
+**Option C — 建立完整 Historical Season Stats**
+- 含义：Retirement → Historical Seasons → Career。
+- 说明：**远超当前 Gate 范围**；若选择须明确 `NEW INDEPENDENT SYSTEM / FUTURE GATE`，本 Gate 不实现。
+
+### 十五、Recommended Option（Architecture Recommendation，非 Owner Freeze）
+**RECOMMENDED：Option B（归档最后赛季 Season Stats，字段建议 `retired[id].finalSeasonStats`）**。
+理由：语义自描述、与 C-70 一致、向后兼容、Save 体积增量极小、对生涯回顾有明显长期价值；且可先 Write-only。**但此为建议，Owner Decision 未做前不得 Freeze、不得改 Schema、不得实现。**
+
+### 十六、Contract Status
+- Retirement Season Archive = **OWNER_DECISION_REQUIRED / UNFROZEN**。
+- （C-71 的 Retirement Semantics / Career Archive 仍为 RECOMMENDED FREEZE CANDIDATE，本 Gate 不改。）
+**本 Gate 不自动 Freeze。**
+
+### 十七、Implementation Gaps（仅记录）
+1. Season Stats 退役不归档（缺 Schema 与 Reader）。
+2. Archive 无 Content Reader（career 亦无）。
+3. Archive 读档不 normalize。
+**均仅记录，不实现。**
+
+### 十八、Remaining Risks
+1. 当前退役即永久丢失最后赛季数据（Option A 后果）。
+2. `retired` 无 GC，长期增长（与本 Gate 无直接关系）。
+3. 若选 B/C 需先定义 Reader / 派生规则（averageRating 必须派生不得存储）。
+
+### 十九、Files Changed
+仅本文件（§79 追加）。**src/ = 0，tests/ = 0。**
+
+### 二十、Tests
+`npm test` → **1552 通过，0 失败（共 1552 个用例）**。
+
+**STOP — 不得进入 C-73，不得实现 Season Archive，不得修改 Archive Schema / Retirement / Player Stats，不得新增 Reader，不得修改 Save Schema，不得 Freeze Season Archive。等待 Owner 决策（「继续」或明确 Option A / B / C）。**
