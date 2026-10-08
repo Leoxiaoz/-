@@ -4154,3 +4154,113 @@ retirement 路径无 `Math.random / Date.now / performance.now`；使用 `hashSe
 3. Career/Season/Retirement/Archive 均 UNFROZEN，文档已如实标记。
 
 **STOP — 不得进入 C-69，不得实现 Retirement / Archive，不得冻结 Stats / Retirement / Archive Contract，不得修改 recordAppearance / resetSeasonStats / Save / Player Runtime Schema / Simulation Core / Goal Attribution / LastTouch。等待 Owner 明确指令「继续」。**
+
+## §76 Player Statistics Semantic Contract Audit（Step 39F-M-C-69）
+
+**Gate Result = PASS / SEALED（Read-Only Semantic Audit）。** Architecture Conclusion = **PASS / SEALED**（无第二 Truth、无统计口径冲突）。
+
+### 一、Statistics Truth Map
+| 字段 | Writer | Reader | 生命周期 | 语义 |
+| --- | --- | --- | --- | --- |
+| `appearances` | `recordAppearance` | `getPlayerStatsView` / `deriveAverageRating` / ai-potential-estimate | season+career | 上场次数（>0 分钟） |
+| `minutes` | 同上 | 统计视图/拆分 | season+career | 上场分钟 |
+| `goals` | 同上（源自 `goalEvents`） | 统计视图/评分/能力信号 | season+career | 进球数 |
+| `assists` | 同上（RNG 表现） | 统计视图/评分 | season+career | 表现统计量（非 per-goal 归属） |
+| `yellow`/`red` | 同上（RNG 表现） | 统计视图 | season+career | 牌数 |
+| `shots`/`shotsOnTarget` | 同上（RNG 表现） | 统计视图/评分 | season+career | 射门/射正 |
+| `ratingSum` | 同上（Σ round(rating×10)） | `deriveAverageRating`/ai-potential-estimate | season+career | 评分累计（存储） |
+| `averageRating` | `deriveAverageRating`（**派生不存储**） | UI 快照/能力信号 | 派生 | 平均评分 |
+
+唯一 Stats 对象 = `state.runtime.players[].stats.{season,career}`（statLine 8 字段 + ratingSum）。
+
+### 二、Appearance Audit
+Writer：`recordAppearance`（appearances += 1）；Reader：`getPlayerStatsView`、`deriveAverageRating`、`ai-potential-estimate`。增长时机：`#applyPostMatch` 对每个 involvement 一次，`#playFixture` 有 `fixture.played` 守卫 → **每场每人最多 +1**。involvements 只为 `minutes>0` 的球员构建（[simulation.js#L173-L174](file:///workspace/FE-project/src/core/simulation.js#L173-L174)）→ **appearance = 获得 >0 分钟上场**（非"列入名单"）。Season/Career 独立。退役后不可再写。**CURRENT SEMANTICS IDENTIFIED。**
+
+### 三、Minutes Audit
+Writer 同上；读取：领队/拆分。来源：`plan.minutesByPlayer`（默认 `MINUTES_PER_MATCH`=90）；**整数**；范围 [0, MAX_MINUTES_PER_MATCH]，超出抛错（[player-runtime.js#L509-L513](file:///workspace/FE-project/src/core/player-runtime.js#L509-L513)）。未出场无 minutes（involvements 已过滤）。Season/Career 各自累计。无第二 Minutes Truth。**CURRENT SEMANTICS IDENTIFIED。**
+
+### 四、Goals Audit
+**唯一来源 = `goalEvents`**：`applyMatchPerformance.goals = goalEvents.filter(actorId===p.id)`（[match.js#L206](file:///workspace/FE-project/src/core/match.js#L206)）→ `involvements.goals` → `recordAppearance`。`buildInvolvements` 的 `rec.goals += 1`（事件遍历）随后被 `mergePerformance` **等值覆盖**（非叠加）。`selectScorer` 仅决定 `actorId`（Season 层）。Simulation Core `scoringPlayerId` 属**不同系统**（C-64）。**无重复累计。CURRENT SEMANTICS IDENTIFIED。**
+
+### 五、Assists Audit
+1. `assists` = **每场（逐球员）RNG 表现统计量**，非真实 per-goal 助攻归属。
+2. 是"每场比赛表现统计"。
+3. **不等价于真实助攻**（无具体进球绑定）。
+4. **不与具体进球绑定**（`assistId` 恒 null 且无 Reader）。
+5. **无第二 Assists Truth**（`events[].assistId` 未参与任何 Stats Writer）。
+6. **不可能无进球产生 assist**（循环 `goalEvents`）；每球至多 1（`Σassists ≤ Σgoals`）。
+7. `assistId` 对现有 Stats Writer **无任何影响**。
+8. **当前保持 `<assistId>` 与 `<assists>` 分离**（C-66 结论不变）。
+
+`assists` 语义已识别且无冲突；「是否将 `assists` 升级为真实助攻归属」属 **OWNER_DECISION_CANDIDATE**（本 Gate 不统一、不冻结）。
+
+### 六、Cards Audit
+`yellow`/`red`：Writer = `recordAppearance`（源自 `applyMatchPerformance` 逐球员独立 RNG 流，`yellow∈{0,1}`、`red∈{0,1}`）；Reader = 统计视图。Season/Career 独立。无 Match Card Event Truth（`type='yellow'/'red'` 分支无事件产生）；无重复写入。**CURRENT SEMANTICS IDENTIFIED。**
+
+### 七、Shooting Audit
+`shots`/`shotsOnTarget`：来源 = `applyMatchPerformance` RNG；Writer 唯一；Reader = 统计视图/评分。守恒 **`shots ≥ shotsOnTarget ≥ goals`**（[match.js#L207-L208](file:///workspace/FE-project/src/core/match.js#L207-L208)）。**与 MatchCore Shot / Goal Resolution 无直接 Truth 关系**（不同模块，边界保持）。无重复统计。**CURRENT SEMANTICS IDENTIFIED。**
+
+### 八、Rating Audit
+链路唯一：`single-match rating`（[match.js#L231-L241](file:///workspace/FE-project/src/core/match.js#L231-L241)，确定性、无 RNG、不依赖 vitals）→ `ratingSum += round(rating×10)` → `averageRating = deriveAverageRating`（**derived value，不持久化**，[player-runtime.js#L61-L66](file:///workspace/FE-project/src/core/player-runtime.js#L61-L66)）。season/career **都有** ratingSum。无第二 Rating Truth。
+**边界记录**：`averageRating`（派生）被 [ai-potential-estimate.js#L100](file:///workspace/FE-project/src/core/ai/ai-potential-estimate.js#L100) 作为**只读信号**参与能力潜力估计（Rating → 能力信号，读取路径，非写回 rating）；**不反向影响 MatchCore**。**CURRENT SEMANTICS IDENTIFIED。**
+
+### 九、Season / Career Boundary
+season/career 由 `recordAppearance` **各自独立 `+=`**（INDEPENDENT ACCUMULATION）；`resetSeasonStats` 只清 season；新赛季保 career；Save/Load 保留两者；退役时 career 复制进 archive（C-68）。**从不从 season 重算 career。PASS。**
+
+### 十、Writer / Reader Matrix
+| 对象 | Writer | Reader | 唯一 | Second Truth |
+| --- | --- | --- | --- | --- |
+| season/career statLine | `recordAppearance` | `getPlayerStatsView` / AI 信号 / 快照 | 是 | 否 |
+| season reset | `resetSeasonStats` | — | 是 | 否 |
+| ratingSum | `recordAppearance` | `deriveAverageRating` | 是 | 否 |
+| averageRating | `deriveAverageRating`（派生） | UI / AI | 是 | 否 |
+| involvements | `buildInvolvements`/`applyMatchPerformance` | `#applyPostMatch` | 是 | 否（transient） |
+
+### 十一、Second Truth Audit
+| 对象 | 边界 |
+| --- | --- |
+| `goalEvents` | B. transient input |
+| `match events` | B. transient aggregate |
+| `score`(homeGoals/awayGoals) | D. unrelated aggregate（赛季积分） |
+| `scoringPlayerId` | D. unrelated（Core 系统） |
+| `involvements` | B. transient input |
+| `careerStats` | A. Stats Truth（career 线） |
+| `seasonStats` | A. Stats Truth（season 线） |
+| `ratingSum` | A. Stats Truth（存储累加） |
+| `averageRating` | C. derived value |
+| `player database stats` | 不存在 |
+| `retired archive` | 只读历史快照（非活动 Truth，C-68） |
+
+无竞争对象。**PASS。**
+
+### 十二、Persistence Audit
+`serializeState → save → load → normalizeStatLine`（[player-runtime.js#L147-L164](file:///workspace/FE-project/src/core/player-runtime.js#L147-L164)）保持 8 字段 + ratingSum。**无字段丢失、无重复、无重算改值**；`averageRating` 不入库（派生）。load 后无第二 Stats Truth。**PASS。**
+
+### 十三、Determinism Audit
+表现字段 RNG 来源：`hashSeed(matchSeed|perf|side|playerId)`（射门/牌）与 `hashSeed(matchSeed|assist|side|minute|scorerId)`（助攻），**逐球员/逐进球独立流**，绝不进入比分 RNG；评分**无 RNG**。Seed 源自 `deriveMatchSeed(worldId|season|round|home|away)`。**无 `Math.random/Date.now/performance.now`。PASS。**
+
+### 十四、Contract Status
+- Appearance / Minutes / Goals / Cards / Shooting / Rating = **CURRENT SEMANTICS IDENTIFIED**（RECOMMENDED FREEZE CANDIDATE，待 Owner 决定）。
+- Assists = **CURRENT SEMANTICS IDENTIFIED**；「是否把 `assists` 提升为真实助攻归属」= **OWNER_DECISION_CANDIDATE**（保持现状分离）。
+- 本 Gate **不宣布任何 Owner Freeze**。
+
+### 十五、Implementation Gaps（仅记录）
+1. `events[].assistId` 恒 null 且无 Reader（保留字段）。
+2. `buildInvolvements` 的 `type='assist'/'yellow'/'red'` 分支为死代码（无对应事件）。
+3. `averageRating` 伴随 `ratingSum` 无独立契约文档（本 Gate 已记录链路）。
+
+### 十六、Remaining Risks
+1. `averageRating` 已被 AI 潜力估计读取，构成 Rating→能力信号链；若未来调整需同步评估。
+2. `assists`（RNG 表现）语义未 Contract 化；若引入真实助攻归属须另立 Gate。
+3. 各统计字段 CONTRACT 均未冻结，文档已如实标记。
+
+### 十七、Files Changed
+仅本文件（§76 追加）。**src/ = 0，tests/ = 0。**
+
+### 十八、Tests
+`npm test` → **1552 通过，0 失败（共 1552 个用例）**。
+
+### 十九、Contract Changes
+**无。**
+
+**STOP — 不得进入 C-70，不得 Freeze Stats Contract，不得修改 Assist / Rating / Goals / Cards / Shooting / Career / Season / Retirement / Archive。等待 Owner 明确指令「继续」。**
