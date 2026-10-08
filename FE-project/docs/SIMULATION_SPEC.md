@@ -4264,3 +4264,121 @@ season/career 由 `recordAppearance` **各自独立 `+=`**（INDEPENDENT ACCUMUL
 **无。**
 
 **STOP — 不得进入 C-70，不得 Freeze Stats Contract，不得修改 Assist / Rating / Goals / Cards / Shooting / Career / Season / Retirement / Archive。等待 Owner 明确指令「继续」。**
+
+## §77 Player Statistics Contract Freeze（Step 39F-M-C-70）
+
+**Gate Result = PASS / SEALED（Owner Contract Freeze / Documentation-Only）。** 本 Gate 不修改任何**生产逻辑**。src/ = 0，tests/ = 0，docs/ = 1。
+
+### 一、Frozen Stats Truth
+Active Player Statistics 的**唯一 Runtime Truth = `runtime.players[].stats`**，分 `season` / `career` **两套独立累计对象**。
+禁止建立第三套（`matchStats` / `databaseStats` / `aggregateStats` / writable `archiveStats` / score-derived player stats）作为 Active Stats Truth。
+
+### 二、CONTRACT TABLE
+| Field | Status |
+| --- | --- |
+| appearances | **FROZEN** |
+| minutes | **FROZEN** |
+| goals | **FROZEN** |
+| yellowCards | **FROZEN** |
+| redCards | **FROZEN** |
+| shots | **FROZEN** |
+| shotsOnTarget | **FROZEN** |
+| ratingSum | **FROZEN** |
+| averageRating | **FROZEN / DERIVED** |
+| assists | **UNFROZEN** |
+
+「FROZEN」= 当前语义成为后续架构的正式 Contract，**非"永不改变"**；未来修改须经新 Gate。
+
+### 三、Appearances Contract（FROZEN）
+`appearances` = 该球员在该场获得 **> 0 分钟**的实际出场次数（`minutes > 0 → appearances += 1`）。
+- 每名球员每场最多 +1；`fixture.played` 防重复消费；
+- Season / Career 独立累计；
+- 无分钟不得产生 Appearance；
+- **≠**"进入比赛名单"，**≠**"选入阵容但未上场"。
+- 唯一累计 Writer = `recordAppearance`（不得新增其他 Appearance Writer）。
+
+### 四、Minutes Contract（FROZEN）
+`minutes` = 该球员本场实际获得的比赛分钟数。来源 `plan.minutesByPlayer`。
+- 非负整数；不超过 `MAX_MINUTES_PER_MATCH`；未出场 = 0；
+- Season / Career 独立累计；不由 Appearance / Match Score 反推。
+- 唯一 Stats Writer = `recordAppearance`。
+
+### 五、Goals Contract（FROZEN）
+Season/Career Player Goals 来源链：`goalEvents → applyMatchPerformance → involvements.goals → recordAppearance`。
+- `goalEvents` 为 Player Goals 的 **transient source**；
+- 持久化 Truth = `runtime.players[].stats.{season,career}.goals`；
+- **禁止** `teamScore → playerGoals`；**禁止** `scoringPlayerId → 再次累计 Player Goals`；
+- Simulation Core `scoringPlayerId` 与 Season Aggregate `involvements.goals` 属**不同 Simulation Layer**，未经新 Gate 授权不得直接连接。
+
+### 六、Cards Contract（FROZEN）
+`yellow` / `red` = Season Aggregate Match Performance 的球员牌面统计，来源**独立 RNG Performance Streams**。
+- 单场当前各最多 1；Season / Career 独立累计；唯一 Stats Writer = `recordAppearance`；
+- 当前**不存在**独立 Match Card Event Truth；不得自行新增 Card Event System。
+- 注：冻结的是**当前统计语义**，非声明未来永无 Card Event System——若未来建立真实 Match Card Event，须另开 Gate 审计其与 Stats 关系。
+
+### 七、Shooting Contract（FROZEN）
+`shots` / `shotsOnTarget` = Season Aggregate Match Performance 的球员射门表现统计（RNG），约束 `shots ≥ shotsOnTarget ≥ goals`。
+- **不属于** MatchCore Shot Truth，**不属于** Goal Resolution Truth；
+- 禁止未经新 Gate 将 `MatchCore Shot` / `Goal Resolution` / `shots` / `shotsOnTarget` 合并为单一 Truth；
+- Player Stats 只消费 Aggregate Match Performance 当前提供的统计输入。
+
+### 八、Rating Contract（FROZEN）
+链路：`single-match rating`（单场 Performance Rating，当前无 RNG）→ `ratingSum`（累计总和）→ `averageRating`（派生）。
+- 唯一 Stats Writer = `recordAppearance`；Season / Career 独立累计；
+- `averageRating = ratingSum / appearances / 10`（派生统计）；
+- `averageRating` **不持久化、不作为独立 Writer、不作为独立 Truth、不参与 Stats 累计**。
+
+### 九、Rating → AI Signal Boundary（FROZEN）
+当前存在**只读消费**关系：`Stats → averageRating → ai-potential-estimate`。
+- **允许**：AI Potential Estimate 读取 `averageRating`；
+- **禁止**：AI Potential Estimate 反向修改 `rating` / `ratingSum` / `averageRating` / `goals` / `abilities` / MatchCore；
+- 本 Gate 不修改该链路；未来若修改 Rating 公式，**必须重新审计 AI Potential Estimate**。
+
+### 十、Season / Career Contract（FROZEN）
+Season Stats 与 Career Stats 为**两个独立累计生命周期**。
+- Match：`recordAppearance → season += 且 career +=`（各自独立）；
+- Season End：`resetSeasonStats()` **只清 Season**；**不得** `career = season` 或 `career = Σseason snapshots`；Career 不允许由 Season 重算；
+- Retirement：Career 可被**复制**进 Archive Snapshot；Active Runtime Stats 删除后 `runtime.players[playerId]` 不再存在；**Archive 不是 Active Stats Truth**。
+
+### 十一、Persistence Contract（FROZEN）
+Save/Load 必须保持 season stats、career stats、ratingSum 及其他已存在 Stats 字段；`averageRating` **不持久化**。
+流程：`runtime.stats → serializeState → save → load → normalize → runtime.stats`。
+**禁止**：load 后随机重算 Stats；load 后由 Match Score 推导 Player Stats；load 后从 Archive 反向恢复 Active Stats；建立第二套 writable Stats object。
+
+### 十二、Assist Non-Freeze Declaration
+**`assists` 不进入 Frozen Contract**（保持 **UNFROZEN / PERFORMANCE-STAT SEMANTICS IDENTIFIED**）。
+- `involvements.assists` = Aggregate Match Performance Statistic，**不定义为真实逐球助攻**；
+- `events[].assistId` 保持 **RESERVED / UNUSED**；
+- **不得**：删除 `assistId` / 实现 `assistId` / 合并 `assists` 与 `assistId` / 修改 `assists` 算法 / 新增助攻 Attribution。
+- 未来若需真实助攻，须独立 Gate，至少重新审计：Goal Event / Pass / Shot / Scorer / Assister / Deflection / Own Goal / Rebound / LastTouch。
+
+### 十三、Second Truth Boundary（FROZEN）
+| 层 | 对象 |
+| --- | --- |
+| Stats Truth | `runtime.players[].stats` |
+| Transient Input | `involvements` |
+| Goal Attribution Input | `goalEvents` / `scoringPlayerId` |
+| Derived | `averageRating` |
+| Unrelated Aggregate | `team score` / `MatchCore score` |
+| Archive（非 Active Truth） | `runtime.retired[].career` |
+
+### 十四、Implementation Gaps（仅记录）
+1. `events[].assistId` 恒 null 且无 Reader（RESERVED）。
+2. `buildInvolvements` 的 assist/yellow/red 分支为死代码。
+（本 Gate 不实现，不修复。）
+
+### 十五、Remaining Risks
+1. `averageRating` 已构成 Rating→AI 能力信号链；修改 Rating 公式须同步审计 ai-potential-estimate。
+2. `assists` 仍 UNFROZEN；引入真实助攻归属须另立 Gate。
+3. 冻结的是当前语义；未来任何修改须经新 Gate。
+
+### 十六、Files Changed
+仅本文件（§77 追加）。**src/ = 0，tests/ = 0。**
+
+### 十七、Tests
+`npm test` → **1552 通过，0 失败（共 1552 个用例）**。
+
+### 十八、Contract Changes
+新增 **Player Statistics Contract Freeze**：appearances / minutes / goals / yellow / red / shots / shotsOnTarget / ratingSum / averageRating = **FROZEN**；assists = **UNFROZEN**。未修改任何既有 Frozen Contract。
+
+**STOP — 不得进入 C-71，不得实现 Assist Attribution，不得修改 Rating / Goals / Shooting / Cards / Appearance / Minutes / AI Potential / Retirement / Archive。等待 Owner 明确指令「继续」。**
