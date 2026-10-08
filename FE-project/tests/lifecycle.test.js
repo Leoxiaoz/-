@@ -17,6 +17,7 @@ import {
   getPlayerProfile,
   isRetired,
   initializePlayerRuntime,
+  getRetiredFinalSeasonStats,
   INJURY_STATUS,
 } from '../src/core/player-runtime.js';
 import { retireProbability, evaluatePopulationHealth, replenishPopulation, generatePlayer } from '../src/core/player-lifecycle.js';
@@ -170,6 +171,86 @@ test('Final Season Snapshot Read Contract：缺失不回填、不恢复 Active R
   // Reader 不得恢复 Active Runtime / 不得触碰 Career。
   assert(getPlayerRuntime(loaded, id) == null, 'Archive 不得恢复 Active Runtime');
   assertEquals(arc.career, careerBefore, '缺失快照不得改变 Career 快照');
+});
+
+// ---------- C-75：Retirement Archive Final Season Stats Reader（RT-01..RT-10） ----------
+const FSS_KEYS = ['appearances', 'minutes', 'goals', 'assists', 'yellow', 'red', 'shots', 'shotsOnTarget', 'ratingSum'];
+
+function retiredSample() {
+  const state = agedState(8, ['FW']);
+  const id = activePlayers(state)
+    .filter((p) => state.static.players.find((s) => s.id === p.id)?.birthDate === '1986-06-15')
+    .map((p) => p.id)[0];
+  new SimulationCore().advanceDays(state, 92);
+  return { state, id };
+}
+
+test('RT-01 存在合法 Snapshot：Reader 返回 9 个冻结字段', () => {
+  const { state, id } = retiredSample();
+  const view = getRetiredFinalSeasonStats(state, id);
+  assert(view && typeof view === 'object', '应返回快照对象');
+  for (const k of FSS_KEYS) assert(k in view, `应含字段 ${k}`);
+});
+
+test('RT-02 防御性复制：修改返回值不影响归档快照', () => {
+  const { state, id } = retiredSample();
+  const view = getRetiredFinalSeasonStats(state, id);
+  const before = state.runtime.retired[id].finalSeasonStats.goals;
+  view.goals += 100;
+  assertEquals(state.runtime.retired[id].finalSeasonStats.goals, before);
+  assert(view !== state.runtime.retired[id].finalSeasonStats, '返回对象不得与归档同一引用');
+});
+
+test('RT-03 归档存在但 Snapshot 缺失 → null', () => {
+  const { state, id } = retiredSample();
+  delete state.runtime.retired[id].finalSeasonStats;
+  assertEquals(getRetiredFinalSeasonStats(state, id), null);
+});
+
+test('RT-04 Snapshot === null → null', () => {
+  const { state, id } = retiredSample();
+  state.runtime.retired[id].finalSeasonStats = null;
+  assertEquals(getRetiredFinalSeasonStats(state, id), null);
+});
+
+test('RT-05 退役档案不存在 → null', () => {
+  const { state } = retiredSample();
+  assertEquals(getRetiredFinalSeasonStats(state, 'no-such-player'), null);
+});
+
+test('RT-06 无 Career Fallback：快照缺失不得返回 Career 数据', () => {
+  const { state, id } = retiredSample();
+  delete state.runtime.retired[id].finalSeasonStats;
+  const view = getRetiredFinalSeasonStats(state, id);
+  assertEquals(view, null);
+  assert(view !== state.runtime.retired[id].career, '不得回退为 career');
+});
+
+test('RT-07 调用 Reader 不改变 runtime.players', () => {
+  const { state, id } = retiredSample();
+  const before = JSON.stringify(state.runtime.players);
+  getRetiredFinalSeasonStats(state, id);
+  assertEquals(JSON.stringify(state.runtime.players), before);
+});
+
+test('RT-08 调用 Reader 不改变 runtime.retired', () => {
+  const { state, id } = retiredSample();
+  const before = JSON.stringify(state.runtime.retired);
+  getRetiredFinalSeasonStats(state, id);
+  getRetiredFinalSeasonStats(state, 'no-such-player');
+  assertEquals(JSON.stringify(state.runtime.retired), before);
+});
+
+test('RT-09 averageRating 边界：返回对象不含 averageRating', () => {
+  const { state, id } = retiredSample();
+  const view = getRetiredFinalSeasonStats(state, id);
+  assert(!('averageRating' in view), '不得返回派生 averageRating');
+});
+
+test('RT-10 字段边界：返回对象只能包含 C-74 冻结的 9 个字段', () => {
+  const { state, id } = retiredSample();
+  const view = getRetiredFinalSeasonStats(state, id);
+  assertEquals(Object.keys(view).sort(), [...FSS_KEYS].sort());
 });
 
 test('退役判定确定性：同输入两次得到同一批退役者', () => {

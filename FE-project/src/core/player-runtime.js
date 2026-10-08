@@ -100,6 +100,36 @@ export function getPlayerStatsView(state, playerId) {
 }
 
 /**
+ * 只读退休归档 Reader：读取 `runtime.retired[playerId].finalSeasonStats`（Step 39F-M-C-75）。
+ *
+ * 契约（C-74 Read Contract）：
+ * - **纯读取**，不修改任何 Runtime / Archive / MatchCore 状态；
+ * - 唯一数据源 = `retired[playerId].finalSeasonStats`（**不从 career / active stats / 数据库 fallback**）；
+ * - 返回**全新对象**（防御性复制，仅暴露 C-70 冻结的 9 个字段），调用方修改不影响归档；
+ * - 归档不存在、快照缺失（`undefined`）或为 `null` ⇒ 返回 `null`（"unavailable"），**不回填 0 / 不自动生成**；
+ * - **不含** `averageRating`（派生值，展示层经 `deriveAverageRating` 自行派生）；
+ * - `assists` 原样读取，语义保持 C-70 `Aggregate Match Performance Statistic`。
+ * @param {object} state
+ * @param {string} playerId
+ * @returns {{appearances,minutes,goals,assists,yellow,red,shots,shotsOnTarget,ratingSum}|null}
+ */
+export function getRetiredFinalSeasonStats(state, playerId) {
+  const snap = state?.runtime?.retired?.[playerId]?.finalSeasonStats;
+  if (!snap || typeof snap !== 'object') return null;
+  return {
+    appearances: snap.appearances,
+    minutes: snap.minutes,
+    goals: snap.goals,
+    assists: snap.assists,
+    yellow: snap.yellow,
+    red: snap.red,
+    shots: snap.shots,
+    shotsOnTarget: snap.shotsOnTarget,
+    ratingSum: snap.ratingSum,
+  };
+}
+
+/**
  * 只读派生：Potential Fulfillment（D39 Phase 1 / Step 39F-A）。
  * 定义（Owner 冻结）：`fulfillment[attr] = clamp(current[attr] / potential[attr], 0, 1)`；
  * `potential[attr] <= 0` ⇒ 0；`average` = 六属性均值（内部统一用 0–1，展示层再转百分比）。

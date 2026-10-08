@@ -4783,3 +4783,44 @@ finalSeasonStats: rt ? { ...rt.stats.season } : null,
 - [docs/SIMULATION_SPEC.md](file:///workspace/FE-project/docs/SIMULATION_SPEC.md#L4717)（§81）
 
 **STOP — 不得进入 C-75，不得实现 Archive Reader / UI，不得增加历史赛季系统。等待 Owner 明确指令「继续」。**
+
+## §82 Retirement Final Season Snapshot Reader Implementation（Step 39F-M-C-75）
+
+**Gate Result = PASS / SEALED（Implementation：C-74 Read Contract）。** 实现最小纯只读 Reader。
+
+### 一、Reader Location
+`getRetiredFinalSeasonStats(state, playerId)` — 位于 [player-runtime.js#L116-L130](file:///workspace/FE-project/src/core/player-runtime.js#L116-L130)，与既有只读访问器（`getPlayerStatsView` / `isRetired`）同模块。（入参沿用项目 `state` 约定，读取 `state.runtime.retired[id].finalSeasonStats`。）
+
+### 二、Return Contract
+- 存在合法 Snapshot → 返回**全新对象**（防御性复制），仅含 C-70 冻结的 9 字段：`appearances / minutes / goals / assists / yellow / red / shots / shotsOnTarget / ratingSum`。
+- 归档缺失 / Snapshot 为 `undefined` / 为 `null` → 返回 `null`（"unavailable"）。
+- **不**回填 0 / **不**自动生成 / **不**从 career 或 active stats / 数据库 fallback。
+- **不含** `averageRating`（派生）。
+- `assists` 原样读取，语义维持 C-70 `Aggregate Match Performance Statistic`。
+
+### 三、字段命名澄清
+存储实际字段名为 `yellow` / `red`（与 C-70 `createStatLine` 一致）；本 Gate 文本中的 "yellowCards / redCards" 即指这两个字段，无新增/改名。
+
+### 四、Read-Only / 无副作用
+纯读取：不修改 `runtime.retired` / `finalSeasonStats` / `career` / `runtime.players` / Season / Career Stats / MatchCore / Score / LastTouch / Possession / Goal Attribution；不创建 Active Runtime、不恢复球员、不 normalize / migrate Archive。无 `Math.random` / `Date.now` / wall-clock。
+
+### 五、Writer Audit
+`finalSeasonStats` 仍**仅**由 `archiveRetired` 写入；新增 Reader 不改变 Writer 数量。Truth 链保持 `Active Stats → Retirement Snapshot → Read-only Reader`（**非**双向同步）。
+
+### 六、Tests
+新增 [lifecycle.test.js#L176-L254](file:///workspace/FE-project/tests/lifecycle.test.js#L176-L254)：RT-01…RT-10（存在返回 9 字段 / 防御性复制 / 缺 snapshot→null / null→null / 缺归档→null / 无 career fallback / 不改 players / 不改 retired / 无 averageRating / 字段边界）。
+
+### 七、Contract Changes
+无新增 Contract；落实 C-74 Read Contract。未修改 C-70/C-71/C-72/C-73/C-74。
+
+### 八、Files Changed
+- [src/core/player-runtime.js](file:///workspace/FE-project/src/core/player-runtime.js#L116-L130)
+- [tests/lifecycle.test.js](file:///workspace/FE-project/tests/lifecycle.test.js#L176-L254)
+- [docs/SIMULATION_SPEC.md](file:///workspace/FE-project/docs/SIMULATION_SPEC.md#L4787)
+
+### 九、Remaining Risks
+1. Reader 一旦被 UI / 历史页消费，须受 C-74 Read-only Rule 约束（消费方不得回写）。
+2. `retired` 无 GC，长期增长（既有）。
+3. 完整历史赛季系统仍属未来独立 Gate。
+
+**STOP — 不得进入 C-76，不得实现 UI / 历史页面，不得增加完整历史赛季系统，不得修改 Stats Contract。等待 Owner 明确指令「继续」。**
