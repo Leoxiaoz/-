@@ -4713,3 +4713,73 @@ finalSeasonStats: rt ? { ...rt.stats.season } : null,
 3. `retired` 无 GC，长期增长（既有性质）。
 
 **STOP — 不得进入 C-74，不得新增 Archive Reader / UI，不得修改 Stats Contract / Retirement 概率 / Save Schema。等待 Owner 明确指令「继续」。**
+
+## §81 Retirement Final Season Snapshot Read Contract（Step 39F-M-C-74）
+
+**Gate Result = PASS / SEALED（Owner Contract Freeze / Documentation-Only）。** 冻结 `runtime.retired[id].finalSeasonStats` 的**读取语义**，防止未来 Reader 将其误当作新的 Stats Truth。**本 Gate 不实现 Reader / UI。**
+
+### 一、Snapshot Meaning（FROZEN）
+`retired[id].finalSeasonStats` = 该球员退役时**最近一个已完成赛季**的 Player Runtime Season Statistics Snapshot。它是 **Retired Archive Snapshot / Read-only / Historical Snapshot**；**非** Active Runtime Truth、**非** Career Stats、**非** Stats Writer。
+不代表：整个生涯 / 所有历史赛季 / 当前赛季 / 退役后统计 / MatchCore Goal Truth / Goal Attribution Truth。
+
+### 二、Field Boundary（FROZEN，与 C-70 一致）
+允许读取字段：`appearances / minutes / goals / assists / yellowCards / redCards / shots / shotsOnTarget / ratingSum`。**不得新增统计字段。**
+
+### 三、averageRating Boundary（FROZEN，DERIVED）
+`averageRating` **不属于** Snapshot Storage。展示层须经 `deriveAverageRating(ratingSum, appearances)` 派生（[player-runtime.js#L61](file:///workspace/FE-project/src/core/player-runtime.js#L61)）。**禁止** `retired[id].finalSeasonStats.averageRating` 作为持久化 Truth。
+
+### 四、assists Boundary（FROZEN）
+`finalSeasonStats.assists` 继续遵守 C-70：**Aggregate Match Performance Statistic**；不是真实逐球助攻 / `assistId` / Goal Attribution / Passer→Scorer 关系。
+
+### 五、Career Boundary（FROZEN）
+`finalSeasonStats` 与 `retired[id].career` **完全独立**。**禁止** `career ← finalSeasonStats`、`career = Σ(finalSeasonStats…)`；Reader 只能读取既有 Snapshot，**不得**由 Snapshot 重构 Career Truth。
+
+### 六、Active Runtime Boundary（FROZEN）
+退役后 `runtime.players[id]` 不存在。Reader **不得**创建 Active Runtime / 恢复 Player / 写 `runtime.players` / 触发 `recordAppearance` / 进入比赛模拟 / 参与 Player Lifecycle。
+
+### 七、Read-only Rule（FROZEN）
+`Archive Snapshot → READ → Presentation/History/Analysis`；**禁止** `Archive Snapshot → MUTATION → Runtime/Career/MatchCore`。Reader 不得修改 `finalSeasonStats` / `career` / `runtime.players` / MatchCore / Season/Career Stats / Score / LastTouch / Possession / Goal Attribution。
+
+### 八、Legacy Save / Null Semantics（FROZEN）
+- 字段缺失 = **Snapshot unavailable**（旧档无该字段）；`finalSeasonStats: null` = **No final-season snapshot available**。
+- **禁止**：回填全 0 / 从 Career 推算 / 自动补造 / 复制 Career / 生成当前 Season 数据 / 任何 fallback 重建。
+- 不修改 Save/Load Schema（C-73 已确认随 `runtime.retired` 持久化，原样保留）。
+
+### 九、Snapshot Immutability（FROZEN）
+一次性历史快照；读取后不得反向更新 / 与 Active Stats 同步 / 随未来模拟变化 / 重算覆盖 / 由 Career 更新。
+
+### 十、Second Truth Boundary（FROZEN）
+`Active(runtime.players[id].stats)` --retirement snapshot--> `retired[id].finalSeasonStats` --READ ONLY--> History/Presentation。Archive Snapshot 是历史快照，**非** Active Stats 的竞争 Writer。
+
+### 十一、Reader API Decision（FROZEN）
+**本 Gate 不创建** Reader API（不实现 `getRetiredPlayerStats()`/`getFinalSeasonStats()`/`getArchiveStats()` 等）。真正实现 Reader 须进入独立后续 Gate。
+
+### 十二、Writer / Reader Audit（当前事实）
+- **Writer（唯一）**：`archiveRetired`（[player-lifecycle.js#L160](file:///workspace/FE-project/src/core/player-lifecycle.js#L160)）。无其他 Writer。
+- **Reader**：无生产 Reader（Write-only Snapshot）；仅测试引用。
+- 无 `finalSeasonStats → career` 反向写；无 Snapshot → Active Runtime 恢复；无 `averageRating` 持久化/竞争 Truth；无 Snapshot → MatchCore/Goal/LastTouch/Possession 反向依赖；无第二可写 Retirement Stats Truth。
+
+### 十三、Determinism
+纯读取语义；无 `Math.random` / `Date.now` / `performance.now` / wall-clock。
+
+### 十四、Tests
+新增 [lifecycle.test.js#L152-L173](file:///workspace/FE-project/tests/lifecycle.test.js#L152-L173)：旧档缺失字段不回填 / 不恢复 Active Runtime / 不动 Career；配合既有 C-73 契约测试（字段完整、无 averageRating、与 career 独立、Save/Load 保持）。
+
+### 十五、Contract Changes
+新增 **Retirement Final Season Snapshot Read Contract**。未修改任何既有 Frozen Contract（C-70 / C-71 / C-72 / C-73）。
+
+### 十六、Future Gates（仅记录，不实现）
+- Archive Reader API（独立 Gate）。
+- 退役球员档案 / 历史页面 / 统计展示（独立 Gate）。
+- 完整 Historical Seasons（NEW INDEPENDENT SYSTEM）。
+
+### 十七、Remaining Risks
+1. Snapshot 仍为 Write-only，读取需求须经独立 Gate 定义。
+2. `retired` 无 GC，长期增长（既有性质）。
+3. `averageRating` 展示必须派生，不得存储。
+
+### 十八、Files Changed
+- [tests/lifecycle.test.js](file:///workspace/FE-project/tests/lifecycle.test.js#L152-L173)
+- [docs/SIMULATION_SPEC.md](file:///workspace/FE-project/docs/SIMULATION_SPEC.md#L4717)（§81）
+
+**STOP — 不得进入 C-75，不得实现 Archive Reader / UI，不得增加历史赛季系统。等待 Owner 明确指令「继续」。**

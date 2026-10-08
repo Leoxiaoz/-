@@ -149,6 +149,29 @@ test('退役归档保留最后赛季 Season 快照（C-72 Option B）：结构�
   }
 });
 
+test('Final Season Snapshot Read Contract：缺失不回填、不恢复 Active Runtime、不动 Career', () => {
+  const state = agedState(8, ['FW']);
+  const forcedIds = activePlayers(state)
+    .filter((p) => state.static.players.find((s) => s.id === p.id)?.birthDate === '1986-06-15')
+    .map((p) => p.id);
+  assert(forcedIds.length > 0, '应有超龄球员');
+  new SimulationCore().advanceDays(state, 92);
+
+  const id = forcedIds[0];
+  const careerBefore = { ...state.runtime.retired[id].career };
+  // 模拟旧存档：不存在 finalSeasonStats。
+  delete state.runtime.retired[id].finalSeasonStats;
+
+  const loaded = deserializeState(serializeState(state));
+  const arc = loaded.runtime.retired[id];
+  // 缺失即缺失：不得回填全 0，也不得从 career 复制。
+  assert(!('finalSeasonStats' in arc), '缺失字段不得被重新生成');
+  assertEquals(arc.finalSeasonStats, undefined);
+  // Reader 不得恢复 Active Runtime / 不得触碰 Career。
+  assert(getPlayerRuntime(loaded, id) == null, 'Archive 不得恢复 Active Runtime');
+  assertEquals(arc.career, careerBefore, '缺失快照不得改变 Career 快照');
+});
+
 test('退役判定确定性：同输入两次得到同一批退役者', () => {
   const a = agedState(8, ['FW', 'DF']);
   const b = agedState(8, ['FW', 'DF']);
