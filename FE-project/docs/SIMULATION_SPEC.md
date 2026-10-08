@@ -3743,3 +3743,109 @@ C-62 实施后，`lastTouchPlayerId` 已确认为语义单一、生命周期稳�
 2. Simulation Core 的 `scoringPlayerId` 完全依赖调用方传入 `options.playerId`；若调用方缺失则 scorer 恒为 null（无 fallback），此为 C-21 冻结行为。
 
 **STOP — 不得进入 C-65，不得实现 Scorer / Assister / Own Goal / Deflection / Rebound，不得修改 LastTouch / Goal Resolution / C-14 / C-15 / C-20 / C-21，不得重开 C-63。等待 Owner 验收。**
+
+## §72 Season Match Simulation / Goal Attribution Boundary Audit（Step 39F-M-C-65）
+
+**Gate Result = PASS / SEALED（Read-Only Audit）。** Architecture Conclusion = **PASS / SEALED + ARCHITECTURE NOTE**。
+
+### 一、Module Identity — `src/core/match.js`
+| 项 | 结论 |
+| --- | --- |
+| 职责 | **Season / Aggregate Match Simulation**（时段制，90 分钟分段结算赛果 + 球员统计），非球级实时 Simulation Core |
+| 输入 | `{ home:{strength,players,tactics,teamId,minutesByPlayer}, away:…, context:{worldId,season,round,homeId,awayId}, seed? }` |
+| 输出 | `{ matchSeed, homeGoals, awayGoals, events[], involvements{} }` |
+| 是否操作 MatchCore | **否** |
+| 是否操作 MatchCore.ball | **否** |
+| 是否操作 lastTouchPlayerId | **否** |
+| 是否触碰 C-14 Score Authority | **否** |
+| 是否触碰 C-15 / C-20 / C-21 | **否** |
+| 层级 | Season / Aggregate Simulation |
+
+**注意**：文件头注释自称 "Simulation Core"，实为 **Season Aggregate Simulation**；球级 Simulation Core 位于 `src/core/match/`（C-03/C-14/C-15/C-20/C-21）。命名重叠，语义独立。
+
+### 二、Simulation Core Boundary（依赖审计）
+`src/core/match.js` 仅 2 个 import：`./sim-config.js`、`./rng.js`。对 MatchCore / ball / lastTouchPlayerId / goal-resolution / goal-geometry / goal-crossing-resolution / applyGoalScoreUpdate / resolveGoal / transit / possession / second-ball / interaction 全部为 **NO DEPENDENCY**。**无任何写入 Simulation Core 的通道。**
+
+### 三、Scorer Truth
+`selectScorer`（[match.js#L56-L73](file:///workspace/FE-project/src/core/match.js#L56-L73)）→ 事件 `actorId` = **Aggregate Match Event Scorer**（赛季赛果统计层），**非** Simulation Core `scoringPlayerId`（显式 candidate）。**两者不同 Truth，不予统一。**
+
+### 四、RNG Scorer Audit
+- RNG 来源：`createRng(matchSeed)`，`matchSeed = deriveMatchSeed({worldId,season,round,homeId,awayId})`（[match.js#L257-L264](file:///workspace/FE-project/src/core/match.js#L257-L264)）。
+- 可复现：**是**（同 seed 同结果）。
+- 无 `Math.random / Date.now / performance.now / wall clock`（[rng.js](file:///workspace/FE-project/src/core/rng.js) 为 hash 派生 LCG）。
+- 候选：本方球员，按位置/能力平方加权（FW finishing / MF technique / DF defending）。
+- 输出：`playerId` 或 **null**（无合适球员时，[L65](file:///workspace/FE-project/src/core/match.js#L65)）。
+- 不产生非法 playerId / fallback player。
+
+### 五、Determinism Classification
+**Deterministic RNG**（有 seed、可重复）。Simulation Core determinism 独立，未被此 RNG 影响。**PASS**。
+
+### 六、Assist Truth
+| 字段 | 所属 | 语义 | 生命周期 | 分类 |
+| --- | --- | --- | --- | --- |
+| `events[].assistId` | match.js 事件 | 恒 null（保留字段，无可靠来源） | transient | EVENT ID（未使用） |
+| `involvements[].assists` | match.js / player-runtime | 统计计数（RNG 派生） | persisted（season/career） | STAT COUNT |
+
+**非同一 Truth**：`assistId` 为未使用的保留事件字段；`assists` 为统计计数。无第三 Assister Truth。
+
+### 七、Assist ID / Assist Count Relationship
+`assistId`（恒 null）**不参与** `assists` 计算；`assists` 由 `applyMatchPerformance` 用**独立 RNG**（[match.js#L217-L227](file:///workspace/FE-project/src/core/match.js#L217-L227)）在同队非进球者中加权抽取。说明：事件层未产生 assist 事实，统计层独立派生——**表述层次不一致但非同一字段冲突**。
+
+### 八、Involvement Audit
+Writer：`buildInvolvements`（[L120-L152](file:///workspace/FE-project/src/core/match.js#L120-L152)）+ `mergePerformance`（[L317-L329](file:///workspace/FE-project/src/core/match.js#L317-L329)）。
+Consumer：`simulation.js #applyPostMatch` → `recordAppearance`（[simulation.js#L141-L162](file:///workspace/FE-project/src/core/simulation.js#L141-L162)）。
+语义：**per-match player involvement / stat line**（出场/分钟/进球/助攻/牌/射门/评分），非 scorer/assister truth。可被反向解释为「本场进球者统计」，但不含归属决策。**记录风险：不修改。**
+
+### 九、Stats Boundary
+`involvements` → `recordAppearance` → `rt.stats.season` 与 `rt.stats.career`（appearances/minutes/goals/assists/…，[player-runtime.js#L526-L536](file:///workspace/FE-project/src/core/player-runtime.js#L526-L536)）。属 **Season Aggregate Stats**，与 C-14 Score Truth 不同层面。Season Match Simulation 的职责即生成这些聚合统计。**不重构。**
+
+### 十、Player Identity
+scorer ∈ 本方 `players`（`selectScorer` 只遍历传入的该队 players）；assist provider ∈ 同队非进球者。**可能 null**（无候选）。无不存在的 playerId，无 fallback player。**PASS + 记录 null 风险。**
+
+### 十一、Team Boundary
+`selectScorer(players,...)` 使用该方 players；assist candidates = `players.filter(p => p.id !== scorerId)`（同队）。**scorer 不可能属于非进攻方球队。PASS。**
+
+### 十二、Goal Count Boundary
+`homeGoals/awayGoals` 由 `simulateSegments` 本地累计，写入 `fixture.homeGoals/awayGoals`（season 赛果，[simulation.js#L107-L109](file:///workspace/FE-project/src/core/simulation.js#L107-L109)），**从不写 MatchCore.score**。**不构成 C-14 第二 Score Writer。PASS。**
+
+### 十三、Goal Event Boundary
+Season events = **Independent Aggregate Event**（`{minute,teamId,type,actorId,assistId,segment,reason}`），与 C-21 Goal Event / Resolution 无关联；无 goalId / ledger / replay。**PASS。**
+
+### 十四、LastTouch Boundary
+`src/core/match.js` **不读取** `lastTouchPlayerId`（亦不读取任何 ball 字段）。**PASS** — 无 LastTouch→scorer/assist 推导。
+
+### 十五、Goal Resolution Boundary
+**不调用** `resolveGoal` / `applyGoalScoreUpdate`；自行按期望值累计进球数（赛季赛果层），不写 Simulation Core Score。**PASS** — 非法球级 Resolution 入口未被使用。
+
+### 十六、Persistence Boundary
+- Season/Career Stats（含 RNG 派生 assists）→ persisted（player runtime stats，随 Save 的 runtime 持久化）。
+- Overall：`scoringPlayerId`（Core）不持久化；`assists/career`（Season）持久化。**两者不同 Truth，边界明确。PASS。**
+
+### 十七、Second Truth Audit
+| 字段 | 模块 | 语义 | 生命周期 | 最终 Truth？ |
+| --- | --- | --- | --- | --- |
+| `scoringPlayerId` | Simulation Core | 显式 candidate | transient | 是（Core Scorer） |
+| `events[].actorId` | Season Sim | 聚合事件进球者 | transient→stats | 否（Aggregate Scorer） |
+| `events[].assistId` | Season Sim | 恒 null 保留字段 | transient | 否 |
+| `involvements[].assists` | Season Sim | 统计计数 | persisted | 否（Stat Count） |
+
+**无跨模块字段同时声称 Core Scorer Truth。** 不构成 SECOND_TRUTH_RISK。
+
+### 十八、Contract Status
+`Scorer`（Season）= **UNFROZEN**；`Assister`（Season）= **UNFROZEN**；`Involvement` = **UNFROZEN**；`Season Aggregate Goal` = **UNFROZEN**。本 Gate 不新增 Contract。
+
+### 十九、Documentation Audit
+记录：**Season Match Simulation 与 Ball Simulation Core 的 Goal / LastTouch Truth 独立。** `ASSIST_CONTRACT_STATUS = UNFROZEN`（事件 `assistId` 恒 null；统计级 `assists` 由 RNG 派生，未以 Contract 冻结）。未把 Season RNG scorer/assist 误写为 Core scoringPlayerId。
+
+### 二十、Files Changed
+仅本文件（§72 追加）。**src/ = 0，tests/ = 0。**
+
+### 二十一、Contract Changes
+**无。**
+
+### 二十二、Remaining Risks
+1. `src/core/match.js` 文件头自称 "Simulation Core"，与其实际层级（Season Aggregate Simulation）不符——命名重叠，建议未来文档澄清（本 Gate 不改）。
+2. Season scorer/assist/involvement 四项均 UNFROZEN；`assistId`（恒 null）与 `assists`（RNG）层次不一致——若 Owner 需统一 attribution 语义，另立独立 Gate。
+3. Season Sim 的 assists（RNG 派生）会持久化进 season/career stats；属既有行为，非缺陷。
+
+**STOP — 不得进入 C-66，不得修复 assistId / RNG / Assister / Scorer / Season Stats / Career Stats，不得修改 Simulation Core / LastTouch / Goal Resolution / C-14 / C-15 / C-20 / C-21。等待 Owner 验收。**
