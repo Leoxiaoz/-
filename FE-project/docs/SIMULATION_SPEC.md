@@ -3629,3 +3629,53 @@ C-03 Physics / Contact / Interaction / Possession / SECOND_BALL / Transit / Goal
 2. DRIBBLE/TACKLE/INTERCEPTION 的 lastTouch 写入依赖「Interaction outcome 等价于实际触球」的假设，未来若新增 Interaction 类型须逐个审计。
 
 **STOP — 不得进入 C-63，不得重开 C-61/C-60，不得顺便重构 Interaction/SECOND_BALL/Goal/Possession/Velocity。等待 Owner 验收。**
+
+## §70 LastTouch Post-Implementation Architecture Audit（Step 39F-M-C-63）
+
+**Gate Result = PASS / SEALED（Read-Only Audit）。** Architecture Conclusion = **PASS**。
+
+C-62 实施后，`lastTouchPlayerId` 已确认为语义单一、生命周期稳定、消费者隔离、无第二 Truth 的 Runtime Ball Fact。
+
+### 一、Writer Audit（当前完整清单）
+| Writer | 位置 | 分类 |
+| --- | --- | --- |
+| C-03 Contact | [ball-physics.js#L182](file:///workspace/FE-project/src/core/match/ball-physics.js#L182) | ACTUAL_TOUCH |
+| C-03 sanitizeBall | [ball-physics.js#L62](file:///workspace/FE-project/src/core/match/ball-physics.js#L62) | PRESERVE |
+| C-05 CONTROLLED（DRIBBLE/TACKLE/INTERCEPTION/PRESS retained） | [interaction-state-update.js#L70-L72](file:///workspace/FE-project/src/core/match/interaction-state-update.js#L70-L72) | ACTUAL_TOUCH |
+| C-05 FREE（DRIBBLE KNOCKED_LOOSE / TACKLE LOOSE / INTERCEPTION DEFLECTED） | 同上 | ACTUAL_TOUCH |
+| C-05 PRESS SUCCESS / SECOND_BALL | 同上 | PRESERVE（C-62） |
+| PASS Transit Start | [pass-state-update.js#L31](file:///workspace/FE-project/src/core/match/pass-state-update.js#L31) | PRESERVE（C-62） |
+| SHOT Transit Start | [shot-state-update.js#L25](file:///workspace/FE-project/src/core/match/shot-state-update.js#L25) | PRESERVE（C-62） |
+| Transit Completion | [continuous-ball-movement-integration.js#L71-L106](file:///workspace/FE-project/src/core/match/continuous-ball-movement-integration.js#L71-L106) | PRESERVE |
+
+无 NON_TOUCH Writer，无 implicit CLEAR，无 UNKNOWN。
+
+### 二、关键审计结论
+- **C-03 Contact**：代表实际物理触球，仍为唯一物理 Writer；`contacting[]` 与 `lastTouchPlayerId` 语义分离（前者为接触窗口防粘球，后者为跨窗口事实）。
+- **C-05 语义证明**：DRIBBLE（COMPLETED→运球者；LOST→夺球者；KNOCKED_LOOSE→运球者失误）/ TACKLE（WON→抢断者；LOST→持球者；LOOSE→抢断者触球）/ INTERCEPTION（INTERCEPTED→拦截者；DEFLECTED→拦截者触球）各 outcome 对应「实际作用于球」的球员，构成 ACTUAL_TOUCH 证据链；INTERCEPTION FAILED 走 IN_TRANSIT 早返回，不写。
+- **PRESS SUCCESS**：不写 pressingPlayer（压迫仅迫使持球者失误，非直接触球）。
+- **SECOND_BALL**：WON 不写 winner；NO_WINNER 不 Clear。
+- **Transit**：Start/Completion 均 preserve。
+- **State**：IN_TRANSIT/FREE/CONTROLLED/GOAL 均不自动 Clear；`lastTouch ≠ control`。
+- **Possession**：无 `lastTouch → 球权` 或 `winner → lastTouch` 推导链。
+- **Goal**：`scoringPlayerId` 来自显式 candidate（[goal-resolution.js#L119](file:///workspace/FE-project/src/core/match/goal-resolution.js#L119)），不读/写/Clear lastTouch；无 scorer/assister 推导。
+- **Persistence**：`serializeState` 不序列化 ball；无 replay/history 持久化。
+- **Derived/Cache**：无 derivedLastTouch / cachedLastTouch / lastKnownTouch / previousTouchOwner；仅存在局部变量 `lastTouch`（ball-physics，不跨 Tick）。
+- **Clear**：全局无 `delete lastTouchPlayerId`；除 C-03/C-05 ACTUAL_TOUCH 赋值外无显式 Clear。
+- **Determinism**：Writer/Consumer 纯函数，无随机源。
+
+### 三、Test / Regression
+- [tests/last-touch-contract.test.js](file:///workspace/FE-project/tests/last-touch-contract.test.js) LT-01～LT-12 全部存在并执行（12 用例）。
+- `npm test` → **1552 通过，0 失败**，与 C-62 基线一致（C-63 只读，未新增测试）。
+
+### 四、Files Changed
+仅本文件（§70 追加）。**src/ = 0，tests/ = 0。**
+
+### 五、Contract Changes
+**无**（未改任何已冻结 Contract）。
+
+### 六、Remaining Risks
+1. PRESS SUCCESS 与 TACKLE LOOSE 结构相似（均产 FREE loose ball），前者 PRESERVE、后者 ACTUAL_TOUCH——差异依据「压迫不直接触球 / 抢断为直接触球」的建模区分，属已冻结语义，未来若调整须独立 Gate。
+2. Goal Attribution 未来若引入 assister 推导可能希望读取 lastTouch；届时须独立定义 Contract，不得隐式依赖。
+
+**STOP — 不得进入 C-64，不得修复发现的问题，不得扩展 LastTouch / Goal Attribution / Scorer / Assister，不得重构 Interaction / Possession / SECOND_BALL。等待 Owner 验收。**
