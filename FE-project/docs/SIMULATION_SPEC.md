@@ -3952,3 +3952,107 @@ Season `assistId` / `assists` **不**成为 Core `lastTouchPlayerId` / Ball Trut
 3. Season Scorer（event-local）/ Assister / Involvement 均 UNFROZEN，文档已如实标记。
 
 **STOP — 不得进入 C-67，不得冻结 Season Scorer / Assister / Assist Count / Involvement / Goal Event，不得修复 assistId / assists / RNG / involvements / stats / career stats，不得修改 Simulation Core / LastTouch / Goal Resolution / C-14 / C-15 / C-20 / C-21。等待 Owner 验收。**
+
+## §74 Season / Career Statistics Writer & Accumulation Boundary Audit（Step 39F-M-C-67）
+
+**Gate Result = PASS / SEALED（Read-Only Audit）。** Architecture Conclusion = **PASS / SEALED**。
+
+### 一、Statistics Vocabulary
+| 字段 | Writer | Consumer | 生命周期 | 持久化 | 最终 Truth |
+| --- | --- | --- | --- | --- | --- |
+| `rt.stats.season`（statLine） | `recordAppearance`（累加）/ `resetSeasonStats`（重置） | `derivePlayerStats` → UI/快照 | 当前赛季 | 是（runtime） | 是（本季） |
+| `rt.stats.career`（statLine） | `recordAppearance`（累加） | 退役归档（player-lifecycle L157）、快照 | 生涯 | 是（runtime） | 是（生涯） |
+| `involvements` | `buildInvolvements`/`applyMatchPerformance` | `#applyPostMatch` | 单场 | 否（transient） | 否（输入） |
+| `ratingSum` | `recordAppearance`（Σ round(rating×10)） | `deriveAverageRating` | 赛季/生涯 | 是 | 是 |
+| `averageRating` | `deriveAverageRating`（**派生，不存储**） | 快照/UI/ai-potential-estimate | 派生 | 否 | 派生 |
+
+### 二、Unique Stats Writer
+**`recordAppearance`（[player-runtime.js#L490](file:///workspace/FE-project/src/core/player-runtime.js#L490)）为唯一累计 Writer。** 其它对 `stats.season/career` 的写操作均为非累计：`createPlayerRuntime`（初始化 [L233-L237](file:///workspace/FE-project/src/core/player-runtime.js#L233-L237)）、`normalizePlayerRuntime`（载入补齐 [L258-L264](file:///workspace/FE-project/src/core/player-runtime.js#L258-L264)）、`resetSeasonStats`（仅重置 season [L648-L653](file:///workspace/FE-project/src/core/player-runtime.js#L648-L653)）。**无 `applyStats/mergeStats/updateStats/incrementStats` 等第二 Writer。PASS。**
+
+### 三、recordAppearance Contract
+- Input：`{minutes?,goals?,assists?,yellow?,red?,shots?,shotsOnTarget?,rating?}`（缺省 0）。
+- Mutation：对 `rt.stats.season` 与 `rt.stats.career` **各自 `+=`**（appearances+1、minutes/goals/assists/yellow/red/shots/shotsOnTarget/ratingSum）。
+- Output：返回 `rt`。
+- Side Effects：仅改该球员 runtime stats；**不改** MatchCore / World / Save / 其它统计。**PASS。**
+
+### 四、Season / Career Ownership
+赛季与生涯均被同一输入**直接 `+=`** → **INDEPENDENT ACCUMULATION**（非 career-from-season 派生）。**PASS。**
+
+### 五、Season Reset
+`resetSeasonStats`：唯一 Writer；仅重置 `stats.season = createStatLine()` + `seasonNumber`；**不动 career / runtime 其它字段**；调用点唯一 = [simulation.js#L251](file:///workspace/FE-project/src/core/simulation.js#L251)，**仅在 `maxSeason > prevSeason`（赛季推进）时执行一次**，不在比赛中调用。**新赛季清 Season、保 Career。PASS。**
+
+### 六、Career Lifetime
+`career` 跨比赛、跨赛季持续累加；不随 `resetSeasonStats` 清零；退役时以**只读快照**复制进归档（[player-lifecycle.js#L157](file:///workspace/FE-project/src/core/player-lifecycle.js#L157)）随后移除 runtime（L164）——归档为退役者快照，非第二活动 Truth。**正常赛季切换不丢失。PASS。**
+
+### 七、Match → Stats Mapping
+| Match Simulation | Runtime Stats |
+| --- | --- |
+| `involvements[].goals` | `goals +=` |
+| `involvements[].assists` | `assists +=` |
+| （每次调用） | `appearances += 1` |
+| `involvements[].minutes` | `minutes +=` |
+| `involvements[].yellow/red` | `yellow/red +=` |
+| `involvements[].shots/shotsOnTarget` | `shots/shotsOnTarget +=` |
+| `involvements[].rating`（单场） | `ratingSum += round(rating×10)` |
+无字段丢失、无一对多映射。**PASS。**
+
+### 八、Goals Boundary
+球员 `goals` 唯一路径：`goalEvents`(actorId match) → `applyMatchPerformance.goals` → `involvements.goals` → `recordAppearance`。比分 `fixture.homeGoals/awayGoals` 走 `applyResult` → 积分表，**不转成球员 goals**。`buildInvolvements` 的 `rec.goals += 1` 随后被 `mergePerformance` **覆盖为同值**（非叠加），无重复计数。**PASS。**
+
+### 九、Assists Boundary
+`assists` 由 `applyMatchPerformance` RNG 生成 → `involvements.assists` → `recordAppearance`。属 **Match Performance Statistic（非 per-goal 归属）**；本 Gate 未将其升级为 Assister/Goal Attribution。**PASS。**
+
+### 十、Appearance Boundary
+`appearances += 1` 每次 `recordAppearance` 一次；调用方 `#applyPostMatch` 每 involvement 一次；`#playFixture` 有 `fixture.played` 守卫 → **每场每球员最多记一次**。**PASS。**
+
+### 十一、Minutes Boundary
+来源：`buildInvolvements`（minutesMap 或 90）。`recordAppearance` 校验为非负整数；`minutes > MAX_MINUTES_PER_MATCH` 抛 `SimulationError`。不可超单场上限、不可重复（appearance 守卫）。**PASS。**
+
+### 十二、Card / Shooting Stats
+`yellow/red/shots/shotsOnTarget`：Writer 唯一 = `recordAppearance`；来源 `involvements`（`applyMatchPerformance` RNG）；无第二 Writer、无重复计数。**现状如此，未新增约束。PASS。**
+
+### 十三、Rating Boundary
+`rating` = **单场**输入（clamp [MIN,MAX]）；`ratingSum` = Σ round(rating×10) 纯累加；`averageRating` 由 `deriveAverageRating(ratingSum, appearances)` **派生、不存储**。无第二 Rating Truth、无语义混淆。**PASS。**
+
+### 十四、Numeric Safety
+`recordAppearance` 对 minutes/goals/assists/yellow/red/shots/shotsOnTarget：**reject** 非整数/负数（抛 `SimulationError` L503-L508）；minutes 上限校验；rating 非有限值 **reject**、合法值 **clamp**；rating 缺省跳过（ratingSum=0）。**非法输入不会污染 stats。PASS。**
+
+### 十五、Negative / Overflow Boundary
+负数统计被 Writer 拒绝（抛错），Normalize 在载入时 `floor` 且 `>0 else 0` 夹取。`ratingSum` 因单场 rating 已 clamp 而有界。**PASS。**
+
+### 十六、Persistence Boundary
+`stats.season/career` 属 `state.runtime`（[game-state.js#L7](file:///workspace/FE-project/src/core/game-state.js#L7)）；存档只持久化 runtime 增量（[save-manager.js#L24-L34](file:///workspace/FE-project/src/save/save-manager.js#L24-L34)）。唯一 Persistence Writer = `serializeState`。**PASS。**
+
+### 十七、Save / Load Round Trip
+`serializeState` → `{worldId,currentDate,season,runtime}`；`deserializeState` → `normalizePlayerRuntime`（补缺、夹取）保留 season/career。**无字段丢失、无第二 Stats、无重复累计。PASS。**
+
+### 十八、New Season Lifecycle
+`Season End → developPlayers → runPlayerLifecycle → … → resetSeasonStats → Season N+1`。**Career 保留、Season 清零。** 符合预期，无架构冲突。**PASS。**
+
+### 十九、Runtime vs Aggregate Boundary
+`simulateMatch` 产出的 **involvements = Aggregate Match Statistic Input**；`rt.stats` 为 **Player Runtime Statistical State**；二者非同一对象。**PASS。**
+
+### 二十、Simulation Core Boundary
+Stats Writer 不写 `MatchCore.score / scoringPlayerId / lastTouchPlayerId / possession / control / second-ball`。Stats 为旁路统计，**不反向影响球级 Simulation Truth**。**PASS。**
+
+### 二十一、Second Stats Truth Audit
+活动球员统计唯一对象 = `state.runtime.players[].stats`（含 season/career）。`retired` 为退役快照（非活动 Truth）；`involvements` 为 transient 输入。**无第二套可写 Season/Career Stats。PASS。**
+
+### 二十二、Determinism
+Stats 写入不使用 `Date.now / performance.now / wall clock`（`recordAppearance` 无 RNG/时间）。同输入 → 同 mutation。**PASS。**
+
+### 二十三、Contract Status
+`Career Stats` / `Appearance` / `Minutes` / `Goals Stats` / `Assists Stats` / `Cards` / `Shooting Stats` / `Rating` = 均 **UNFROZEN**（本 Gate 不冻结）。
+
+### 二十四、Files Changed
+仅本文件（§74 追加）。**src/ = 0，tests/ = 0。**
+
+### 二十五、Contract Changes
+**无。**
+
+### 二十六、Remaining Risks
+1. `recordAppearance` 在 `frame` 校验上采取「抛错」策略；若未来新增调用方传入非法整数会中断 simulation（现有调用方均合规）。
+2. `rating` 单场与 `ratingSum` 累计并存，语义清晰但未以 Contract 文档化；若引入赛事级评分重算须另立 Gate。
+3. Season/Career 统计字段均为 UNFROZEN，文档已如实标记。
+
+**STOP — 不得进入 C-68，不得修改 Stats / recordAppearance / resetSeasonStats / Season Simulation / Career Stats / Save，不得冻结 Stats Contract，不得修改 Scorer / Assister / Involvement / Simulation Core / LastTouch / Goal Resolution / C-14 / C-15 / C-20 / C-21。等待 Owner 验收。**
