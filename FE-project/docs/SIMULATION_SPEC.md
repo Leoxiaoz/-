@@ -4382,3 +4382,142 @@ Save/Load 必须保持 season stats、career stats、ratingSum 及其他已存�
 新增 **Player Statistics Contract Freeze**：appearances / minutes / goals / yellow / red / shots / shotsOnTarget / ratingSum / averageRating = **FROZEN**；assists = **UNFROZEN**。未修改任何既有 Frozen Contract。
 
 **STOP — 不得进入 C-71，不得实现 Assist Attribution，不得修改 Rating / Goals / Shooting / Cards / Appearance / Minutes / AI Potential / Retirement / Archive。等待 Owner 明确指令「继续」。**
+
+## §78 Player Retirement / Career Archive Contract Audit（Step 39F-M-C-71）
+
+**Gate Result = PASS / SEALED（Read-Only Lifecycle Contract Audit）。** Architecture Conclusion = **PASS / SEALED + ARCHITECTURE NOTE**（Season Archive 语义待 Owner 决策，不构成第二 Truth）。
+
+### 一、Retirement Semantics（CURRENT SEMANTICS IDENTIFIED）
+触发生效路径：`runPlayerLifecycle → processRetirements → archiveRetired`（[player-lifecycle.js#L139-L196](file:///workspace/FE-project/src/core/player-lifecycle.js#L139-L196)）。
+1. 触发条件：`retireProbability(age, curve)` 曲线；`age < curve.hardCap` 时以 `createRng(hashSeed(worldId|retire|season|playerId))` 二次门槛，`age ≥ hardCap` 必退。
+2. **deterministic**（逐球员独立 seed）。
+3. **立即生效**（同一次生命周期事务内完成移除）。
+4. 退役后**不可**继续参赛（`getWorldPlayers` 过滤）。
+5. 从 `runtime.players` 删除（L164）。
+6. 从世界/球队成员移除（`removePlayerMembership`，L167）。
+7. 终止合同（`terminateContract`，L163）。
+8. 删除 `runtime.generated[id]`（若为新生代，L165）。
+9. 产生 `player_retired` 事件（L168）。
+10. **无第二 Retirement Truth**（`retired` 唯一写入点 = `archiveRetired`）。
+
+### 二、Retirement Truth
+= **C（A + B）**：`Retirement = Active Runtime Removal + Archive Snapshot Creation`。
+- `runtime.players[id]` 不存在（A）；
+- `runtime.retired[id]` 存在（B）。
+- **无任何位置**把 `runtime.retired[id]` 当作 Active Player Runtime（所有引用仅 `Boolean(retired[id])` 存在性判定）。
+
+### 三、Career Archive Audit
+`runtime.retired[id].career = rt ? { ...rt.stats.career } : {appearances:0,...}`（[L157](file:///workspace/FE-project/src/core/player-lifecycle.js#L157)）。
+- 来源：退役瞬间的 `rt.stats.career`；Writer = `archiveRetired`（唯一）；
+- Reader = **无 Content Reader**（见 §十一）；
+- **shallow copy**（一次性 Snapshot），**非** shared reference / derived / independently writable；
+- 与 Active Career 共存：Active 对象随后 `delete`。
+**结论：`Active stats.career → retirement → archive.career` 为一次性 Snapshot；`Archive Career ≠ Active Career Stats`。**
+
+### 四、Season Stats Retirement Audit
+1. 退役时 `stats.season` 仍存在于 `rt`（即刻）；`rt` 随后被 `delete`。
+2. 删除 `runtime.players[id]` 后 Season Stats **不可恢复**。
+3. **不存在其他 Season Stats Copy**（无 matchStats/aggregate 持久副本）。
+4. 无任何比赛/统计模块保存退休球员 Season Stats。
+5. Archive **不保存退役赛季数据**（archive 只含 `career`）。
+6. 当前 Schema **不具备** season-archive 字段。
+7. **不自补 Schema**。→ 标记 **OWNER_DECISION_REQUIRED**（是否归档退役赛季 Season Stats），**不 BLOCK**（非第二 Truth，仅缺口）。
+
+### 五、Career Statistics Relationship
+退役前 Active Truth = `runtime.players[id].stats.career`；退役时复制为 `runtime.retired[id].career`（最终 Career Snapshot）。
+复制字段（浅拷贝全量）：`appearances / minutes / goals / assists / yellow / red / shots / shotsOnTarget / ratingSum` **全部复制**。
+`averageRating` **不归档**（派生、不持久化，符合 C-70）——archive **只含 `ratingSum`**。
+
+### 六、Final Attribute Snapshot
+`archive.profile = { name, position, birthDate, attributes: pickAttributes(player), potential:{...}, personality:{...} }`（[L149-L156](file:///workspace/FE-project/src/core/player-lifecycle.js#L149-L156)）；`archive.finalDeltas = rt ? {...rt.ability.deltas} : {}`。
+- 完整保存最终能力增减（deltas）与基础 Profile（attributes/potential/personality）；
+- **无第二 Attributes Truth**（均复制）；
+- Archive Attribute **不可写**（无 Mutator）；
+- **不会反向修改 World Player**。
+
+### 七、Contract Snapshot
+`archive.contract = contract ? {...contract} : null`（快照于 `terminateContract` **之前**，[L143/L160/L163](file:///workspace/FE-project/src/core/player-lifecycle.js#L143-L163)）。
+- 来源：退役瞬间的 `getPlayerContract`；Writer = `archiveRetired`；
+- 为**最终状态副本**；`terminateContract` 随后 `delete runtime.contracts[id]`（[contract.js#L238](file:///workspace/FE-project/src/core/contract.js#L238)）→ **不再被 Simulation 使用**；
+- **不可修改**（无 Mutator）；与球队 Active Contract Truth **不重复**（已删除）。
+
+### 八、Generated Player Retirement
+退役时 `delete runtime.generated[id]`（L165）；`archive.generated = Boolean(player.generated)`（[L148](file:///workspace/FE-project/src/core/player-lifecycle.js#L148)）保留新生代标记。
+- Archive 保留 `generated` 布尔标记 + `playerId` + `profile`（name/attributes…）；
+- `runtime.generated[id]` 条目删除 → 不再作为可生成世界实体；**历史身份经 archive.profile 保留**；
+- **无第二个 Generated Player Truth**。
+（本 Gate 不设计 NewGen。）
+
+### 九、Archive Reader Boundary
+全部 `runtime.retired` 引用（[grep 结果]）：
+| 位置 | 读取方式 |
+| --- | --- |
+| free-agent.js / contract.js / membership.js / transfer.js / player-runtime.js `isRetired` | 仅 `Boolean(retired[id])` |
+| membership.js#L267 | fatal 校验 `retired player 仍在 active membership` |
+| game-state.js#L78 | 容器初始化 |
+| player-lifecycle.js#L144 | 唯一 Writer |
+
+**Career Reader / Stats Reader / Profile Reader / Contract Reader / FinalAttribute Reader = 全部不存在。**
+**结论：ARCHIVE CAREER = WRITE-ONLY SNAPSHOT**（写而不用）。**PASS（本 Gate 不新增 Reader）。**
+
+### 十、Save / Load Boundary
+`serializeState` 含 `runtime.retired` → `deserializeState` 仅 `retired ??= {}`（[save-manager.js#L108](file:///workspace/FE-project/src/save/save-manager.js#L108)）；`initializePlayerRuntime` 剔除已退役者的 `runtime.players`（不复活）。
+- **保留** retired entries / career / profile / finalDeltas / contract；
+- archive **不 normalize**（按存档原样保留）；
+- **无字段丢失**（整体持久化）；
+- **无 resurrection**（runtime.players 显式删除，读档再剔除）；
+- **无 Active/Archive 双写**（archive 无 Mutator）。
+**Archive Load 后仍是 Snapshot，而非 Runtime Player。PASS。**
+
+### 十一、Active / Retired Separation
+退役后：
+- 否 — `getWorldPlayers` 返回（[player-runtime.js#L410-L421](file:///workspace/FE-project/src/core/player-runtime.js#L410-L421) 过滤）；
+- 否 — 参加比赛（不在 squad）；
+- 否 — `recordAppearance`（rt 已删 → `requirePlayerRuntime` 抛错）；
+- 否 — 生命周期再次处理（不在 world players）；
+- 否 — 作为 Active Player 查找（`getPlayerRuntime` 返回 null）。
+**无例外 → `Retired Player = Non-Simulatable Archive Entity`。PASS。**
+
+### 十二、Second Truth Audit
+| 对象 | 分类 |
+| --- | --- |
+| `runtime.players[].stats.{season,career}` | **Truth**（Active） |
+| `runtime.retired[].career` | **Snapshot**（只读、非 Active Truth） |
+| `database career` | **不存在** |
+| `season stats` | **Truth**（active，退役即消失） |
+| `historical stats` | **不存在** |
+| `involvements` | **Transient** |
+| `aggregate stats` | **Unrelated** |
+Archive 可保存数据但**不成为 Active Runtime Truth**。无 Second Truth。**PASS。**
+
+### 十三、Determinism Audit
+退役决策：`hashSeed(worldId|retire|season|playerId)` + `ageOn(birthDate, state.currentDate)`；无 `Math.random/Date.now/performance.now`。**PASS。**
+
+### 十四、Contract Status
+| 类别 | 状态 |
+| --- | --- |
+| Retirement Semantics | **RECOMMENDED FREEZE CANDIDATE**（CURRENT SEMANTICS IDENTIFIED） |
+| Career Archive | **RECOMMENDED FREEZE CANDIDATE**（CURRENT SEMANTICS IDENTIFIED；write-only snapshot） |
+| Season Archive | **OWNER_DECISION_REQUIRED / UNFROZEN**（当前不归档） |
+| Final Attribute Snapshot | **CURRENT SEMANTICS IDENTIFIED / UNFROZEN** |
+| Contract Snapshot | **CURRENT SEMANTICS IDENTIFIED / UNFROZEN** |
+本 Gate **不自动 Freeze**。
+
+### 十五、Implementation Gaps（仅记录）
+1. Archive 无 Content Reader（write-only）。
+2. Season Stats 退役不归档（schema 不支撑）。
+3. Archive 读档不 normalize。
+4. 无 Archive UI / 历史统计访问入口。
+
+### 十六、Remaining Risks
+1. Season Stats 退役即丢失，若未来需"退役赛季战绩"须先定义 Season Archive Schema（独立 Gate）。
+2. `retired` 永久驻留 runtime（随存档增长，无 GC）。
+3. Archive 若被将来读取须先定义 Archive Read Contract。
+
+### 十七、Files Changed
+仅本文件（§78 追加）。**src/ = 0，tests/ = 0。**
+
+### 十八、Tests
+`npm test` → **1552 通过，0 失败（共 1552 个用例）**。
+
+**STOP — 不得进入 C-72，不得 Freeze Retirement / Archive，不得 Archive Season Stats，不得新增 Archive Reader，不得修改 Archive Schema / Retirement RNG / Player Lifecycle / Career Stats / Season Stats / NewGen。等待 Owner 明确指令「继续」。**
