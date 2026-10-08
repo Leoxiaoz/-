@@ -3849,3 +3849,106 @@ Season events = **Independent Aggregate Event**（`{minute,teamId,type,actorId,a
 3. Season Sim 的 assists（RNG 派生）会持久化进 season/career stats；属既有行为，非缺陷。
 
 **STOP — 不得进入 C-66，不得修复 assistId / RNG / Assister / Scorer / Season Stats / Career Stats，不得修改 Simulation Core / LastTouch / Goal Resolution / C-14 / C-15 / C-20 / C-21。等待 Owner 验收。**
+
+## §73 Season Scorer / Assister / Involvement Attribution Audit（Step 39F-M-C-66）
+
+**Gate Result = PASS / SEALED（Read-Only Audit）。** Architecture Conclusion = **PASS / SEALED + ARCHITECTURE NOTE**。
+
+### 一、Attribution Vocabulary（以实际 Writer/Consumer 为准）
+| 名称 | 实际来源 | 实际含义 | 生命周期 | Consumer |
+| --- | --- | --- | --- | --- |
+| `selectScorer` | match.js L56 | 时段进球者加权抽取（本方，位置/能力²） | 调用内 | `simulateSegments` |
+| `events[].actorId` | L92/L98 | **Event-local Actor**；`type='goal'` 时=进球者 | event | `buildInvolvements` L144、`applyMatchPerformance` L206/L220 |
+| `events[].assistId` | L99 | **恒 null 保留字段**（无写入路径、无 Reader） | event | 无 |
+| `involvements[].assists` | L226（`applyMatchPerformance`） | **同队非进球者的 RNG 表现统计** | match → stats | `mergePerformance` → `recordAppearance` |
+| `involvements` | L120/L317 | **比赛表现统计容器** | match | `simulation.js #applyPostMatch` |
+| `recordAppearance` | player-runtime L490 | season/career 统计累加 | persisted | 统计层 |
+
+### 二、Season Scorer Audit
+- 输入候选：传入该方 `players` 中 `position ∈ {FW,MF,DF}`（门将排除）。
+- 权重：`finishing/technique/defending` 的**平方**。
+- RNG：`seedRng.next()`（命中段后随即调用）。
+- 输出：`playerId` 或 **null**（`buckets.length===0`，[L65](file:///workspace/FE-project/src/core/match.js#L65)）。
+- 每次命中段必生成 1 个 `goal` event；`actorId` 恒代表进球者。
+- **唯一 Scorer Writer**，后续无覆盖。**Season 只有一个 Scorer Truth（event-local）。PASS。**
+
+### 三、Goal Event Audit
+`events[]` 当前**只有一种 type：`'goal'`**（[L97](file:///workspace/FE-project/src/core/match.js#L97)），字段 `{minute,teamId,type,actorId,assistId,segment,reason}`。属 **统计模拟事件**（非 Core 球级 Goal Event）。**PASS。**
+
+### 四、Event Actor Semantics
+| Event Type | `actorId` 语义 |
+| --- | --- |
+| `goal` | 进球者（Scorer） |
+| （预留 `assist`/`yellow`/`red`） | 其他 Actor（`buildInvolvements` L147-L149 预留分支，**当前不产生**） |
+
+故 `actorId` = **EVENT-LOCAL ACTOR**，非全局 Scorer Truth。**PASS。**
+
+### 五、Assist ID Audit
+`events[].assistId`：唯一写入 = 字面量 `null`（[L99](file:///workspace/FE-project/src/core/match.js#L99)）；**无任何 Reader**（grep 仅 L78 注释/L99 写入）；不参与 `assists` 计算；无隐式 Assister。判定 = **UNUSED / RESERVED FIELD**（不删除）。
+
+### 六、Assist Count Audit
+`involvements[].assists`：初值 0（`buildInvolvements`）→ 被 `mergePerformance` 用 `applyMatchPerformance` 的值覆盖（[L324](file:///workspace/FE-project/src/core/match.js#L324)）。语义 = **Match Performance Statistic**（RNG 派生统计量），**非** Goal Assist 归属记录（无 per-goal 绑定）。
+
+### 七、Assist Generation Audit
+- RNG 来源：`createRng(hashSeed(`${matchSeed}|assist|${side}|${ev.minute}|${scorerId}`))`（[L223](file:///workspace/FE-project/src/core/match.js#L223)），**逐进球独立流**。
+- Seed：`matchSeed` 派生，可复现。
+- 候选：**同队** `players.filter(p => p.id !== scorerId)`（[L221](file:///workspace/FE-project/src/core/match.js#L221)），排除进球者本人。
+- 场次 assists 上限：每 goal event 最多 1（L226），故 `Σassists ≤ Σgoals`。
+- 与 Goal Event 关系：**按 goalEvents 循环**，故不产生"无进球事件的助攻"；但**不记录具体对应哪个进球**（无 assistId 回填）。
+- 可能 0 助攻的进球（`arng.next() >= ASSIST_CHANCE` 跳过）；不会一个进球对多个助攻；不会 assists > goals。
+
+### 八、Scorer / Assist Relationship
+`assistId`（恒 null，无 Reader）与 `assists`（独立 RNG 统计）**无数据关系**。判定：**ASSIST_ID_AND_ASSIST_COUNT_SEMANTICALLY_DISCONNECTED**。
+
+### 九、Goal / Assist Cardinality
+1 Goal → **0 或 1** assist（至多 1，源码注释 L184/L226）。**无 one-to-many / many-to-one 约束**；assists 与具体进球**不一一对应**（无 per-goal 归属）。
+
+### 十、Involvement Semantics
+`involvements[playerId] = { side, role, position, minutes, goals, assists, yellow, red, shots, shotsOnTarget, rating }`。逐字段：`goals`=进球计数；`assists`=助攻统计；`shots/shotsOnTarget/rating`=General Performance；`minutes/role/position/side`=Appearance；`yellow/red`=Other。
+**结论：involvements = 比赛表现统计容器，不是 Goal Attribution 容器**；不能作为 Scorer / Assister Truth。
+
+### 十一、Stats Mapping
+`involvements → recordAppearance → rt.stats.season` 与 `rt.stats.career` 的字段：appearances/minutes/goals/assists/yellow/red/shots/shotsOnTarget/ratingSum（[player-runtime.js#L526-L536](file:///workspace/FE-project/src/core/player-runtime.js#L526-L536)）。**Season 的 Goal/Assist 数据只作为统计输入，不是 Simulation Core Truth。PASS。**
+
+### 十二、Stats Accumulation
+`recordAppearance` 对 season/career **各自独立累加（+=）**，非 career-from-season 派生。`#playFixture` 有 `fixture.played` 守卫（[simulation.js#L85-L107](file:///workspace/FE-project/src/core/simulation.js#L85-L107)），每场只结算一次 → involvement 只消费一次，不重复计入。**唯一 Stats Writer = `recordAppearance`。PASS。**
+
+### 十三、Null Semantics
+| 值 | 含义 |
+| --- | --- |
+| `scorer = null` | 该段无合适球员候选（数据不足），未指派进球者（`actorId=null`） |
+| `assistId = null` | **字段尚未实现/保留**（恒 null，与"是否发生助攻"无关） |
+| `assists = 0` | 该球员本场**未被 RNG 记录助攻**（统计计数为 0） |
+
+三者语义互不相同，不得混淆。
+
+### 十四、RNG Independence
+assist 流 key = `|assist|{side}|{minute}|{scorerId}`；perf 流 key = `|perf|{side}|{playerId}`；比分流 = `matchSeed` 主流。**三者相互独立**：改动其一不改变其余结果。判定 **RNG independent**。**PASS。**
+
+### 十五、Determinism
+全链路 hash-seeded；**无** `Math.random / Date.now / performance.now / wall clock`（`rng.js` 为 hash 派生 LCG）。相同 world/season/round/home/away/players/context → 相同 events / assists / involvements / stats。**PASS。**
+
+### 十六、Cross-Match Contamination
+所有状态均在 `simulateMatch` 局部构造（events/involvements/out 均为局部对象）；**无模块级缓存、无 shared array、无 persistent RNG**。**PASS。**
+
+### 十七、Core Truth Separation
+Season `assistId` / `assists` **不**成为 Core `lastTouchPlayerId` / Ball Truth / Goal Geometry / Score Authority；`src/core/match.js` 对 Core 零依赖（C-65 已确认）。**PASS。**
+
+### 十八、Contract Status
+`Season Scorer Contract`（event-local）= **UNFROZEN**；`Season Assister Contract` = **UNFROZEN**；`Season Assist Count Contract` = **UNFROZEN**；`Season Involvement Contract` = **UNFROZEN**；`Season Goal Event Contract` = **UNFROZEN**。本 Gate 不冻结任何 Contract。
+
+### 十九、Documentation Audit
+明确记录：`events[].assistId` = UNUSED / RESERVED FIELD；`involvements[].assists` = RNG 派生 Match Performance Statistic；`ASSIST_ID_AND_ASSIST_COUNT_SEMANTICALLY_DISCONNECTED`。**未**把当前 RNG assists / involvements 描述成 Core Truth 或正式 Assister Contract。
+
+### 二十、Files Changed
+仅本文件（§73 追加）。**src/ = 0，tests/ = 0。**
+
+### 二十一、Contract Changes
+**无。**
+
+### 二十二、Remaining Risks
+1. `events[].assistId` 为恒 null 保留字段，`buildInvolvements` 的 `type='assist'` 分支为死代码（无事件产生）——属预留设计，非缺陷。
+2. `involvements[].assists` 为 RNG 统计量，与具体进球无归属绑定；若未来需要「每球助攻者」Truth，须另立 Contract（本 Gate 不新增）。
+3. Season Scorer（event-local）/ Assister / Involvement 均 UNFROZEN，文档已如实标记。
+
+**STOP — 不得进入 C-67，不得冻结 Season Scorer / Assister / Assist Count / Involvement / Goal Event，不得修复 assistId / assists / RNG / involvements / stats / career stats，不得修改 Simulation Core / LastTouch / Goal Resolution / C-14 / C-15 / C-20 / C-21。等待 Owner 验收。**
