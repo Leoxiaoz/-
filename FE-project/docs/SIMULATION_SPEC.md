@@ -4824,3 +4824,60 @@ finalSeasonStats: rt ? { ...rt.stats.season } : null,
 3. 完整历史赛季系统仍属未来独立 Gate。
 
 **STOP — 不得进入 C-76，不得实现 UI / 历史页面，不得增加完整历史赛季系统，不得修改 Stats Contract。等待 Owner 明确指令「继续」。**
+
+## §83 Retirement Archive Reader Post-Implementation Architecture Audit（Step 39F-M-C-76）
+
+**Gate Result = PASS / SEALED（Read-Only Architecture Audit）。** 对 C-75 Reader 的实现后审计，未改任何生产/测试代码。
+
+### 一、Reader Implementation Audit（已验证事实）
+`getRetiredFinalSeasonStats`（[player-runtime.js#L116-L130](file:///workspace/FE-project/src/core/player-runtime.js#L116-L130)）：
+1. 唯一数据源 = `state?.runtime?.retired?.[playerId]?.finalSeasonStats`（可选链，无其他来源）；
+2. **显式字段投影**返回**独立对象**（`{...}` 逐字段），非引用共享；
+3. 返回对象严格只有 C-70 冻结 9 字段（RT-10 验证）；
+4. 无内部引用泄漏（RT-02 验证）；
+5. 无缓存 / 惰性写入 / getter 副作用 / 隐藏 Mutation（纯同步构造）；
+6. 无 `Math.random` / `Date.now` / `performance.now` / wall-clock；
+7. 异常输入：`!snap || typeof snap !== 'object'` → `null`；`state` 缺省经可选链安全；
+8. 与 `getPlayerStatsView`（返回 `{season,career}` + 派生 averageRating）/ `isRetired`（返回 boolean）职责不混淆。
+
+### 二、Consumer Audit
+全仓搜索 `getRetiredFinalSeasonStats`：**唯一引用 = 测试**（[lifecycle.test.js](file:///workspace/FE-project/tests/lifecycle.test.js) RT-01…RT-10 + 导入）。**NO PRODUCTION CONSUMER — READER REMAINS UNUSED BY PRODUCTION。** 无调用方回写 Runtime / Career / Archive / MatchCore。
+
+### 三、Writer Audit
+`finalSeasonStats` 全仓出现位置：
+- **生产 Writer（唯一）**：[player-lifecycle.js#L160](file:///workspace/FE-project/src/core/player-lifecycle.js#L160) `archiveRetired`。
+- **生产 Reader**：[player-runtime.js#L116](file:///workspace/FE-project/src/core/player-runtime.js#L116)。
+- **测试引用**：`tests/lifecycle.test.js`（C-73 快照测试 + C-75 RT-01…RT-10）。
+未新增 Writer；无同步更新机制；无 `career ↔ finalSeasonStats` 双向写。
+
+### 四、Stats Truth Boundary（已验证）
+Active Truth = `runtime.players[id].stats`；Career Snapshot = `retired[id].career`；Final Season Snapshot = `retired[id].finalSeasonStats`；`averageRating` = Derived；`assists` = C-70 Aggregate Match Performance Statistic。三者**独立**，无合并、无双向同步。
+
+### 五、Retirement Lifecycle Boundary（已验证）
+Reader 不创建 Active Runtime / 不恢复合同 / 成员 / generated；不调用 `recordAppearance`；不参与退役概率；不修改 `runtime.retired`；不改变"退役球员不可参赛"规则。
+
+### 六、Persistence Boundary（已验证）
+`finalSeasonStats` 随现有 `runtime.retired` 持久化（C-73/C-74）；Reader 未改 Save/Load 行为；旧档缺字段 / `null` 均返回 `null`；无隐式迁移 / 补字段 / 回填。
+
+### 七、Cross-System Isolation（全仓搜索证据）
+`getRetiredFinalSeasonStats` 无 MatchCore / Score / `scoringPlayerId` / `lastTouchPlayerId` / Possession / Second Ball / Goal Attribution / Season Match Simulation / Player Lifecycle / AI 潜力评估 的任何引用。**无跨系统依赖泄漏。**
+
+### 八、Tests
+`npm test` → **1564 通过，0 失败（共 1564 个用例）**，退出码 0；RT-01…RT-10 正常执行，无跳过 / 未注册。
+
+### 九、未发现的问题 / 尚未实现的功能
+- 未发现问题。Reader 符合 C-74。
+- 尚未实现（Future Gate）：生产 Consumer / UI / 历史页面 / 完整历史赛季系统 / Archive GC。
+
+### 十、Contract Changes
+无。未修改 C-70…C-75 任何 Contract 定义。
+
+### 十一、Files Changed
+仅 [docs/SIMULATION_SPEC.md](file:///workspace/FE-project/docs/SIMULATION_SPEC.md#L4832)（§83）。**src/ = 0，tests/ = 0。**
+
+### 十二、Remaining Risks
+1. Reader 无生产 Consumer（未使用）；未来接入须受 C-74 Read-only Rule 约束。
+2. `retired` 无 GC，长期增长（既有）。
+3. 完整历史赛季系统仍属未来独立 Gate。
+
+**STOP — 不得进入 C-77，不得新增生产功能 / UI / 历史页面 / 历史赛季系统。等待 Owner 明确指令「继续」。**
