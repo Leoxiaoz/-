@@ -4881,3 +4881,61 @@ Reader 不创建 Active Runtime / 不恢复合同 / 成员 / generated；不调�
 3. 完整历史赛季系统仍属未来独立 Gate。
 
 **STOP — 不得进入 C-77，不得新增生产功能 / UI / 历史页面 / 历史赛季系统。等待 Owner 明确指令「继续」。**
+
+## §84 Retirement Career Stats Archive Read Contract Audit（Step 39F-M-C-77）
+
+**Gate Result = PASS / SEALED + OWNER_DECISION_REQUIRED（Read-Only Audit）。** 未改任何生产/测试代码。
+
+### 一、Career Snapshot Writer Audit（已验证事实）
+**唯一生产 Writer = `archiveRetired`**（[player-lifecycle.js#L157](file:///workspace/FE-project/src/core/player-lifecycle.js#L157)）：
+- `career: rt ? { ...rt.stats.career } : { appearances:0, minutes:0, goals:0, assists:0 }`；
+- 值来自退役瞬间 `rt.stats.career`，**浅拷贝独立快照**（不与 Active Stats 共享引用）；
+- 创建后无其他更新路径；**无** `finalSeasonStats → career` 回写；**无** Career Snapshot → Active Runtime Stats 回写。
+- 观察（非 BLOCK）：`rt` 为 null 时的兜底默认仅 4 字段（`appearances/minutes/goals/assists`）；生产路径 `rt` 恒存在，兜底不触发。
+
+### 二、Career Snapshot Reader Audit（已验证事实）
+全仓搜索 `retired[].career`：**生产代码无任何 `.career` 内容读取**。对 `runtime.retired[id]` 的生产引用**全部为存在性判定**（返回 boolean，不含内容读取）：
+- `isRetired`（[player-runtime.js#L396](file:///workspace/FE-project/src/core/player-runtime.js#L396)）
+- `membership.js#L48` / `contract.js#L32` / `free-agent.js#L48` / `transfer.js#L60`（均为 `Boolean(retired[id])` 有效性守卫）。
+
+**NO PRODUCTION CONTENT READER — CAREER ARCHIVE REMAINS WRITE-ONLY。** 测试引用见 `lifecycle.test.js`（L116/L133/L162/L167 等）；其余为存在性 mock。**未新增 Consumer。**
+
+### 三、Field Contract Audit（代码证据）
+Career Snapshot = `{...createStatLine()}`（[player-runtime.js#L131-L144](file:///workspace/FE-project/src/core/player-runtime.js#L131-L144)），实含 C-70 冻结 9 字段：`appearances / minutes / goals / assists / yellow / red / shots / shotsOnTarget / ratingSum`。**无 `averageRating`**（Derived，未存储）。字段名为 `yellow`/`red`（本 Gate 文本 "yellowCards/redCards" 即指这两字段）。**与 Final Season Snapshot 结构一致，无冲突。**
+
+### 四、Career / Final Season Boundary（已验证）
+- `runtime.players[id].stats.career`：Active Career Truth（退役前）。
+- `runtime.retired[id].career`：退役时一次性 Career Snapshot（跨赛季累计终值）。
+- `runtime.retired[id].finalSeasonStats`：仅最后完成赛季。
+- 三者**独立复制**；**无双向同步**；**无** Final Season → Career 重算；**无** Career 冒充最终赛季 data 的 fallback。
+
+### 五、Retirement Lifecycle Boundary（已验证）
+顺序（[player-lifecycle.js#L144-L170](file:///workspace/FE-project/src/core/player-lifecycle.js#L144-L170)）：构造归档对象（含 career 快照）→ `terminateContract` → `delete runtime.players[id]` → `delete runtime.generated[id]` → `removePlayerMembership`。退役者不可再被模拟；Career Snapshot 此后不变；**无** Reader 恢复 Active Runtime 路径。
+
+### 六、Persistence Boundary（已验证）
+随现有 `runtime.retired` 持久化（`serializeState` 含 `runtime.retired`）；`deserializeState` 仅 `retired ??= {}`（[save-manager.js#L108](file:///workspace/FE-project/src/save/save-manager.js#L108)）。存档往返保留 Career Snapshot（`JSON.stringify(loaded.runtime.retired)` 一致性测试通过）。旧档缺 `retired[id]` 时容器兜底为 `{}`（存在性判定安全）；**无**隐式重建 / 补默认 / migration；**无**第二份可写 Career Truth。
+
+### 七、Truth & Cross-System Isolation（全仓搜索证据）
+Career Archive Snapshot **无**对 Active Career Stats / Season Stats / MatchCore / Score / `scoringPlayerId` / `lastTouchPlayerId` / Possession / Second Ball / Goal Attribution / Season Match Simulation / AI 潜力评估 / Player Lifecycle 的依赖或写入。**无核心系统 Truth 泄漏。**
+
+### 八、Determinism
+`archiveRetired` 不新增 `Math.random` / `Date.now` / `performance.now` / wall-clock；沿用既有 `state.currentDate`。纯复制拷贝。
+
+### 九、Tests
+`npm test` → **1564 通过，0 失败（共 1564 个用例）**，退出码 0。Career Snapshot 相关测试：`lifecycle.test.js`（L116 归档保留 career、L162-173 快照独立/Career 不被回写）、`foundation.test.js`（归档字段）、`membership.test.js`（`JSON.stringify` 往返）。无跳过/未注册。
+
+### 十、Contract Changes
+无。未修改 C-70…C-76 任何 Contract。
+
+### 十一、Files Changed
+仅 [docs/SIMULATION_SPEC.md](file:///workspace/FE-project/docs/SIMULATION_SPEC.md#L4886)（§84）。**src/ = 0，tests/ = 0。**
+
+### 十二、Remaining Risks
+1. Career Archive 仍 Write-only（无内容 Reader）。
+2. `retired` 无 GC，长期增长（既有）。
+3. 兜底默认仅 4 字段（生产路径不触发）。
+
+### 十三、Owner Decisions Required
+**Career Archive Read Contract 是否冻结？** 当前事实（§三/§四）已足够建立与 C-74 同构的只读 Read Contract；是否执行须 Owner 决策。未冻结项：Career Archive Read Contract = **UNFROZEN / OWNER_DECISION_REQUIRED**。
+
+**STOP — 不得进入 C-78，不得实现 Career Archive Reader / UI / 历史页面 / 完整历史赛季系统。等待 Owner 明确指令「继续」。**
