@@ -75,6 +75,7 @@ import './interaction-ball-movement-semantics.test.js';
 import './instant-ball-position-integration.test.js';
 import './second-ball-ball-movement-semantics.test.js';
 import './last-touch-contract.test.js';
+import './match-loop-harness.test.js';
 import './development-derived.test.js';
 import './finance-feedback.test.js';
 import './competition.test.js';
