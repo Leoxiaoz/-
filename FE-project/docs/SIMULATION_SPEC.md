@@ -900,7 +900,8 @@
 
 ## §42 Continuous Ball Movement Tick Semantics Decision（Step 39F-M-C-35）
 
-- **状态**：**BLOCKED（Decision Gate，未冻结语义）**。原因：`CONTINUOUS_BALL_POSITION_TRUTH_UNDEFINED`。**未修改任何生产代码 / 测试 / Frozen Contract。**
+- **历史状态**：**BLOCKED（Decision Gate，未冻结语义）**（Step 39F-M-C-35 原始结论）。原因：`CONTINUOUS_BALL_POSITION_TRUTH_UNDEFINED`。原始工具内**未修改任何生产代码 / 测试 / Frozen Contract**（保留如下，供历史追溯）。
+- **当前状态（后续追认）**：**已被 §43（C-36）/ §44（C-37）/ §45（C-38）/ §46（C-39）收口**——连续球位 Tick 语义**不再处于「完全未定义」**，已由后续决策与实现落地为 **OPTION_B 混合方案**。详见文末「### 状态追认（Owner Decision）」。**注意**：本追认**不影响 §41**（PASS/SHOT Action 连续运动路径仍 **BLOCKED**），也**不表示**已接入 Production Loop。
 
 ### Existing Fact（源码已明确）
 
@@ -932,6 +933,43 @@
 
 - **不变（红线）**：未修改 C-23 / C-24 / C-29 / C-33 / C-27 / C-03 Ball Physics；未改 C-08 Lifecycle；未创建 Movement Model / Transit State / Physics / Velocity Model / Trajectory / Collision / Goal Detection；未直接写 Ball Position；未新增测试；全量测试不受影响（1473 通过 / 0 失败）。
 - **Deferred**：连续运动 Tick 语义最终冻结 + 生产接入；本 Gate 完成后 **STOP**，等待 Owner 验收。
+
+### 状态追认（Owner Decision；后续文档更新，纯文档）
+
+> 本节为 **后续追认记录**，用于消除 §42 原始 BLOCKED 表述与 §43–§46 已落地决策 / 实现之间的矛盾。
+> **不修改 §43–§46 已封存契约；不新增任何运行时能力；不接入任何新调用链；不属于新实现 / 新代码 Gate。**
+> 对应 Owner 决策记录见 [DECISIONS D-46](file:///workspace/FE-project/docs/DECISIONS.md)。
+
+- **Owner 决策（本次）**：
+  1. **正式追认**现有 **C-38 / C-39 OPTION_B 混合方案**。
+  2. **排除**纯 `COMPLETION_TICK` 作为当前架构方案。
+  3. **排除**纯 `MOVEMENT_DRIVEN_TICK` 作为当前架构方案。
+  4. 接受「**非完成 Tick 由 C-03 Physics 推进球位、完成 Tick 由 C-23 精确写入 `transit.to`**」的既有行为。
+  5. **完成 Tick 位置可能跳变**为**已知行为**；本次**不新增跳变幅度上限**，也**不宣称**该行为在所有场景下已验证无风险。
+  6. **保持现有 Contact 契约不变**，不重开完成 Tick 的 Contact 决策。
+  7. **Goal-Line Detection 的最终输入权威**不在本次裁决范围内，保留为独立后续架构问题。
+  8. §42 状态更正为「已被 §43–§46 覆盖」。
+- **本追认不代表**批准任何新实现 / 代码改动 / Production Loop 接入。
+
+#### A. 非完成 Tick（已追认语义）
+- C-39 非完成分支调用 **C-03 Physics**（[continuous-ball-movement-integration.js#L169-L192](file:///workspace/FE-project/src/core/match/continuous-ball-movement-integration.js#L169-L192)）；球的中间位置由物理推进产生。
+- 现有物理推进可能受**摩擦 / 停止阈值 / 边界处理**影响；**不保证**仅依靠 C-03 Physics 就能精确到达 `transit.to`（依据 §44 / C-37 `CONTINUOUS_TRANSIT_PHYSICS_INCOMPATIBLE`，[L1000-L1012](file:///workspace/FE-project/docs/SIMULATION_SPEC.md#L1000-L1012)）。
+
+#### B. 完成 Tick（已追认语义）
+- C-39 完成分支调用 **C-23 `applyBallMovementPositionUpdate`**（[#L148-L166](file:///workspace/FE-project/src/core/match/continuous-ball-movement-integration.js#L148-L166)）。
+- **C-23 是 Transit 完成时的唯一终点位置写入边界**（[ball-movement-integration.js#L63-L87](file:///workspace/FE-project/src/core/match/ball-movement-integration.js#L63-L87)）。
+- 终点位置按 `transit.to` **精确写入，不进行额外 clamp**。
+- `finalizeTransitSettlement` 负责相应的状态结算（State / Control / Possession / Transit），**不重复写入球的位置**（[#L71-L106](file:///workspace/FE-project/src/core/match/continuous-ball-movement-integration.js#L71-L106)）。
+
+#### C. 已知限制与未决事项（保持原状）
+- **完成 Tick 可能产生位置跳变**：本次**不设置跳变幅度上限**，也未声称其无风险。
+- **本次不更改 Contact 的完成 Tick 行为**（§53 / §54 契约维持不变）。
+- **Goal-Line Detection** 尚未正式接入 C-08 完整链路，其**最终轨迹输入权威**仍待后续独立裁决。
+- **§41 的 PASS/SHOT Action 连续运动路径保持原有 BLOCKED 状态**，不因 §42 追认而自动解除。
+- 本次**不声称**连续引擎已具备完整、可玩的比赛闭环；**未接入 Production Loop**。
+
+#### 依据（后续 Gate；不改其契约）
+- §43（C-36 Owner 决策 A）、§44（C-37 `CONTINUOUS_TRANSIT_PHYSICS_INCOMPATIBLE`）、§45（C-38 **PASS / SEALED**，OPTION_B）、§46（C-39 **PASS / SEALED**，OPTION_B 生产实现）。
 
 ---
 

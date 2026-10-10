@@ -2189,6 +2189,34 @@ Family C（non-affine）→ **PASS**（corr≈0.9821，1 个非对角组合 High
 
 ---
 
+## D-46 连续球位 Tick 语义 Owner 追认（§42 状态更正；Step 39F-M-C-35 后续）
+
+> 本条为 **OWNER DECISION RECORD / DOCS-ONLY**。
+> 依据：SIMULATION_SPEC §42（C-35 原始 BLOCKED）、§43（C-36 Owner 决策 A）、§44（C-37）、§45（C-38 PASS/SEALED）、§46（C-39 PASS/SEALED），以及只读总审计与 §42 只读核对报告。
+> **本记录为纯文档**：未修改任何生产代码 / 测试 / 数据 / 配置 / Schema / Save Format；未实现或接入 Production Loop；未接入 PASS/SHOT Action 连续运动路径；未修改 C-03 / C-08 / C-14 / C-15 / C-19 / C-20 / C-21 / C-23 / C-39 实现；未重开 Contact 契约；未新增跳变阈值 / Ball Truth / 状态字段 / 轨迹权威。
+
+### 决策（Owner，本次）`[已定]`
+1. **正式追认**现有 **C-38 / C-39 OPTION_B 混合方案**。
+2. **排除**纯 `COMPLETION_TICK` 作为**当前架构方案**。
+3. **排除**纯 `MOVEMENT_DRIVEN_TICK` 作为**当前架构方案**。
+4. 接受现有实现中「**非完成 Tick 由 C-03 Physics 推进球位、完成 Tick 由 C-23 精确写入 `transit.to`**」的行为。
+5. **完成 Tick 的位置可能发生跳变**，是当前实现**已知行为**；本次**不新增跳变幅度上限**，也**不宣称**该行为在所有场景下已验证无风险。
+6. **保持现有 Contact 契约不变**，不重新打开完成 Tick 的 Contact 决策。
+7. **Goal-Line Detection 的最终输入权威**不在本次裁决范围内，保留为独立后续架构问题。
+8. 将 SIMULATION_SPEC §42 的状态更正为**已被 §43–§46 后续决策及实现覆盖**，消除「文档仍标记 BLOCKED、但后续契约已落地」的矛盾。
+
+### 语义记录（与 SIMULATION_SPEC §42 追认一致）`[已定]`
+- **非完成 Tick**：C-39 非完成分支调用 C-03 Physics；中间位置由物理推进产生；受摩擦 / 停止阈值 / 边界处理影响；**不保证**仅靠 C-03 Physics 精确到达 `transit.to`。
+- **完成 Tick**：C-39 完成分支调用 C-23 `applyBallMovementPositionUpdate`；C-23 为 Transit 完成时**唯一终点位置写入边界**；终点按 `transit.to` 精确写入、不额外 clamp；`finalizeTransitSettlement` 只做状态结算，不重复写 position。
+- **已知限制 / 未决事项（保持原状）**：完成 Tick 位置可能跳变且未设上限；Contact 完成 Tick 行为不改；Goal-Line Detection 最终轨迹输入权威待后续独立裁决；§41 PASS/SHOT Action 路径保持 **BLOCKED**；连续引擎**尚未**具备完整可玩比赛闭环、**未接入** Production Loop。
+
+### 范围
+- 本决策**仅**适用于上述已存在的混合方案；**不代表**批准任何新实现、代码改动或 Production Loop 接入。
+
+**验证**：本记录为**纯文档**（仅修改 `docs/DECISIONS.md` 与 `docs/SIMULATION_SPEC.md`）；未修改 `src/**` / `tests/**` / `data/**` / 配置 / Schema / Save Format / baseline / Golden / 运行行为。
+
+---
+
 ## Deferred Issues（登记；不在本步骤处理）
 
 ### DF-01 Managed Club Cash Concentration / World Finance Feedback `[Resolved → Step 36C 冻结]`
