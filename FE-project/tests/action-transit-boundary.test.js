@@ -58,6 +58,10 @@ function shotCore() {
   ], 'h_a', H);
 }
 const actorPosOf = (core, id) => core.players.find((p) => p.playerId === id).positionOnPitch;
+// 携带被封禁的并行球字段（触发 INV-07）的非法 MatchCore（仅作输入，非生产注入点）。
+function coreWithForbiddenBallTruth() {
+  return { ...passCore(), secondBall: { marker: true } };
+}
 
 // ===========================================================================
 // A. PASS 成功
@@ -249,3 +253,58 @@ test('ATB-15. 非 PASS / SHOT 路径与原始 C-08 完全一致（回归）', ()
   assertEquals(adapter.matchCore, plain.matchCore);
   assertEquals(adapter.tick, plain.tick);
 });
+
+test('ATB-16. FAILED_INVARIANT：非法候选（携带被封禁 secondBall → INV-07）→ 放弃候选，保留 C-08 结果', () => {
+  const core = coreWithForbiddenBallTruth();
+  const tickInput = { actionInstance: passInst('h_a', 'h_t') };
+  const options = { seed: 'seed-pass' };
+
+  // 本次 C-08 原始完成结果（真实调用 runMatchTick，未模拟 / 未伪造）。
+  const plain = runMatchTick(core, tickInput, options);
+  // 真实调用适配层（不得模拟或伪造适配层返回结果）。
+  const res = runMatchTickWithActions(core, tickInput, options);
+
+  // (1) 适配层结果状态为 FAILED_INVARIANT。
+  assertEquals(res.actionInstall.status, ACTION_INSTALL_STATUS.FAILED_INVARIANT);
+  assertEquals(res.actionInstall.reason, ACTION_INSTALL_REASON.INVARIANT_VIOLATION);
+  assertEquals(res.actionInstall.applied, false);
+
+  // (2) 不变量诊断包含预期的 INV-07 错误。
+  assert(Array.isArray(res.actionInstall.invariantIssues), '应携带 invariantIssues 诊断');
+  assert(
+    res.actionInstall.invariantIssues.includes('INV-07_SECOND_BALL_TRUTH_PRESENT'),
+    '诊断应包含 INV-07_SECOND_BALL_TRUTH_PRESENT',
+  );
+
+  // 解析结果真实存在，证明确实走完「解析 → 候选 → 校验 → 回滚」路径。
+  assertEquals(res.actionResolution.type, 'PASS_RESOLUTION');
+  assertEquals(res.actionResolution.ok, true);
+  assert(!!res.actionResolution.transit, '解析结果应含可安装 transit（证明进入了候选阶段）');
+
+  // (3) 最终返回的 matchCore 与本次 C-08 原始完成结果保持一致。
+  assertEquals(res.matchCore, plain.matchCore);
+  assertEquals(res.matchCore.ball, plain.matchCore.ball);
+
+  // (4) 非法候选状态没有作为最终状态提交：候选安装的 transit 未落地，球仍为 C-08 的 CONTROLLED。
+  assert(res.matchCore.ball.transit == null, '非法候选的 transit 不应作为最终状态提交');
+  assertEquals(res.matchCore.ball.state, 'CONTROLLED');
+  assertEquals(res.matchCore.ball.state, plain.matchCore.ball.state);
+
+  // (5) 适配层没有撤销 / 伪称撤销 C-08 已完成的合法状态变化：
+  //     适配层原样透传 C-08 的 applied / events / tick（仅置 matchCore 保持一致，未回滚 Tick 其它阶段）。
+  assertEquals(res.applied, plain.applied);
+  assertEquals(res.events, plain.events);
+  assertEquals(res.tick, plain.tick);
+  assertEquals(res.tick.status, 'COMPLETED');
+  // 非法输入本身携带的 secondBall 字段原样保留（本层不清理、不篡改 C-08 结果）。
+  assert('secondBall' in res.matchCore, 'C-08 结果字段原样保留，未伪造清理');
+
+  // 无共享状态泄漏 / 确定性：再次调用结果一致。
+  const res2 = runMatchTickWithActions(core, tickInput, options);
+  assertEquals(res2.matchCore, res.matchCore);
+});
+
+// 说明（要求 6）：本文件未修改任何封存模块，也未引入生产注入点 / 测试专用生产逻辑；
+// 唯一改动范围由任务报告的 `git diff --` / `git status --short` 核验。
+// 上述 FAILED_INVARIANT 分支仅通过「传入 MatchCore 上的被封禁字段」经真实 C-08 调用链触发，
+// 生产源码保持只读。
