@@ -1,0 +1,58 @@
+[
+  {
+    "id": "clb_p01",
+    "name": "Northport FC",
+    "leagueId": "lg_p",
+    "formation": "4-4-2",
+    "mentality": "attacking"
+  },
+  {
+    "id": "clb_p02",
+    "name": "Riverton United",
+    "leagueId": "lg_p",
+    "formation": "4-3-3",
+    "mentality": "balanced"
+  },
+  {
+    "id": "clb_p03",
+    "name": "Kingsbridge SC",
+    "leagueId": "lg_p",
+    "formation": "4-4-2",
+    "mentality": "balanced"
+  },
+  {
+    "id": "clb_p04",
+    "name": "Westvale Athletic",
+    "leagueId": "lg_p",
+    "formation": "3-5-2",
+    "mentality": "defensive"
+  },
+  {
+    "id": "clb_p05",
+    "name": "Eastmere City",
+    "leagueId": "lg_p",
+    "formation": "4-4-2",
+    "mentality": "attacking"
+  },
+  {
+    "id": "clb_p06",
+    "name": "Stonehill Rovers",
+    "leagueId": "lg_p",
+    "formation": "4-3-3",
+    "mentality": "balanced"
+  },
+  {
+    "id": "clb_p07",
+    "name": "Lakewood FC",
+    "leagueId": "lg_p",
+    "formation": "4-4-2",
+    "mentality": "balanced"
+  },
+  {
+    "id": "clb_p08",
+    "name": "Ashford Wanderers",
+    "leagueId": "lg_p",
+    "formation": "3-5-2",
+    "mentality": "defensive"
+  }
+]

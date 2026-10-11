@@ -1,0 +1,326 @@
+/**
+ * Data Layer（数据库加载与校验）。
+ * 层级归属：Data Layer。只负责把 `.fdb` 世界读入并校验，**不含游戏逻辑**，
+ * **不依赖 Simulation Core / Save / UI**。
+ *
+ * 格式说明：下列文件名与字段为**骨架占位**，正式 `.fdb` 规范见
+ * DATABASE_SPEC §5（物理形态 D8）与 §6（版本/兼容 D10）——两者尚未决定。
+ *
+ * ID 约定（决策 A4）：类型前缀字符串，库内唯一即可，跨库不强制相同。
+ * 前缀建议：cty_ / lg_ / clb_ / ply_ / mgr_ / std_ / ctr_ / trf_ / cmp_ / mat_；
+ * 新生代使用独立命名空间（如 ply_g_<seq>）。可选 externalRef 供 Mod / 合并映射。
+ */
+
+import { DataError } from '../shared/errors.js';
+import {
+  POSITIONS,
+  PLAYER_ATTRIBUTES,
+  ATTRIBUTE_RANGE,
+  ATTRIBUTE_DEFAULT,
+  MENTALITIES,
+  PLAYER_PERSONALITY_KEYS,
+  PERSONALITY_RANGE,
+  BIRTH_YEAR_RANGE,
+} from '../shared/football-schema.js';
+
+/** 占位格式标识；正式值待 DATABASE_SPEC 决策后替换。 */
+export const WORLD_FORMAT = 'fdb-json-0';
+
+/** 骨架阶段要求存在的世界文件（不含可选文件与 assets/）。 */
+export const REQUIRED_FILES = ['manifest', 'countries', 'leagues', 'teams', 'players'];
+
+/**
+ * 把已读取的各文件内容解析为世界对象，并做完整性 / 引用校验。
+ * 纯函数，便于在测试中直接注入 fixture（无需网络或文件系统）。
+ * @param {{manifest: object, countries: any[], leagues: any[], teams: any[], players: any[]}} files
+ * @returns {object} world
+ */
+export function parseWorld(files) {
+  const world = {
+    manifest: files.manifest,
+    countries: files.countries ?? [],
+    leagues: files.leagues ?? [],
+    teams: files.teams ?? [],
+    players: files.players ?? [],
+  };
+  validateWorld(world);
+  return world;
+}
+
+/**
+ * 校验世界数据的完整性、唯一 ID 与引用完整性。
+ * 错误信息包含：文件 / 实体 / ID / 字段 / 问题（对应 DATABASE_SPEC §6 红线）。
+ * @param {object} world
+ */
+export function validateWorld(world) {
+  const { manifest } = world;
+  if (!manifest || typeof manifest !== 'object') {
+    throw new DataError('缺少 manifest', { context: { file: 'manifest.json', field: 'manifest' } });
+  }
+  for (const field of ['id', 'name', 'format']) {
+    if (!manifest[field]) {
+      throw new DataError(`manifest 缺少必填字段 ${field}`, {
+        context: { file: 'manifest.json', entity: 'manifest', field },
+      });
+    }
+  }
+  if (manifest.format !== WORLD_FORMAT) {
+    throw new DataError(`世界格式不受支持：${manifest.format}`, {
+      context: { file: 'manifest.json', field: 'format' },
+    });
+  }
+
+  assertUniqueIds(world.countries, 'countries.json', 'country');
+  assertUniqueIds(world.leagues, 'leagues.json', 'league');
+  assertUniqueIds(world.teams, 'teams.json', 'team');
+  assertUniqueIds(world.players, 'players.json', 'player');
+
+  const countryIds = new Set(world.countries.map((c) => c.id));
+  const leagueIds = new Set(world.leagues.map((l) => l.id));
+  const teamIds = new Set(world.teams.map((t) => t.id));
+
+  for (const league of world.leagues) {
+    if (!countryIds.has(league.countryId)) {
+      throw new DataError('联赛引用了不存在的国家', {
+        context: { file: 'leagues.json', entity: 'league', id: league.id, field: 'countryId', value: league.countryId },
+      });
+    }
+    validateLeagueRules(league);
+  }
+  validateDivisionStructure(world.leagues);
+  for (const team of world.teams) {
+    if (!leagueIds.has(team.leagueId)) {
+      throw new DataError('球队引用了不存在的联赛', {
+        context: { file: 'teams.json', entity: 'team', id: team.id, field: 'leagueId', value: team.leagueId },
+      });
+    }
+    if (team.mentality != null && !MENTALITIES.includes(team.mentality)) {
+      throw new DataError('球队攻守倾向不在允许枚举内', {
+        context: { file: 'teams.json', entity: 'team', id: team.id, field: 'mentality', value: team.mentality, allowed: MENTALITIES },
+      });
+    }
+  }
+  for (const player of world.players) {
+    if (player.teamId != null && !teamIds.has(player.teamId)) {
+      throw new DataError('球员引用了不存在的球队', {
+        context: { file: 'players.json', entity: 'player', id: player.id, field: 'teamId', value: player.teamId },
+      });
+    }
+    validatePlayer(player);
+  }
+}
+
+/**
+ * 校验单个球员：位置枚举、属性数值与取值范围（DATABASE_SPEC §6 红线：显式报错 + 定位），
+ * 以及成长/衰退系统所需字段 birthDate / potential / personality（第 16 步，A1/A3）。
+ * 属性为可选字段（缺失时模拟回退到 ATTRIBUTE_DEFAULT），但一旦提供必须合法。
+ * birthDate/potential/personality 为**必填**（A3：正式库不得以默认值替代真实字段）。
+ */
+function validatePlayer(player) {
+  if (player.position != null && !POSITIONS.includes(player.position)) {
+    throw new DataError('球员位置不在允许枚举内', {
+      context: { file: 'players.json', entity: 'player', id: player.id, field: 'position', value: player.position, allowed: POSITIONS },
+    });
+  }
+  for (const attr of PLAYER_ATTRIBUTES) {
+    const v = player[attr];
+    if (v == null) continue;
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < ATTRIBUTE_RANGE.MIN || v > ATTRIBUTE_RANGE.MAX) {
+      throw new DataError('球员属性超出允许范围', {
+        context: { file: 'players.json', entity: 'player', id: player.id, field: attr, value: v, range: ATTRIBUTE_RANGE },
+      });
+    }
+  }
+  validateBirthDate(player);
+  validatePotential(player);
+  validatePersonality(player);
+}
+
+/** 出生日期：必填、YYYY-MM-DD、年份在合理区间。 */
+function validateBirthDate(player) {
+  const { birthDate } = player;
+  if (typeof birthDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
+    throw new DataError('球员缺少合法的 birthDate（YYYY-MM-DD）', {
+      context: { file: 'players.json', entity: 'player', id: player.id, field: 'birthDate', value: birthDate },
+    });
+  }
+  const year = Number(birthDate.slice(0, 4));
+  if (year < BIRTH_YEAR_RANGE.MIN || year > BIRTH_YEAR_RANGE.MAX) {
+    throw new DataError('球员 birthDate 年份超出合理区间', {
+      context: { file: 'players.json', entity: 'player', id: player.id, field: 'birthDate', value: birthDate, range: BIRTH_YEAR_RANGE },
+    });
+  }
+}
+
+/** 潜力：必填、含全部属性、1–99，且不得低于该属性基础值（避免出生即超上限）。 */
+function validatePotential(player) {
+  const potential = player.potential;
+  if (!potential || typeof potential !== 'object') {
+    throw new DataError('球员缺少 potential（每属性潜力上限）', {
+      context: { file: 'players.json', entity: 'player', id: player.id, field: 'potential' },
+    });
+  }
+  for (const attr of PLAYER_ATTRIBUTES) {
+    const p = potential[attr];
+    if (typeof p !== 'number' || !Number.isFinite(p) || p < ATTRIBUTE_RANGE.MIN || p > ATTRIBUTE_RANGE.MAX) {
+      throw new DataError('球员 potential 缺失或超出范围', {
+        context: { file: 'players.json', entity: 'player', id: player.id, field: `potential.${attr}`, value: p, range: ATTRIBUTE_RANGE },
+      });
+    }
+    const baseRaw = Number(player[attr]);
+    const base = Number.isFinite(baseRaw) ? baseRaw : ATTRIBUTE_DEFAULT;
+    if (p < base) {
+      throw new DataError('球员 potential 低于该属性基础值', {
+        context: { file: 'players.json', entity: 'player', id: player.id, field: `potential.${attr}`, value: p, base },
+      });
+    }
+  }
+}
+
+/** 人格：必填、含全部人格维度、1–99。 */
+function validatePersonality(player) {
+  const personality = player.personality;
+  if (!personality || typeof personality !== 'object') {
+    throw new DataError('球员缺少 personality（人格维度）', {
+      context: { file: 'players.json', entity: 'player', id: player.id, field: 'personality' },
+    });
+  }
+  for (const key of PLAYER_PERSONALITY_KEYS) {
+    const v = personality[key];
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < PERSONALITY_RANGE.MIN || v > PERSONALITY_RANGE.MAX) {
+      throw new DataError('球员 personality 缺失或超出范围', {
+        context: { file: 'players.json', entity: 'player', id: player.id, field: `personality.${key}`, value: v, range: PERSONALITY_RANGE },
+      });
+    }
+  }
+}
+
+/**
+ * 校验 League（Division）的可选 Phase 1 rules（Step 38E / D38D.8、D38D.13）。
+ * - `rules` 缺失 → 合法（使用 Engine 默认）；
+ * - 若提供：`promotionPlaces` / `relegationPlaces` / `pointsForWin` / `pointsForDraw` / `pointsForLoss`
+ *   （仅这些字段允许；均须为 **非负整数**）。非法值**明确报错**（不静默、不猜测）。
+ */
+function validateLeagueRules(league) {
+  const rules = league?.rules;
+  if (rules == null) return;
+  if (typeof rules !== 'object') {
+    throw new DataError('league.rules 必须是对象', {
+      context: { file: 'leagues.json', entity: 'league', id: league.id, field: 'rules', value: rules },
+    });
+  }
+  const allowed = ['promotionPlaces', 'relegationPlaces', 'pointsForWin', 'pointsForDraw', 'pointsForLoss'];
+  for (const key of Object.keys(rules)) {
+    if (!allowed.includes(key)) {
+      throw new DataError(`league.rules 含未知字段：${key}`, {
+        context: { file: 'leagues.json', entity: 'league', id: league.id, field: `rules.${key}`, allowed },
+      });
+    }
+    const v = rules[key];
+    if (!Number.isInteger(v) || v < 0) {
+      throw new DataError(`league.rules.${key} 需为非负整数`, {
+        context: { file: 'leagues.json', entity: 'league', id: league.id, field: `rules.${key}`, value: v },
+      });
+    }
+  }
+}
+
+/**
+ * 校验 Division 层级结构（Step 38E / D38D.5）：同一 Country 内若存在**多个** Division：
+ * `tier` 必须全部显式提供、为正整数、互不相同，且**连续**（排序后相邻差恒为 1）。
+ * 单 Division（或未分组）不触发；`tier` 缺失仅在有多个同国 Division 时被视为非法。
+ */
+function validateDivisionStructure(leagues) {
+  const byCountry = new Map();
+  for (const league of leagues) {
+    const key = typeof league.countryId === 'string' ? league.countryId : `__solo__:${league.id}`;
+    if (!byCountry.has(key)) byCountry.set(key, []);
+    byCountry.get(key).push(league);
+  }
+  for (const group of byCountry.values()) {
+    if (group.length < 2) continue;
+    const tiers = [];
+    for (const league of group) {
+      const t = league.tier;
+      if (!Number.isInteger(t) || t < 1) {
+        throw new DataError('同一国家的多级联赛必须显式提供正整数 tier', {
+          context: { file: 'leagues.json', entity: 'league', id: league.id, field: 'tier', value: t },
+        });
+      }
+      tiers.push({ id: league.id, tier: t });
+    }
+    tiers.sort((a, b) => a.tier - b.tier);
+    for (let i = 1; i < tiers.length; i += 1) {
+      if (tiers[i].tier === tiers[i - 1].tier) {
+        throw new DataError('同一国家存在重复 tier 的 Division', {
+          context: { file: 'leagues.json', field: 'tier', value: tiers[i].tier, leagues: [tiers[i - 1].id, tiers[i].id] },
+        });
+      }
+      if (tiers[i].tier - tiers[i - 1].tier !== 1) {
+        throw new DataError('同一国家的 Division tier 必须连续', {
+          context: { file: 'leagues.json', field: 'tier', value: [tiers[i - 1].tier, tiers[i].tier] },
+        });
+      }
+    }
+  }
+}
+
+function assertUniqueIds(list, file, entity) {
+  if (!Array.isArray(list)) {
+    throw new DataError(`${file} 应为数组`, { context: { file } });
+  }
+  const seen = new Set();
+  for (const item of list) {
+    if (!item || typeof item.id !== 'string' || item.id.length === 0) {
+      throw new DataError(`${file} 中存在缺少 id 的条目`, { context: { file, entity, field: 'id' } });
+    }
+    if (seen.has(item.id)) {
+      throw new DataError(`${file} 中存在重复 id`, { context: { file, entity, id: item.id, field: 'id' } });
+    }
+    seen.add(item.id);
+  }
+}
+
+/**
+ * 从目录加载世界（浏览器环境使用 fetch；测试可注入 fetchImpl）。
+ * @param {{basePath?: string, fetchImpl?: Function}} [config]
+ */
+export class DataLoader {
+  constructor(config = {}) {
+    this.basePath = config.basePath ?? '';
+    this.fetchImpl = config.fetchImpl ?? globalThis.fetch?.bind(globalThis);
+  }
+
+  /**
+   * @param {string} worldDir 相对于 basePath 的世界目录（如 "data/worlds/test-world.fdb"）
+   * @returns {Promise<object>} 校验通过的世界对象
+   */
+  async loadWorld(worldDir) {
+    if (typeof this.fetchImpl !== 'function') {
+      throw new DataError('当前环境没有可用的 fetch，无法加载世界数据', { context: { worldDir } });
+    }
+    const files = {};
+    for (const name of REQUIRED_FILES) {
+      const url = `${this.basePath}${worldDir}/${name}.json`;
+      files[name] = await this.#fetchJson(url);
+    }
+    return parseWorld(files);
+  }
+
+  async #fetchJson(url) {
+    let res;
+    try {
+      res = await this.fetchImpl(url);
+    } catch (cause) {
+      throw new DataError(`无法读取数据文件`, { context: { file: url }, cause });
+    }
+    if (!res || !res.ok) {
+      throw new DataError('数据文件请求失败', { context: { file: url, status: res?.status } });
+    }
+    try {
+      return await res.json();
+    } catch (cause) {
+      throw new DataError('数据文件不是合法 JSON', { context: { file: url }, cause });
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "id": "mvp-league",
+  "name": "MVP League World",
+  "version": "0.1.0",
+  "format": "fdb-json-0",
+  "startDate": "2026-07-01",
+  "engineCompat": ">=0.1.0",
+  "note": "MVP 第一阶段测试数据：单联赛 8 队双循环。名称均为占位，不含真实球队/球员信息。"
+}

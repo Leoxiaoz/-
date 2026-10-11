@@ -1,0 +1,529 @@
+/**
+ * 模拟常量（集中存放，禁止散落的魔法数字）。
+ * 层级归属：Simulation Core。纯数据，无副作用。
+ *
+ * 说明：下列数值为**MVP 暂定校准值**（DECISIONS D-11 / SIMULATION_SPEC S12 待细化），
+ * 集中于此以便后续按比分分布目标统一调参，而不改动算法结构。
+ *
+ * 领域枚举（位置 / 属性 / 倾向）见 shared/football-schema.js，此处不重复定义。
+ */
+
+/** 攻守倾向（战术最小集，DECISIONS D-11）。数值为进攻产出倍率。 */
+export const MENTALITY = Object.freeze({
+  defensive: 0.85,
+  balanced: 1.0,
+  attacking: 1.15,
+});
+
+/** 默认阵型与其各线人数（DF / MF / FW）；用于决定球队实力计算时各线取样人数。 */
+export const DEFAULT_FORMATION = '4-4-2';
+
+export const FORMATIONS = Object.freeze({
+  '4-4-2': Object.freeze({ DF: 4, MF: 4, FW: 2 }),
+  '4-3-3': Object.freeze({ DF: 4, MF: 3, FW: 3 }),
+  '4-5-1': Object.freeze({ DF: 4, MF: 5, FW: 1 }),
+  '3-5-2': Object.freeze({ DF: 3, MF: 5, FW: 2 }),
+  '5-3-2': Object.freeze({ DF: 5, MF: 3, FW: 2 }),
+});
+
+/**
+ * 阵容参数（第 20 步）。
+ * 说明：首发人数与阵型各线人数强绑定（`FORMATIONS` 之和恒为 STARTERS）；替补仅**存储与展示**，
+ * **本步骤不参与比赛、不参与换人**（换人引擎属 out-of-scope）。
+ */
+export const LINEUP_CONFIG = Object.freeze({
+  /** 首发总人数（= GK 1 + 阵型 DF/MF/FW 之和）。 */
+  STARTERS: 11,
+  /** 替补席容量（仅存储/展示，暂不参与换人）。 */
+  BENCH: 7,
+});
+
+/**
+ * 俱乐部阵容边界（Step 26B；DECISIONS D-24 的 D7 / D16）。
+ * 语义：**边界（boundary）而非精确目标**——只判定「是否低于下限 / 高于上限」，不追求恢复到固定人数。
+ * - `MIN_PLAYERS`：阵容人数下限。低于即 roster deficit（应视为真实缺口）。
+ * - `MAX_PLAYERS`：阵容人数上限。**超过仅作诊断（over-cap），绝不自动裁员**。
+ * - `PREFERRED_PLAYERS`：**软偏好点**，仅供解释/展示，**不是硬目标**
+ *   （禁止 `current < 14 → 补到 14`，禁止 `15 → 裁到 14`；合法区间为 [MIN, MAX]）。
+ * - 位置最低保障：`MIN_GK` 单列（GK 不重复计入 `MIN_BY_POSITION`）；
+ *   结构最低 = GK 1 + DF 4 + MF 4 + FW 2 = 11，而 `MIN_PLAYERS = 12` 额外保留 1 名阵容缓冲。
+ * 说明：位置最低线为**可排阵/可运行**的结构性保障（不随阵型变化），供人口评估使用。
+ */
+export const ROSTER_CONFIG = Object.freeze({
+  MIN_PLAYERS: 12,
+  MAX_PLAYERS: 24,
+  PREFERRED_PLAYERS: 14,
+  MIN_GK: 1,
+  MIN_BY_POSITION: Object.freeze({ DF: 4, MF: 4, FW: 2 }),
+});
+
+/**
+ * 世界人口最低边界（Step 26B；DECISIONS D-24 的 D16）。
+ * 语义：世界人口的**防坍缩安全线**（boundary，非 exact target）。
+ * - 只回答「整个世界是否缺人（active world population < 本值）」，**不指定位置、不恢复某队到固定人数、不裁人、不建自由球员**。
+ * - MVP 标准世界取 `8 队 × ROSTER_CONFIG.MIN_PLAYERS(12) = 96`；**禁止设为 112**（会重造 exact-112 隐性语义）。
+ * - 有效世界下限另按「实际俱乐部数 × MIN_PLAYERS」派生并与本值取较小者（见 player-lifecycle：小规模自定义世界不被强制膨胀）。
+ * - 正常生命周期中，俱乐部层补位后世界人口恒 ≥ Σ俱乐部下限，故本安全网通常**不会独立触发**，仅作兜底。
+ */
+export const WORLD_MIN_POPULATION = 96;
+
+/**
+ * 世界人口「有界生态库存上限」（Step 34 / D-33.6、D-34.1）。
+ * 语义：**上限保护**，非自动补人口目标 —— 任何 `generatePlayer` 前必须满足 `worldActive < WORLD_SOFT_CAP`；
+ * 严禁“低于 112 自动生成到 112”“每季补到 112”。与 `WORLD_MIN_POPULATION`（生存底线）职责分离。
+ */
+export const WORLD_SOFT_CAP = 112;
+
+/**
+ * DDTI —— Dynamic Depth Target Intake 参数（Step 35D；D-35.1~D-35.11 受控重开 D-34.1 的 C 分支）。
+ * 层级归属：Simulation Core / Population。纯数据，无副作用。
+ *
+ * 语义：在 **结构缺口补位之后**，允许**有界、状态驱动、确定性**的 squad depth intake，
+ * 以维持有限 depth elasticity（防止 `96/12/0` 永久吸收）。**不是** population→112 目标，
+ * **不是** 每 club 补到 14，**不是** 强制交易，**不**随机生成 FA。
+ *
+ * 数值已于 **Step 35E 正式冻结为基准参数 C1**（D-35.6 / D-35.7 由 `[TBD]` → `[已定]`）。
+ * C2/C3 保留为 Step 35D 历史实验候选（见 DECISIONS D-35D），**不作为当前运行配置**。
+ */
+export const DDTI_CONFIG = Object.freeze({
+  /** 总开关：false 时完全跳过 DDTI（结构补位与既有语义不变）。 */
+  ENABLED: true,
+  /**
+   * target 硬上限（D-35.6 `DEPTH_CAP`）——**Step 35E 冻结 = 14（C1）**。
+   * 必须 ≥ `HOLDING_TARGET(14)`，且 `MIN_TARGET ≤ DEPTH_CAP ≤ WORLD_SOFT_CAP`。
+   */
+  DEPTH_CAP: 14,
+  /** target 硬下限（= Domain 结构生存线，D-35.3 `[已定]`）。 */
+  MIN_TARGET: 12,
+  /** 每 Club 每季 DDTI intake 上限（D-35.7）——**Step 35E 冻结 = 1（C1）**。 */
+  PER_CLUB_INTAKE_CAP: 1,
+  /** World 每季 DDTI intake 上限（独立于 112；D-35.7）——**Step 35E 冻结 = 4（C1）**。 */
+  WORLD_INTAKE_CAP: 4,
+  /** Hysteresis 进入阈值（D-35.5）——**Step 35E 冻结 = 0.30（C1）**。 */
+  HYSTERESIS_UP: 0.30,
+  /** Hysteresis 退出阈值（D-35.5）——**Step 35E 冻结 = 0.15（C1）**。 */
+  HYSTERESIS_DOWN: 0.15,
+  /** 「近期动作」派生窗口（赛季）：冷却 + recentTransferBias；**derived，不持久化**。 */
+  RECENT_WINDOW: 2,
+  /** 状态权重（归一化前；D-35.3 六维）。 */
+  STATE_WEIGHTS: Object.freeze({
+    AGE: 0.20,
+    CONGESTION: 0.20,
+    NEED: 0.30,
+    FINANCE: 0.15,
+    RECENT: 0.15,
+    DEVELOPMENT: 0.20,
+  }),
+  /** Policy bias 允许倍率区间（D-35.4：Policy 仅 bias，非 identity；**有界**）。 */
+  POLICY_BIAS_BOUNDS: Object.freeze({ MIN: 0.85, MAX: 1.15 }),
+});
+
+/**
+ * 各线评分参考属性（MVP 最小集，DECISIONS D-11）。
+ * 供 `team-strength`（选阵/实力/比赛修复）与 `player-lineup`（赛季自愈回填）共用，避免重复定义。
+ */
+export const LINE_ATTRIBUTES = Object.freeze({
+  GK: ['goalkeeping'],
+  DF: ['defending', 'pace'],
+  MF: ['passing', 'technique'],
+  FW: ['finishing', 'technique', 'pace'],
+});
+
+/** 比赛模拟参数（时段制，DECISIONS D-02）。 */
+export const MATCH_CONFIG = Object.freeze({
+  /** 一场比赛的时段数（90 分钟按此均分）。 */
+  SEGMENTS: 6,
+  /** 基准期望进球（双方实力相等、中立场地、balanced 时的每队期望）。 */
+  BASE_EXPECTED_GOALS: 1.35,
+  /** 主场优势倍率（作用于主队进攻产出）。 */
+  HOME_ADVANTAGE: 1.18,
+  /** 实力比值的平滑地板，避免除以 0 或极端比值。 */
+  STRENGTH_FLOOR: 20,
+  /** 随机波动强度上限（±比例），随机只扰动概率，不脱离实力对比（SIMULATION_SPEC §11）。 */
+  NOISE_AMPLITUDE: 0.25,
+});
+
+/** 赛程参数。 */
+export const SCHEDULE_CONFIG = Object.freeze({
+  /** 相邻两轮间隔天数。 */
+  ROUND_INTERVAL_DAYS: 7,
+  /** 赛季结束到新赛季开始的间隔天数（赛季滚动时使用）。 */
+  SEASON_GAP_DAYS: 30,
+});
+
+/**
+ * 赛后负荷反馈参数（第 18 步；DECISIONS D-16）。
+ * 说明：**最小闭环**——实际出场球员消耗体能、通过比赛建立状态；不做表现评分。
+ * 数值为暂定校准值，可统一调参。form 以"向基线逼近"实现有界恢复（不会无限增长或永久停在 0）。
+ */
+export const MATCH_LOAD_CONFIG = Object.freeze({
+  /** 每名实际出场球员的单场出场分钟（本步无首发/换人系统，视为打满）。 */
+  MINUTES_PER_MATCH: 90,
+  /** 每名实际出场球员的单场体能消耗（点）。 */
+  FITNESS_COST: 12,
+  /** 出场后 form 向基线（FORM_BASELINE）逼近的比例（0–1，有界）。 */
+  FORM_RECOVER_RATE: 0.25,
+  /** form 的赛后恢复基线。 */
+  FORM_BASELINE: 50,
+});
+
+/**
+ * 球员比赛表现参数（Step 21-A；DECISIONS D-22）。
+ * 说明：由**独立派生 RNG**在比分确定**之后**生成，配置驱动、有界；**不改比分算法、不进比分 RNG 流**。
+ * 所有球员表现仅写入 `involvements` 与长期统计，**不写回 form/morale/fitness/growth**（红线）。
+ */
+export const MATCH_PERFORMANCE_CONFIG = Object.freeze({
+  /** 位置射门画像：期望（非进球）射门次数、射正比例、能力参考属性。 */
+  POSITION_SHOTS: Object.freeze({
+    GK: Object.freeze({ attempts: 0.02, onTarget: 0.30, attr: 'goalkeeping' }),
+    DF: Object.freeze({ attempts: 0.45, onTarget: 0.35, attr: 'technique' }),
+    MF: Object.freeze({ attempts: 1.15, onTarget: 0.42, attr: 'technique' }),
+    FW: Object.freeze({ attempts: 2.20, onTarget: 0.52, attr: 'finishing' }),
+  }),
+  /** 位置画像缺省（未知位置）回退。 */
+  DEFAULT_POSITION: 'MF',
+  /** 射门期望的随机波动（±比例，有界）。 */
+  ATTEMPT_NOISE: 0.35,
+  /** 单名球员单场射门数上限（防止失控）。 */
+  MAX_ATTEMPTS: 6,
+  /** 能力对射门期望/射正比例的加权（属性归一化后线性系数）。 */
+  ABILITY: Object.freeze({ ATTEMPTS: 0.8, ON_TARGET: 0.4 }),
+  /** 每次进球转化为助攻的概率（<=1，保证 Σassists <= Σgoals）。 */
+  ASSIST_CHANCE: 0.62,
+  /** 助攻者权重参考属性（组织/技术）。 */
+  ASSIST_WEIGHT_ATTR: 'passing',
+  /** 黄/红牌基础概率与位置倍率（单场每球员 <=1 张黄、<=1 张红，有界）。 */
+  YELLOW_CHANCE: 0.06,
+  RED_CHANCE: 0.004,
+  CARD_POSITION_MULTIPLIER: Object.freeze({ GK: 0.4, DF: 1.3, MF: 1.1, FW: 0.9 }),
+  /** 评分模型（确定性、可解释、固定上下界；不依赖 vitals）。 */
+  RATING: Object.freeze({
+    BASE: 6.0,
+    GOAL: 1.0,
+    ASSIST: 0.5,
+    SHOTS_ON_TARGET: 0.1,
+    YELLOW: -0.3,
+    RED: -1.5,
+    WIN: 0.3,
+    LOSS: -0.3,
+    POSITION_BONUS: Object.freeze({ GK: 0.2, DF: 0.1, MF: 0.0, FW: 0.0 }),
+    MIN: 4.0,
+    MAX: 10.0,
+  }),
+});
+
+/**
+ * 合同地基参数（Step 25；DECISIONS D-24 / SIMULATION_SPEC §31）。
+ * 说明：v1 **确定性模板**——同一 playerId 恒得同一期限/工资，**不使用任何随机**（D20）。
+ * 合同期限为**整数赛季**（D4）；工资为**每赛季工资**（D5）；v1 不自动续约。
+ */
+export const CONTRACT_CONFIG = Object.freeze({
+  /** 合同最短 / 最长赛季数（endSeason = startSeason + 区间内确定性档位）。 */
+  MIN_DURATION_SEASONS: 2,
+  MAX_DURATION_SEASONS: 4,
+  /** 每赛季工资档位基数（按位置）。 */
+  WAGE_POSITION_BASE: Object.freeze({ GK: 30, DF: 32, MF: 36, FW: 40 }),
+  /** 每点平均能力对应的每赛季工资增量。 */
+  WAGE_PER_ABILITY: 0.8,
+  /** 每赛季工资下限。 */
+  WAGE_MIN: 10,
+});
+
+/**
+ * 财政地基参数（Step 25；DECISIONS D-24 / SIMULATION_SPEC §31）。
+ * 说明：v1 **确定性模板**（同一 clubId 恒得同一初始值，**不使用随机**，D20）。
+ * - `INITIAL_CASH` = 唯一真实货币余额的初值；
+ * - `INITIAL_WAGE_BUDGET` / `INITIAL_TRANSFER_BUDGET` = **约束上限**（非额外余额）；
+ * - v1 **不从 cash 扣除工资**（D13/D17）。
+ */
+export const FINANCE_CONFIG = Object.freeze({
+  INITIAL_CASH: 1000,
+  INITIAL_WAGE_BUDGET: 400,
+  INITIAL_TRANSFER_BUDGET: 600,
+  /**
+   * 赛季边界 transferBudget 再生量（Step 34 / D-33.7、D-34.2）。
+   * carry-over 语义：`new = min(INITIAL_TRANSFER_BUDGET, current + REPLENISHMENT_AMOUNT)`；
+   * 无 RNG、有上限、不 reset、不改 cash。
+   */
+  TRANSFER_BUDGET_REPLENISHMENT: 420,
+});
+
+/**
+ * Managed Finance Feedback（DF-01；Step 36C 冻结 / Step 36D 实现）。
+ * 层级归属：Simulation Core / Finance。纯数据，无副作用。
+ *
+ * 语义（D36.1）：赛季边界若 managed club 的现金占世界现金比例超过 `THRESHOLD`，
+ * 则从 managed 的 `cash` 中**确定性再分配** `REDISTRIBUTION_RATE` 给 AI 俱乐部。
+ * - **只改 `cash`**；资金不生成、不销毁、不产生债务、不允许 `cash < 0`；
+ *   `Σ club.cash` 严格守恒。
+ * - 无 RNG、无 OVR、无新持久化字段（season-boundary 纯派生）。
+ * 数值已由 **Step 36C 正式冻结**（D36.1），**不得重新设计**。
+ */
+export const FINANCE_FEEDBACK_CONFIG = Object.freeze({
+  /** 总开关（缺省启用）；仅用于测试 / 实验隔离，不改变冻结语义。 */
+  ENABLED: true,
+  /** 触发阈值：`managedShare > THRESHOLD` 才触发（严格大于；等于 35% 不触发）。 */
+  THRESHOLD: 0.35,
+  /** 触发后从 managed cash 再分配的比例。 */
+  REDISTRIBUTION_RATE: 0.20,
+});
+
+/**
+ * Competition Structure Phase 1 —— Engine 默认规则（Step 38E；D38D.6 / D38D.8）。
+ * 层级归属：Simulation Core / Competition。纯数据，无副作用。
+ *
+ * 语义：`leagues.json` 的**可选** `rules`（World Data Rule）缺失或部分缺失时使用的 Engine 默认。
+ * - `PROMOTION_PLACES` / `RELEGATION_PLACES`：Phase 1 每 Division 默认升降名额（D38D.6）。
+ * - `TIER`：Division 未显式提供 `tier` 时的默认层级（Phase 1 单 Division 语义）。
+ * 注意：top tier 的升级与 bottom tier 的降级**实际效果恒为 0**（由 planner 处理，非本默认值）。
+ */
+export const COMPETITION_RULES_DEFAULTS = Object.freeze({
+  PROMOTION_PLACES: 2,
+  RELEGATION_PLACES: 2,
+  TIER: 1,
+});
+
+/**
+ * 转会费参数（Step 28B；DECISIONS D-27 T2/T3）。
+ * 说明：**确定性能力定价模型**——`Fee = BASE × AbilityFactor × AgeFactor × PositionFactor`。
+ * - 纯函数、无随机（D-27 T23）；**不存储** marketValue；**不读取** cash / transferBudget / squad size（禁止「越有钱越贵」）。
+ * - AbilityFactor 基于**完整 effective attribute 向量**的均值（非单一 OVR）；AgeFactor 遵循 Growth/Decline 年龄曲线；
+ *   PositionFactor 仅**轻微**差异。Potential / Fitness / Form / Morale / Injury / Stats **不参与定价**。
+ * - Fee 越界 clamp 到 `[MIN_TRANSFER_FEE, MAX_TRANSFER_FEE]`（T3），防止长期成长导致经济数值无限膨胀。
+ */
+export const TRANSFER_CONFIG = Object.freeze({
+  /** 基准费（能力中性、年龄巅峰、位置中性时的费用）。 */
+  BASE_FEE: 100,
+  /** 能力参考值（effective attribute 均值的中性点；比值 = avg / ABILITY_REFERENCE）。 */
+  ABILITY_REFERENCE: 50,
+  /** AbilityFactor 下限（避免极低能力导致费趋近 0 或负）。 */
+  ABILITY_MIN: 0.2,
+  /** 年龄缺省值（无 birthDate 时回退；视为巅峰）。 */
+  AGE_REFERENCE: 26,
+  /** 年龄系数分档（升序 maxAge；取第一个 `age <= maxAge` 的 factor）。 */
+  AGE_FACTORS: Object.freeze([
+    Object.freeze({ maxAge: 20, factor: 1.15 }), // 年轻溢价
+    Object.freeze({ maxAge: 27, factor: 1.0 }),  // 巅峰
+    Object.freeze({ maxAge: 30, factor: 0.85 }),
+    Object.freeze({ maxAge: 33, factor: 0.65 }),
+    Object.freeze({ maxAge: Infinity, factor: 0.45 }), // 高龄贬值
+  ]),
+  /** 位置系数（仅轻微差异，避免极端位置通胀）。 */
+  POSITION_FACTOR: Object.freeze({ GK: 0.95, DF: 1.0, MF: 1.05, FW: 1.1 }),
+  /** 转会费上下限（T3）。 */
+  MIN_TRANSFER_FEE: 0,
+  MAX_TRANSFER_FEE: 10000,
+});
+
+/**
+ * 球员运行时状态参数（第 15 步）。
+ * 说明：此处仅为**数据结构默认值与合法量程**（非模型系数）；成长 / 伤病 / 恢复等算法
+ * 仍属 `[TBD]`（SIMULATION_SPEC §7–§9、§13–§15），待制定者决策后再接入。
+ */
+export const PLAYER_RUNTIME_CONFIG = Object.freeze({
+  /** 体能 / 状态 / 士气量程（0–100，与属性 1–99 为不同量表）。 */
+  VITALS: Object.freeze({
+    MIN: 0,
+    MAX: 100,
+    INITIAL_FITNESS: 100,
+    INITIAL_FORM: 50,
+    INITIAL_MORALE: 50,
+  }),
+  /** 单场比赛分钟上限（用于出场统计校验）。 */
+  MAX_MINUTES_PER_MATCH: 120,
+});
+
+/**
+ * 球员成长 / 衰退参数（Step 39F-C；D39 Phase 3）。
+ * 规范来源：D39.31–D39.38 / Step 39E §二~§十二 / **OD-39FC-1 · OD-39FC-2 · OD-39FC-3**（DECISIONS D-39）。
+ *
+ * 模型（每赛季每属性独立结算，六属性不共享）：
+ *   Growth branch（age < peakAge）:
+ *     ageFactor      = clamp(1 − 0.06 × ((peakAge − age) / (peakAge − 17))², 0, 1)      // OD-39FC-3
+ *     headroomFactor = clamp((potential − current) / 20, 0, 1)
+ *     baseCapacity   = 2.4 × ageFactor × headroomFactor
+ *     inputScore     = clamp(0.40·training + 0.40·matchExperience + 0.20·environment, 0, 1)
+ *     inputFactor    = 0.75 + 0.50 × inputScore
+ *     preRandom      = clamp(baseCapacity × inputFactor + conditionAdjustment, −2.50, +2.50)
+ *   Decline branch（age >= peakAge）:
+ *     declineBase    = (age − peakAge + 1) × 0.18 × sensitivity[attr]
+ *     preRandom      = clamp(−declineBase × floorFactor, −2.50, 0)
+ *   Both: delta = clamp(round(preRandom + noise∈[−0.20,+0.20]), −3, +3)
+ *
+ * 红线：无 OVR / 无 Talent / 无 GrowthRate；无 BREAKOUT；不修改静态库；写入 `runtime.players[].ability.deltas`。
+ * 红线：Potential 是 **World Simulation Ceiling**（Growth Engine 可读 True Potential；AI 不可读）。
+ */
+export const PLAYER_GROWTH_CONFIG = Object.freeze({
+  /** 每属性巅峰年龄（D39.37 / D39-E 冻结）。 */
+  PEAK_AGE: Object.freeze({
+    pace: 27,
+    technique: 29,
+    passing: 29,
+    defending: 30,
+    finishing: 29,
+    goalkeeping: 32,
+  }),
+  /** Pre-peak 平滑曲线参数（OD-39FC-3，**不得修改**）。 */
+  PRE_PEAK: Object.freeze({ ANCHOR_AGE: 17, CURVATURE: 0.06 }),
+  /** Base capacity 系数（P3-F1.3）。 */
+  BASE_CAPACITY_FACTOR: 2.4,
+  /** Headroom 归一化参考（P3-F1.3）。 */
+  HEADROOM_REFERENCE: 20,
+  /** Development Inputs 权重（39E-R §三 冻结）。 */
+  INPUT_WEIGHTS: Object.freeze({ TRAINING: 0.40, MATCH_EXPERIENCE: 0.40, ENVIRONMENT: 0.20 }),
+  /** inputFactor = BASE + SLOPE × inputScore（39E-R §二 冻结）。 */
+  INPUT_FACTOR: Object.freeze({ BASE: 0.75, SLOPE: 0.50 }),
+  /** Match Experience 满勤分钟（P3-F6 冻结：sqrt(clamp(minutes/1800, 0, 1))）。 */
+  MATCH_EXPERIENCE_FULL_MINUTES: 1800,
+  /** Training 档位（P3-F7 冻结）。 */
+  TRAINING_LEVELS: Object.freeze({ LIMITED: 0.75, NORMAL: 1.00, STRONG: 1.15 }),
+  DEFAULT_TRAINING_LEVEL: 'NORMAL',
+  /** Condition Adjustments（39E §八 冻结；加性、有界）。 */
+  CONDITION: Object.freeze({
+    PERSONALITY_MAX: 0.10,
+    /** 状态 / 士气分档（同一张表用于 form 与 morale）。 */
+    BANDS: Object.freeze([
+      Object.freeze({ min: 90, value: 0.05 }),
+      Object.freeze({ min: 70, value: 0.02 }),
+      Object.freeze({ min: 40, value: 0.00 }),
+      Object.freeze({ min: 20, value: -0.02 }),
+      Object.freeze({ min: -Infinity, value: -0.05 }),
+    ]),
+    INJURY_PENALTY: -0.15,
+  }),
+  /** Efficiency Cap（pre-random 夹取，P3-F3 冻结）。 */
+  EFFICIENCY_CAP: 2.50,
+  /** 年度安全阀（工程护栏，非成长公式）。 */
+  ANNUAL_SAFETY_BOUND: 3,
+  /** 有界确定性随机幅度（P3-F4 冻结）。 */
+  NOISE_AMPLITUDE: 0.20,
+  /** Decline 参数（39E §十二 冻结）。 */
+  DECLINE: Object.freeze({
+    BASE_PER_YEAR: 0.18,
+    SENSITIVITY: Object.freeze({
+      pace: 1.00,
+      defending: 0.90,
+      finishing: 0.80,
+      technique: 0.65,
+      passing: 0.55,
+      goalkeeping: 0.45,
+    }),
+    FLOOR: 1,
+    FLOOR_REFERENCE: 20,
+    MAX: 2.50,
+  }),
+  /** 无俱乐部（自由球员）时的中性 Environment 输入。 */
+  NEUTRAL_ENVIRONMENT_INPUT: 0.50,
+});
+
+/**
+ * 伤病系统参数（第 17 步；DECISIONS D-15）。
+ * 说明：**配置驱动**，类型/严重度不硬编码到逻辑。数值为暂定校准值，可统一调参。
+ */
+export const INJURY_CONFIG = Object.freeze({
+  /** 伤病类型表（数据驱动；逻辑不写死类型名）。 */
+  TYPES: Object.freeze({
+    knock: Object.freeze({ category: 'minor-blow', baseDays: 6, dayRange: 4 }),
+    muscle: Object.freeze({ category: 'soft-tissue', baseDays: 14, dayRange: 8 }),
+    hamstring: Object.freeze({ category: 'soft-tissue', baseDays: 21, dayRange: 10 }),
+    ankle: Object.freeze({ category: 'joint', baseDays: 28, dayRange: 12 }),
+    knee: Object.freeze({ category: 'joint', baseDays: 45, dayRange: 20 }),
+    concussion: Object.freeze({ category: 'head', baseDays: 14, dayRange: 6 }),
+    ligament: Object.freeze({ category: 'severe-structural', baseDays: 90, dayRange: 60 }),
+    illness: Object.freeze({ category: 'illness', baseDays: 10, dayRange: 5 }),
+  }),
+  /** 严重度分档（按缺阵天数；本阶段只有三级）。 */
+  SEVERITY_BANDS: Object.freeze([
+    Object.freeze({ name: 'minor', maxDays: 14 }),
+    Object.freeze({ name: 'moderate', maxDays: 45 }),
+    Object.freeze({ name: 'severe', maxDays: Infinity }),
+  ]),
+  /** 出场发生伤病的每场基础概率（由球员因素与随机修正）。 */
+  BASE_INJURY_CHANCE: 0.012,
+  /** 单名球员单场受伤概率上限（防止失控）。 */
+  MAX_INJURY_CHANCE: 0.05,
+  /** 每场每方最多新增伤病人数（防一次爆量）。 */
+  MAX_INJURIES_PER_MATCH_SIDE: 1,
+  /** 严重度抽取基准权重（随体能/倾向/年龄调整）。 */
+  SEVERITY_WEIGHTS: Object.freeze({ minor: 0.75, moderate: 0.21, severe: 0.04 }),
+  /** 严重度 -5 上限保护（severe 天数封顶，防止极端值）。 */
+  SEVERE_MAX_DAYS: 240,
+  /** 伤病发生时的 vitals 立即下降（按严重度）。 */
+  VITALS_DROP: Object.freeze({
+    FITNESS: Object.freeze({ minor: 8, moderate: 20, severe: 40 }),
+    FORM: Object.freeze({ minor: 5, moderate: 12, severe: 25 }),
+    MORALE: Object.freeze({ minor: 2, moderate: 6, severe: 15 }),
+  }),
+  /** 高 injuryProneness 对概率/恢复/复发的修正强度（每偏离 50 的影响比例）。 */
+  PRONENESS: Object.freeze({ CHANCE: 0.6, RECOVERY: 0.1, RECURRENCE: 0.2 }),
+  /** 年龄与体能对概率/恢复的修正。 */
+  AGE: Object.freeze({ CHANCE_START: 30, CHANCE_PER_YEAR: 0.02, RECOVERY_START: 30, RECOVERY_PER_YEAR: 0.01 }),
+  /** 体能对概率的修正（fitness 每低 10 点 → 概率乘数）。 */
+  FITNESS_CHANCE_STEP: 1.25,
+  /**
+   * 恢复期每日 fitness 变化。
+   * 第 18 步：健康球员改为**分数式逼近满值**（按缺口比例回升），避免"比赛有消耗但每周仍回到满值"的失真；
+   * 伤病期间 fitness 仍按**绝对点数**日降。
+   */
+  FITNESS: Object.freeze({ RECOVER_FRACTION_PER_DAY: 0.1, INJURED_DROP_PER_DAY: 0.6 }),
+  /** 伤病期间 form 冻结目标（不随比赛建立），每日向 0 衰减。 */
+  FORM_INJURED_TARGET: 0,
+  /** 伤病期间 morale 日降（长期病尤甚，按剩余天数加权）。 */
+  MORALE_DROP_PER_DAY: 0.15,
+  /** 士气基线（康复后向其温和回归）。 */
+  BASELINE_MORALE: 50,
+  /** 康复后体能上限（不立即满值；伤病期间会继续跌）。 */
+  RECOVERY_FITNESS_CAP: 80,
+  /** 长期伤病（severity=severe）写入的成长放缓赛季数。 */
+  GROWTH_PENALTY_SEASONS: 1,
+  /** 康复后 morale 每日恢复至 50 的速度（分）。 */
+  MORALE_RECOVER_PER_DAY: 0.5,
+  /** 复发概率基数与加成上限（防止失控）。 */
+  RECURRENCE: Object.freeze({ BASE_CHANCE: 0.08, PER_INCIDENT: 0.03, MAX_MULTIPLIER: 1.8 }),
+});
+
+/** 积分规则。 */
+export const TABLE_CONFIG = Object.freeze({
+  WIN: 3,
+  DRAW: 1,
+  LOSS: 0,
+});
+
+/**
+ * 退役参数（第 19 步；DECISIONS D-17）。
+ * 说明：**配置驱动**，年龄曲线按「成长 peak + 衰退速率 + 实测年龄分布」推导（见 SIMULATION_SPEC §23），
+ * 非凭空取值。软区间内线性概率、hardCap 强制退役；MVP 不使用能力/伤病史作为退役条件。
+ */
+export const RETIREMENT_CONFIG = Object.freeze({
+  /** 总开关：false 时完全跳过退役与新生代（结构不变，行为回到第 18 步）。 */
+  ENABLED: true,
+  /** 各位置退役曲线（softStart 起线性升概率，hardCap 强制）。 */
+  CURVES: Object.freeze({
+    FW: Object.freeze({ softStart: 32, hardCap: 37 }),
+    DF: Object.freeze({ softStart: 33, hardCap: 38 }),
+    MF: Object.freeze({ softStart: 33, hardCap: 38 }),
+    GK: Object.freeze({ softStart: 35, hardCap: 40 }),
+  }),
+});
+
+/**
+ * 新生代生成参数（第 19 步；DECISIONS D-17）。
+ * 说明：采用「同位置静态模板 + 三路独立有界抖动」，模板恒取自**不可变 static DB**，避免逐代累积漂移。
+ */
+export const GENERATION_CONFIG = Object.freeze({
+  /** 入队年龄区间（含端点）。 */
+  AGE_MIN: 17,
+  AGE_MAX: 19,
+  /** base 属性独立抖动幅度（±）。 */
+  BASE_JITTER: 3,
+  /** potential headroom 独立抖动幅度（±）。 */
+  HEADROOM_JITTER: 2,
+  /** personality 独立抖动幅度（±）。 */
+  PERSONALITY_JITTER: 3,
+  /** headroom 上限（对齐库经验上限，避免潜力虚高）。 */
+  MAX_HEADROOM: 18,
+  /** 新生代 ID 命名空间前缀（D-04）。 */
+  ID_PREFIX: 'ply_g_',
+  /** ID 序号补零位数。 */
+  ID_PAD: 4,
+});
