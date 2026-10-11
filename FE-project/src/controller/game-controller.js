@@ -127,8 +127,62 @@ export class GameController {
                 awayGoals: f.awayGoals,
               }))
             : [],
+          // 完整赛程（Batch A）：轮次 / 日期 / 主客队 / 状态 / 赛果。
+          fixtures: comp
+            ? comp.fixtures.map((f) => ({
+              round: f.round,
+              date: f.date,
+              homeId: f.homeId,
+              homeName: teamName(f.homeId),
+              awayId: f.awayId,
+              awayName: teamName(f.awayId),
+              played: f.played,
+              homeGoals: f.homeGoals,
+              awayGoals: f.awayGoals,
+            }))
+            : [],
+          // 当前未完成轮次（全部赛完 → null）。
+          currentRound: comp ? this.#pendingRoundOf(comp) : null,
         };
       }),
+      // 我的下一场比赛（来自数据库赛程；未选择管理球队或无剩余比赛时为 null）。
+      nextFixture: this.#nextManagedFixture(teamName),
+    };
+  }
+
+  /** 某联赛运行时中尚未结算赛程的最小轮次号；全部赛完返回 null。 */
+  #pendingRoundOf(comp) {
+    let min = null;
+    for (const f of comp.fixtures) {
+      if (f.played) continue;
+      if (min === null || f.round < min) min = f.round;
+    }
+    return min;
+  }
+
+  /** 管理球队最早一场未结算比赛（跨竞赛），供 UI 展示「下一场」。 */
+  #nextManagedFixture(teamName) {
+    const clubId = this.state?.runtime?.managedClubId;
+    if (!clubId) return null;
+    let best = null;
+    for (const comp of Object.values(this.state.runtime.competitions)) {
+      for (const f of comp.fixtures) {
+        if (f.played) continue;
+        if (f.homeId !== clubId && f.awayId !== clubId) continue;
+        if (best === null || f.date < best.date || (f.date === best.date && f.round < best.round)) {
+          best = f;
+        }
+      }
+    }
+    if (!best) return null;
+    return {
+      round: best.round,
+      date: best.date,
+      homeId: best.homeId,
+      homeName: teamName(best.homeId),
+      awayId: best.awayId,
+      awayName: teamName(best.awayId),
+      isHome: best.homeId === clubId,
     };
   }
 
@@ -203,6 +257,44 @@ export class GameController {
   advanceDays(days) {
     this.#requireRunning();
     this.simulation.advanceDays(this.state, days);
+    this.#emit();
+    return this.state;
+  }
+
+  /**
+   * 推进到「我的下一场比赛」结算完毕（Batch A）。
+   * 委托 Simulation Core 逐日推进（复用生产比赛引擎与赛季滚动），不重复结算已进行比赛。
+   * @returns {object} 推进摘要（daysAdvanced / fixturesPlayed / stopReason 等）
+   */
+  advanceToNextMatch() {
+    this.#requireRunning();
+    const summary = this.simulation.advanceToNextMatch(this.state, { clubId: this.getManagedClubId() });
+    this.#emit();
+    return summary;
+  }
+
+  /**
+   * 推进到「本轮结束」（Batch A）。语义与赛程生成器一致（轮次按周推进）。
+   * @returns {object} 推进摘要（daysAdvanced / roundBefore / roundAfter 等）
+   */
+  advanceToNextRound() {
+    this.#requireRunning();
+    const summary = this.simulation.advanceToNextRound(this.state);
+    this.#emit();
+    return summary;
+  }
+
+  /**
+   * 新建生涯：用当前已加载的世界重建运行时状态（丢弃当前进度；**不更换数据库**）。
+   * 供 UI「新建生涯」入口复用；不涉及 Data / Save 层变更。
+   * @returns {object} 新运行时状态
+   */
+  newCareer() {
+    if (!this.world) {
+      throw new AppError('尚无可用的世界，无法新建生涯');
+    }
+    this.state = createGameState(this.world, {});
+    this.logger?.info?.(`已新建生涯：${this.state.worldId} @ ${this.state.currentDate}`);
     this.#emit();
     return this.state;
   }

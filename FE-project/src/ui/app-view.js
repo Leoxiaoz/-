@@ -25,6 +25,9 @@ export class AppView {
 
   #unsubscribe;
 
+  /** 生涯是否已开始（false 时显示「新建生涯 · 选择球队」界面）。 */
+  #careerStarted = false;
+
   /** 绑定事件并订阅状态变化。 */
   mount() {
     const actions = document.getElementById('app-actions');
@@ -52,17 +55,22 @@ export class AppView {
 
   async #handleAction(action) {
     try {
-      if (action === 'tick') {
-        this.controller.tick();
-        this.setStatus('已推进一天');
-      } else if (action === 'advance-week') {
-        this.controller.advanceDays(7);
-        this.setStatus('已推进一周');
+      if (action === 'new-career') {
+        this.controller.newCareer();
+        this.#careerStarted = false;
+        this.setStatus('已新建生涯，请选择管理球队');
+      } else if (action === 'advance-next-match') {
+        const summary = this.controller.advanceToNextMatch();
+        this.setStatus(describeAdvance(summary, '下一场'));
+      } else if (action === 'advance-next-round') {
+        const summary = this.controller.advanceToNextRound();
+        this.setStatus(describeAdvance(summary, '本轮'));
       } else if (action === 'save') {
         const slot = await this.controller.save('slot1');
         this.setStatus(`已保存到存档 ${slot}`);
       } else if (action === 'load') {
         await this.controller.load('slot1');
+        this.#careerStarted = true;
         this.setStatus('已读取存档 slot1');
       }
     } catch (err) {
@@ -76,6 +84,16 @@ export class AppView {
       const action = btn.dataset.action;
       const clubId = btn.dataset.club ?? this.controller.getManagedClubId();
       let result = { success: true, issues: [] };
+      if (action === 'start-career') {
+        result = this.controller.setManagedClub(clubId || null);
+        if (result?.success) {
+          this.#careerStarted = true;
+          this.setStatus(clubId ? '已开始生涯' : '已开始生涯（全自动管理）');
+        } else {
+          this.setStatus((result?.issues ?? []).join('；') || '操作未生效', true);
+        }
+        return;
+      }
       if (action === 'auto-fill') {
         result = this.controller.autoFillManagedLineup();
       } else if (action === 'clear-lineup') {
@@ -132,6 +150,12 @@ export class AppView {
       return;
     }
 
+    // 生涯开场（Batch A）：未开始生涯时只显示球队选择界面。
+    if (!this.#careerStarted) {
+      this.root.appendChild(renderCareerStart(snapshot));
+      return;
+    }
+
     const card = el('section', { class: 'card' });
     card.appendChild(el('h2', { class: 'card__title' }, '当前游戏状态'));
 
@@ -146,6 +170,11 @@ export class AppView {
     card.appendChild(dl);
     this.root.appendChild(card);
 
+    // 我的下一场比赛（Batch A）：来自数据库赛程，便于玩家理解推进目标。
+    if (snapshot.nextFixture) {
+      this.root.appendChild(renderNextFixture(snapshot.nextFixture));
+    }
+
     // 玩家阵容 / 战术（第 20 步：唯一让玩家参与球队管理的入口）。
     this.root.appendChild(renderManagedClub(snapshot));
 
@@ -159,7 +188,7 @@ export class AppView {
     this.root.appendChild(leagueCard);
 
     for (const league of snapshot.leagues) {
-      this.root.appendChild(renderLeague(league));
+      this.root.appendChild(renderLeague(league, snapshot.managedClubId));
     }
   }
 
@@ -320,8 +349,8 @@ const STATUS_TEXT = {
   empty: '参赛队不足',
 };
 
-/** 渲染单个联赛卡片：概览 + 积分榜 + 最近赛果。纯呈现。 */
-function renderLeague(league) {
+/** 渲染单个联赛卡片：概览 + 积分榜 + 最近赛果 + 赛程。纯呈现。 */
+function renderLeague(league, managedClubId) {
   const card = el('section', { class: 'card' });
   card.appendChild(el('h2', { class: 'card__title' }, league.name));
   card.appendChild(
@@ -354,7 +383,95 @@ function renderLeague(league) {
     card.appendChild(ul);
   }
 
+  card.appendChild(renderSchedule(league, managedClubId));
   return card;
+}
+
+/** 赛程（Batch A）：按轮次分组展示 轮次 / 日期 / 主客队 / 状态 / 赛果；高亮我的球队。 */
+function renderSchedule(league, managedClubId) {
+  const wrap = el('div', {});
+  if (!league.fixtures || league.fixtures.length === 0) {
+    wrap.appendChild(el('h3', { class: 'card__subtitle' }, '赛程'));
+    wrap.appendChild(el('p', { class: 'muted' }, '暂无赛程。'));
+    return wrap;
+  }
+  wrap.appendChild(el('h3', { class: 'card__subtitle' }, '赛程'));
+
+  const byRound = new Map();
+  for (const f of league.fixtures) {
+    if (!byRound.has(f.round)) byRound.set(f.round, []);
+    byRound.get(f.round).push(f);
+  }
+  const rounds = [...byRound.keys()].sort((a, b) => a - b);
+  for (const round of rounds) {
+    const fixtures = byRound.get(round);
+    wrap.appendChild(el('h4', { class: 'schedule__round' }, `第 ${round} 轮 · ${fixtures[0].date}`));
+    const ul = el('ul', { class: 'list schedule' });
+    for (const f of fixtures) {
+      const mine = managedClubId && (f.homeId === managedClubId || f.awayId === managedClubId);
+      const result = f.played ? `${f.homeGoals}-${f.awayGoals}` : '未开始';
+      const li = el(
+        'li',
+        { class: `schedule__row${mine ? ' schedule__row--mine' : ''}` },
+        `${f.homeName} vs ${f.awayName} · ${result}`,
+      );
+      ul.appendChild(li);
+    }
+    wrap.appendChild(ul);
+  }
+  return wrap;
+}
+
+/** 「我的下一场比赛」卡片（Batch A）。 */
+function renderNextFixture(f) {
+  const card = el('section', { class: 'card' });
+  card.appendChild(el('h2', { class: 'card__title' }, '下一场比赛'));
+  card.appendChild(el('p', { class: 'muted' }, `第 ${f.round} 轮 · ${f.date} · ${f.isHome ? '主场' : '客场'}`));
+  card.appendChild(el('p', {}, `${f.homeName}  vs  ${f.awayName}`));
+  return card;
+}
+
+/** 生涯开场界面（Batch A）：从数据库球队列表中选择管理球队后进入主界面。 */
+function renderCareerStart(snapshot) {
+  const card = el('section', { class: 'card' });
+  card.appendChild(el('h2', { class: 'card__title' }, '新建生涯 · 选择你的球队'));
+
+  if (!snapshot.clubs || snapshot.clubs.length === 0) {
+    card.appendChild(el('p', { class: 'muted' }, '当前世界没有可用球队。'));
+    return card;
+  }
+
+  card.appendChild(el('p', { class: 'muted' }, '选择一支球队开始管理；也可以选择不管理任何球队，由 AI 全自动管理世界。'));
+  const ul = el('ul', { class: 'list career' });
+  for (const club of snapshot.clubs) {
+    const li = el('li', { class: 'career__item' });
+    li.appendChild(el('button', {
+      class: 'btn btn--small career__btn',
+      'data-action': 'start-career',
+      'data-club': club.id,
+    }, club.name));
+    ul.appendChild(li);
+  }
+  card.appendChild(ul);
+
+  const skip = el('div', { class: 'row-actions' });
+  skip.appendChild(el('button', {
+    class: 'btn btn--small',
+    'data-action': 'start-career',
+    'data-club': '',
+  }, '不管理任何球队（全自动）'));
+  card.appendChild(skip);
+  return card;
+}
+
+/** 推进结果文案（纯呈现）。 */
+function describeAdvance(summary, label) {
+  if (summary && summary.seasonAfter != null && summary.seasonAfter !== summary.seasonBefore) {
+    return `赛季已结束，进入第 ${summary.seasonAfter} 赛季`;
+  }
+  const days = summary?.daysAdvanced ?? 0;
+  if (days === 0) return `已无更多可推进的${label}`;
+  return `已推进到${label}（+${days} 天）`;
 }
 
 /** 构建积分榜表格（当前赛季 / 上赛季共用）。 */

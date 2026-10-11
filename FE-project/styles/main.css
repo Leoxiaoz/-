@@ -144,4 +144,13 @@ body {
 .list li { padding: var(--space-1) 0; border-bottom: 1px solid var(--color-border); }
 .list li:last-child { border-bottom: none; }
 
+/* 赛程（Batch A）：按轮次分组，紧凑可读 */
+.schedule__round { margin: var(--space-3) 0 var(--space-1); font-size: 0.78rem; color: var(--color-muted); }
+.schedule .schedule__row { font-size: 0.78rem; }
+.schedule .schedule__row--mine { color: var(--color-accent); font-weight: 600; }
+
+/* 生涯开场：球队选择 */
+.career .career__item { padding: var(--space-1) 0; }
+.career__btn { width: 100%; }
+
 .error { color: #f85149; white-space: pre-wrap; }

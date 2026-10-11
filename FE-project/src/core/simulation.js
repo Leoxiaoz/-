@@ -76,6 +76,100 @@ export class SimulationCore {
   }
 
   /**
+   * 逐日推进直到「我的下一场比赛」结算完毕（用于 UI「推进到下一场」）。
+   * 复用 `advanceDay`（到期比赛结算 + 赛季滚动），已 `played` 的比赛不会重复结算。
+   * 若指定 `clubId`，则以该队参与的比赛为判据；未指定（null）时以任意比赛为判据。
+   * 赛季滚动（season 变化）同样视为一次终止。
+   * @param {object} state
+   * @param {{clubId?: string|null}} [options]
+   * @returns {{daysAdvanced:number, stopReason:string, fixturesPlayed:number, seasonBefore:number, seasonAfter:number}}
+   */
+  advanceToNextMatch(state, options = {}) {
+    const { clubId = null } = options;
+    const seasonBefore = state.season;
+    const before = this.#countPlayedFixtures(state, clubId);
+    const summary = this.#advanceUntil(state, () => (
+      state.season !== seasonBefore || this.#countPlayedFixtures(state, clubId) > before
+    ));
+    return {
+      ...summary,
+      fixturesPlayed: this.#countPlayedFixtures(state, clubId) - before,
+    };
+  }
+
+  /**
+   * 逐日推进直到「当前未完成轮次」推进到更晚的轮次（用于 UI「推进到本轮结束」）。
+   * 「当前轮次」= 全部竞赛中尚未结算的赛程里最小的轮次号。全部赛完或赛季滚动时终止。
+   * @param {object} state
+   * @returns {{daysAdvanced:number, stopReason:string, roundBefore:number|null, roundAfter:number|null, seasonBefore:number, seasonAfter:number}}
+   */
+  advanceToNextRound(state) {
+    const seasonBefore = state.season;
+    const roundBefore = this.#pendingRound(state);
+    const summary = this.#advanceUntil(state, () => (
+      state.season !== seasonBefore || this.#pendingRound(state) !== roundBefore
+    ));
+    return { ...summary, roundBefore, roundAfter: this.#pendingRound(state) };
+  }
+
+  /** 统计已结算比赛数（可选限定某队参与）。 */
+  #countPlayedFixtures(state, clubId) {
+    let n = 0;
+    for (const comp of Object.values(state.runtime.competitions)) {
+      for (const f of comp.fixtures) {
+        if (!f.played) continue;
+        if (clubId && f.homeId !== clubId && f.awayId !== clubId) continue;
+        n += 1;
+      }
+    }
+    return n;
+  }
+
+  /** 全部竞赛中尚未结算赛程的最小轮次号；全部赛完返回 null。 */
+  #pendingRound(state) {
+    let min = null;
+    for (const comp of Object.values(state.runtime.competitions)) {
+      for (const f of comp.fixtures) {
+        if (f.played) continue;
+        if (min === null || f.round < min) min = f.round;
+      }
+    }
+    return min;
+  }
+
+  /**
+   * 逐日推进，直到 `stopWhen(state)` 为真或达到安全上限（防止无限循环）。
+   * 上限由当前赛程跨度派生（见 `#advanceDayBound`），不使用魔法常量。
+   */
+  #advanceUntil(state, stopWhen) {
+    const bound = this.#advanceDayBound(state);
+    const seasonBefore = state.season;
+    let daysAdvanced = 0;
+    while (daysAdvanced < bound && !stopWhen(state)) {
+      this.advanceDay(state);
+      daysAdvanced += 1;
+    }
+    return {
+      daysAdvanced,
+      stopReason: stopWhen(state) ? 'condition' : 'bound',
+      seasonBefore,
+      seasonAfter: state.season,
+    };
+  }
+
+  /** 单次推进的安全天数上限：按当前赛程最大轮次 × 轮次间隔 + 赛季间隙 + 一个轮次缓冲派生。 */
+  #advanceDayBound(state) {
+    let maxRound = 0;
+    for (const comp of Object.values(state.runtime.competitions)) {
+      for (const f of comp.fixtures) if (f.round > maxRound) maxRound = f.round;
+    }
+    const rounds = Math.max(1, maxRound);
+    return rounds * SCHEDULE_CONFIG.ROUND_INTERVAL_DAYS
+      + SCHEDULE_CONFIG.SEASON_GAP_DAYS
+      + SCHEDULE_CONFIG.ROUND_INTERVAL_DAYS;
+  }
+
+  /**
    * 结算所有「已到期且未进行」的比赛（日期 <= 当前日期）。
    * 用 `<=` 而非 `==`，保证不会因某天未推进而漏赛。
    */
