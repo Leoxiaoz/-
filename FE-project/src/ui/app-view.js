@@ -376,6 +376,7 @@ function renderManagedClub(snapshot) {
 
   if (mc.issues.length > 0) {
     card.appendChild(el('p', { class: 'error' }, mc.issues.join('；')));
+    card.appendChild(el('p', { class: 'muted' }, '注：阵容不完整或不合规时，比赛仍会进行——引擎会按阵型自动修复或用可用球员自动选阵（不会判负）。若要精确控制出场人员，请使用「自动填充最佳阵容」或手动指派。'));
   }
 
   // 首发
@@ -619,7 +620,7 @@ function buildTable(rows) {
 // 不触发任何比赛模拟或结算；球场点位为展示层派生，非物理模拟位置。
 // ---------------------------------------------------------------------------
 
-/** 汇总已结算比赛（跨联赛，按日期/轮次倒序，移动端限量）。 */
+/** 汇总已结算比赛（跨联赛，按日期/轮次倒序）。 */
 function collectPlayedFixtures(snapshot) {
   const all = [];
   for (const league of snapshot.leagues) {
@@ -628,7 +629,7 @@ function collectPlayedFixtures(snapshot) {
     }
   }
   all.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.round - a.round));
-  return all.slice(0, 12);
+  return all;
 }
 
 /** 比赛中心卡片：下一场说明 + 已结算比赛观看入口。 */
@@ -645,11 +646,15 @@ function renderMatchCenter(snapshot) {
     card.appendChild(el('p', { class: 'muted' }, '当前没有我的比赛（或尚未选择管理球队）。'));
   }
 
-  const played = collectPlayedFixtures(snapshot);
+  const playedAll = collectPlayedFixtures(snapshot);
+  const played = playedAll.slice(0, 12);
   card.appendChild(el('h3', { class: 'card__subtitle' }, '已结算比赛'));
   if (played.length === 0) {
     card.appendChild(el('p', { class: 'muted' }, '暂无已结算比赛。'));
     return card;
+  }
+  if (playedAll.length > played.length) {
+    card.appendChild(el('p', { class: 'muted' }, `仅显示最近 ${played.length} 场（共已结算 ${playedAll.length} 场）；完整赛果见下方联赛赛程。`));
   }
   const ul = el('ul', { class: 'list match-list' });
   for (const f of played) {
