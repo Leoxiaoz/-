@@ -83,6 +83,7 @@ import './finance-feedback.test.js';
 import './competition.test.js';
 import './lineup.test.js';
 import './batch-a-career.test.js';
+import './batch-b-match-center.test.js';
 import './save.test.js';
 import './indexeddb.test.js';
 

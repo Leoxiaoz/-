@@ -28,6 +28,12 @@ export class AppView {
   /** 生涯是否已开始（false 时显示「新建生涯 · 选择球队」界面）。 */
   #careerStarted = false;
 
+  /** 比赛中心播放状态（仅展示层，不改变真实赛果）：{ fixtureId, step, playing } | null。 */
+  #matchView = null;
+
+  /** 自动播放计时器（仅用于演出节奏；不参与任何比赛模拟随机）。 */
+  #playTimer = null;
+
   /** 绑定事件并订阅状态变化。 */
   mount() {
     const actions = document.getElementById('app-actions');
@@ -36,7 +42,7 @@ export class AppView {
       if (!btn) return;
       this.#handleAction(btn.dataset.action);
     });
-    // 视图内交互（玩家阵容 / 战术）：事件委托，UI 只转发，规则在 Controller。
+    // 视图内交互（玩家阵容 / 战术 / 比赛中心）：事件委托，UI 只转发，规则在 Controller。
     this.root?.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-action]');
       if (btn) this.#handleViewAction(btn);
@@ -50,12 +56,14 @@ export class AppView {
   }
 
   unmount() {
+    this.#stopTimer();
     this.#unsubscribe?.();
   }
 
   async #handleAction(action) {
     try {
       if (action === 'new-career') {
+        this.#closeMatch();
         this.controller.newCareer();
         this.#careerStarted = false;
         this.setStatus('已新建生涯，请选择管理球队');
@@ -69,6 +77,7 @@ export class AppView {
         const slot = await this.controller.save('slot1');
         this.setStatus(`已保存到存档 ${slot}`);
       } else if (action === 'load') {
+        this.#closeMatch();
         await this.controller.load('slot1');
         this.#careerStarted = true;
         this.setStatus('已读取存档 slot1');
@@ -82,6 +91,52 @@ export class AppView {
   #handleViewAction(btn) {
     try {
       const action = btn.dataset.action;
+
+      // 比赛中心（Batch B）：全部为展示层状态，不触发任何比赛结算。
+      if (action === 'open-match') {
+        this.#matchView = { fixtureId: btn.dataset.fixture, step: 0, playing: false };
+        this.setStatus('比赛中心：可开始/暂停观看演出');
+        return;
+      }
+      if (action === 'close-match') {
+        this.#closeMatch();
+        this.setStatus('已返回主界面');
+        return;
+      }
+      if (action === 'play-reset') {
+        if (this.#matchView) {
+          this.#matchView.step = 0;
+          this.#matchView.playing = false;
+        }
+        this.#stopTimer();
+        this.render(this.controller.getSnapshot());
+        return;
+      }
+      if (action === 'play-prev' || action === 'play-next') {
+        const show = this.#currentShow();
+        if (show && this.#matchView) {
+          const max = show.timeline.length - 1;
+          const delta = action === 'play-next' ? 1 : -1;
+          this.#matchView.step = Math.min(max, Math.max(0, this.#matchView.step + delta));
+        }
+        this.render(this.controller.getSnapshot());
+        return;
+      }
+      if (action === 'play-toggle') {
+        if (this.#matchView) {
+          const show = this.#currentShow();
+          const max = show ? show.timeline.length - 1 : 0;
+          if (!this.#matchView.playing && this.#matchView.step >= max) {
+            this.#matchView.step = 0; // 已到结尾：从头重播
+          }
+          this.#matchView.playing = !this.#matchView.playing;
+          if (this.#matchView.playing) this.#startTimer();
+          else this.#stopTimer();
+        }
+        this.render(this.controller.getSnapshot());
+        return;
+      }
+
       const clubId = btn.dataset.club ?? this.controller.getManagedClubId();
       let result = { success: true, issues: [] };
       if (action === 'start-career') {
@@ -139,6 +194,52 @@ export class AppView {
     this.render(this.controller.getSnapshot());
   }
 
+  /** 当前正在观看的比赛演出模型（只读；fixture 不存在返回 null）。 */
+  #currentShow() {
+    if (!this.#matchView) return null;
+    return this.controller.getMatchShow(this.#matchView.fixtureId);
+  }
+
+  /** 退出比赛中心，回到主界面。 */
+  #closeMatch() {
+    this.#stopTimer();
+    this.#matchView = null;
+    this.render(this.controller.getSnapshot());
+  }
+
+  #startTimer() {
+    this.#stopTimer();
+    this.#playTimer = setInterval(() => this.#tickPlayback(), 1200);
+  }
+
+  #stopTimer() {
+    if (this.#playTimer != null) {
+      clearInterval(this.#playTimer);
+      this.#playTimer = null;
+    }
+  }
+
+  /** 自动播放一步（仅演出节奏；不触发任何比赛模拟或结算）。 */
+  #tickPlayback() {
+    if (!this.#matchView) {
+      this.#stopTimer();
+      return;
+    }
+    const show = this.#currentShow();
+    if (!show) {
+      this.#closeMatch();
+      return;
+    }
+    const max = show.timeline.length - 1;
+    if (this.#matchView.step >= max) {
+      this.#matchView.playing = false;
+      this.#stopTimer();
+    } else {
+      this.#matchView.step += 1;
+    }
+    this.render(this.controller.getSnapshot());
+  }
+
   /** 渲染当前快照。纯呈现，不做任何推导。 */
   render(snapshot) {
     if (!this.root) return;
@@ -154,6 +255,17 @@ export class AppView {
     if (!this.#careerStarted) {
       this.root.appendChild(renderCareerStart(snapshot));
       return;
+    }
+
+    // 比赛中心（Batch B）：观看演出时切换到演出视图（纯展示层状态）。
+    if (this.#matchView) {
+      const show = this.#currentShow();
+      if (show) {
+        this.root.appendChild(renderMatchView(show, this.#matchView));
+        return;
+      }
+      // 演出对象已不存在（例如赛季滚动后旧赛程被替换）：安全回退主界面。
+      this.#matchView = null;
     }
 
     const card = el('section', { class: 'card' });
@@ -174,6 +286,9 @@ export class AppView {
     if (snapshot.nextFixture) {
       this.root.appendChild(renderNextFixture(snapshot.nextFixture));
     }
+
+    // 比赛中心（Batch B）：下一场说明 + 已结算比赛观看入口。
+    this.root.appendChild(renderMatchCenter(snapshot));
 
     // 玩家阵容 / 战术（第 20 步：唯一让玩家参与球队管理的入口）。
     this.root.appendChild(renderManagedClub(snapshot));
@@ -497,4 +612,181 @@ function buildTable(rows) {
   });
   table.appendChild(tbody);
   return table;
+}
+
+// ---------------------------------------------------------------------------
+// 比赛中心（Batch B）：全部为**纯呈现**，数据来自 Controller 只读快照/演出模型。
+// 不触发任何比赛模拟或结算；球场点位为展示层派生，非物理模拟位置。
+// ---------------------------------------------------------------------------
+
+/** 汇总已结算比赛（跨联赛，按日期/轮次倒序，移动端限量）。 */
+function collectPlayedFixtures(snapshot) {
+  const all = [];
+  for (const league of snapshot.leagues) {
+    for (const f of league.fixtures) {
+      if (f.played) all.push(f);
+    }
+  }
+  all.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.round - a.round));
+  return all.slice(0, 12);
+}
+
+/** 比赛中心卡片：下一场说明 + 已结算比赛观看入口。 */
+function renderMatchCenter(snapshot) {
+  const card = el('section', { class: 'card' });
+  card.appendChild(el('h2', { class: 'card__title' }, '比赛中心'));
+
+  card.appendChild(el('h3', { class: 'card__subtitle' }, '下一场'));
+  if (snapshot.nextFixture) {
+    const f = snapshot.nextFixture;
+    card.appendChild(el('p', {}, `${f.homeName} vs ${f.awayName} · 第 ${f.round} 轮 · ${f.date}`));
+    card.appendChild(el('p', { class: 'muted' }, '该场尚未结算。请先「推进到下一场」；同一轮比赛共享日期，推进可能同时结算整轮，结算后可在此观看演出与赛后报告。'));
+  } else {
+    card.appendChild(el('p', { class: 'muted' }, '当前没有我的比赛（或尚未选择管理球队）。'));
+  }
+
+  const played = collectPlayedFixtures(snapshot);
+  card.appendChild(el('h3', { class: 'card__subtitle' }, '已结算比赛'));
+  if (played.length === 0) {
+    card.appendChild(el('p', { class: 'muted' }, '暂无已结算比赛。'));
+    return card;
+  }
+  const ul = el('ul', { class: 'list match-list' });
+  for (const f of played) {
+    const li = el('li', { class: 'match-list__item' });
+    li.appendChild(el('span', { class: 'match-list__text' }, `第 ${f.round} 轮 · ${f.homeName} ${f.homeGoals}-${f.awayGoals} ${f.awayName} · ${f.date}`));
+    li.appendChild(el('button', {
+      class: 'btn btn--mini',
+      'data-action': 'open-match',
+      'data-fixture': f.id,
+    }, '查看比赛'));
+    ul.appendChild(li);
+  }
+  card.appendChild(ul);
+  return card;
+}
+
+/** 比赛演出视图：比分板 + 俯视球场 + 文字直播时间轴 + 播放控制 + 赛后报告。 */
+function renderMatchView(show, view) {
+  const card = el('section', { class: 'card' });
+  const head = el('div', { class: 'match-head' });
+  head.appendChild(el('h2', { class: 'card__title' }, '比赛中心'));
+  head.appendChild(el('button', { class: 'btn btn--mini', 'data-action': 'close-match' }, '返回主界面'));
+  card.appendChild(head);
+  card.appendChild(el('p', { class: 'muted' }, `第 ${show.round} 轮 · ${show.date} · 第 ${show.season} 赛季`));
+
+  if (!show.played) {
+    card.appendChild(el('p', {}, `${show.home.name} vs ${show.away.name}`));
+    card.appendChild(el('p', { class: 'muted' }, '该场比赛尚未结算，无法观看演出。请先推进比赛。'));
+    return card;
+  }
+
+  const step = Math.min(Math.max(0, view.step), show.timeline.length - 1);
+  const entry = show.timeline[step];
+
+  const score = el('div', { class: 'scoreline' });
+  score.appendChild(el('span', { class: 'scoreline__team' }, show.home.name));
+  score.appendChild(el('span', { class: 'scoreline__score' }, `${entry.score.home} - ${entry.score.away}`));
+  score.appendChild(el('span', { class: 'scoreline__team scoreline__team--away' }, show.away.name));
+  card.appendChild(score);
+
+  card.appendChild(renderPitch(show, entry.ball));
+
+  const narr = el('div', { class: 'narration' });
+  narr.appendChild(el('span', { class: 'narration__minute' }, minuteLabel(entry)));
+  narr.appendChild(el('span', { class: 'narration__text' }, narrationText(entry)));
+  card.appendChild(narr);
+
+  const ctrl = el('div', { class: 'row-actions' });
+  ctrl.appendChild(el('button', { class: 'btn btn--small', 'data-action': 'play-reset' }, '重新播放'));
+  ctrl.appendChild(el('button', { class: 'btn btn--small', 'data-action': 'play-prev' }, '上一事件'));
+  ctrl.appendChild(el('button', { class: 'btn btn--small', 'data-action': 'play-toggle' }, view.playing ? '暂停' : '播放'));
+  ctrl.appendChild(el('button', { class: 'btn btn--small', 'data-action': 'play-next' }, '下一事件'));
+  card.appendChild(ctrl);
+  card.appendChild(el('p', { class: 'muted' }, `演出进度：第 ${step + 1} / ${show.timeline.length} 步${view.playing ? ' · 播放中' : ''}`));
+
+  card.appendChild(el('h3', { class: 'card__subtitle' }, '文字直播（事件时间轴）'));
+  const tl = el('ul', { class: 'list timeline' });
+  show.timeline.forEach((e, i) => {
+    tl.appendChild(el(
+      'li',
+      { class: `timeline__item${i === step ? ' timeline__item--current' : ''}` },
+      `${minuteLabel(e)} ${narrationText(e)}`,
+    ));
+  });
+  card.appendChild(tl);
+
+  card.appendChild(renderReport(show));
+  return card;
+}
+
+/** 分钟/阶段标签（纯呈现）。 */
+function minuteLabel(entry) {
+  if (entry.kind === 'kickoff') return "0'";
+  if (entry.kind === 'halftime') return '半场';
+  if (entry.kind === 'fulltime') return '终场';
+  return `${entry.minute}'`;
+}
+
+/** 事件旁白文案（纯呈现；进球者/助攻者来自真实事件，缺失时优雅降级）。 */
+function narrationText(entry) {
+  if (entry.kind === 'kickoff') return '比赛开始';
+  if (entry.kind === 'halftime') return `半场结束（${entry.score.home}-${entry.score.away}）`;
+  if (entry.kind === 'fulltime') return `比赛结束（${entry.score.home}-${entry.score.away}）`;
+  const scorer = entry.scorerName ?? '未知球员';
+  const assist = entry.assistName ? `（助攻：${entry.assistName}）` : '';
+  return `${entry.teamName ?? '未知球队'}进球 — ${scorer}${assist}`;
+}
+
+/** 俯视球场 SVG：两队阵型点位 + 足球（点位为展示层派生，非物理位置）。 */
+function renderPitch(show, ball) {
+  const wrap = el('div', { class: 'pitch' });
+  const svg = svgEl('svg', { viewBox: '0 0 100 64', class: 'pitch__svg', preserveAspectRatio: 'xMidYMid meet' });
+  svg.appendChild(svgEl('rect', { x: 0, y: 0, width: 100, height: 64, class: 'pitch__bg' }));
+  svg.appendChild(svgEl('rect', { x: 1, y: 1, width: 98, height: 62, class: 'pitch__line' }));
+  svg.appendChild(svgEl('line', { x1: 50, y1: 1, x2: 50, y2: 63, class: 'pitch__line' }));
+  svg.appendChild(svgEl('circle', { cx: 50, cy: 32, r: 6, class: 'pitch__line' }));
+  svg.appendChild(svgEl('rect', { x: 1, y: 16, width: 12, height: 32, class: 'pitch__line' }));
+  svg.appendChild(svgEl('rect', { x: 87, y: 16, width: 12, height: 32, class: 'pitch__line' }));
+  svg.appendChild(svgEl('rect', { x: 0, y: 27, width: 1, height: 10, class: 'pitch__goal' }));
+  svg.appendChild(svgEl('rect', { x: 99, y: 27, width: 1, height: 10, class: 'pitch__goal' }));
+  for (const p of show.formation.home) {
+    svg.appendChild(svgEl('circle', { cx: p.x * 100, cy: p.y * 64, r: 1.7, class: 'pitch__dot pitch__dot--home' }));
+  }
+  for (const p of show.formation.away) {
+    svg.appendChild(svgEl('circle', { cx: p.x * 100, cy: p.y * 64, r: 1.7, class: 'pitch__dot pitch__dot--away' }));
+  }
+  svg.appendChild(svgEl('circle', { cx: ball.x * 100, cy: ball.y * 64, r: 1.2, class: 'pitch__ball' }));
+  wrap.appendChild(svg);
+  wrap.appendChild(el('p', { class: 'muted pitch__legend' }, '圆点为两队阵型（展示层派生，非连续 Tick 物理位置）；白点为足球。'));
+  return wrap;
+}
+
+/** 赛后报告：仅展示生产模拟器真实提供的数据；未提供项不伪造。 */
+function renderReport(show) {
+  const card = el('section', { class: 'card' });
+  card.appendChild(el('h2', { class: 'card__title' }, '赛后报告'));
+  card.appendChild(el('p', {}, `${show.home.name} ${show.score.home} - ${show.score.away} ${show.away.name}`));
+  card.appendChild(el('p', { class: 'muted' }, `第 ${show.round} 轮 · ${show.date} · 第 ${show.season} 赛季`));
+
+  const goals = show.timeline.filter((e) => e.kind === 'goal');
+  card.appendChild(el('h3', { class: 'card__subtitle' }, `进球事件（${goals.length}）`));
+  if (goals.length === 0) {
+    card.appendChild(el('p', { class: 'muted' }, show.hasEvents ? '本场无进球。' : '该场无详细事件记录（可能来自旧存档）。'));
+  } else {
+    const ul = el('ul', { class: 'list' });
+    for (const g of goals) {
+      const assist = g.assistName ? `（助攻：${g.assistName}）` : '（助攻：—）';
+      ul.appendChild(el('li', {}, `第 ${g.minute} 分钟 · ${g.teamName} · ${g.scorerName ?? '未知球员'} ${assist}`));
+    }
+    card.appendChild(ul);
+  }
+  card.appendChild(el('p', { class: 'muted' }, '本报告仅展示该场真实比分与真实进球事件（进球者/助攻者来自真实数据）。射门、控球率、传球成功率等逐场统计在本 Demo 中未持久化到赛程，故不在此显示（未提供即不伪造精确数值）。'));
+  return card;
+}
+
+function svgEl(tag, attrs = {}) {
+  const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  return node;
 }

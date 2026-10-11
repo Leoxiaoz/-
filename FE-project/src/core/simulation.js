@@ -201,6 +201,16 @@ export class SimulationCore {
     fixture.played = true;
     fixture.homeGoals = result.homeGoals;
     fixture.awayGoals = result.awayGoals;
+    // Batch B：持久化「真实比赛事件 + 比赛种子」，使比赛中心/赛后报告可在后续会话中重新打开，
+    // 不依赖结算瞬间的内存对象。仅保留流派生表现所需的真实字段；比分权威不变（仍为 homeGoals/awayGoals）。
+    fixture.matchSeed = result.matchSeed;
+    fixture.events = (result.events ?? []).map((e) => ({
+      minute: e.minute,
+      teamId: e.teamId,
+      type: e.type,
+      actorId: e.actorId ?? null,
+      assistId: e.assistId ?? null,
+    }));
     applyResult(comp.table, fixture.homeId, fixture.awayId, result.homeGoals, result.awayGoals);
 
     recordEvent(state, 'match_played', {

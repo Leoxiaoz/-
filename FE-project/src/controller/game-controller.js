@@ -28,6 +28,8 @@ import { transferPlayer as transferPlayerOp } from '../core/transfer.js';
 import { buildAutoLineup } from '../core/team-strength.js';
 import { cleanLineup, validateLineup, LINEUP_LIMITS } from '../core/player-lineup.js';
 import { FORMATIONS, MENTALITY, DEFAULT_FORMATION } from '../core/sim-config.js';
+import { deriveMatchSeed } from '../core/rng.js';
+import { buildMatchShow } from './match-show.js';
 import { AppError } from '../shared/errors.js';
 
 /** 战术倾向的展示名（仅 UI 文案；键与 `MENTALITY` 一致）。 */
@@ -130,6 +132,7 @@ export class GameController {
           // 完整赛程（Batch A）：轮次 / 日期 / 主客队 / 状态 / 赛果。
           fixtures: comp
             ? comp.fixtures.map((f) => ({
+              id: f.id,
               round: f.round,
               date: f.date,
               homeId: f.homeId,
@@ -297,6 +300,48 @@ export class GameController {
     this.logger?.info?.(`已新建生涯：${this.state.worldId} @ ${this.state.currentDate}`);
     this.#emit();
     return this.state;
+  }
+
+  /**
+   * 构建一场比赛的演出模型（Batch B 比赛中心，**只读**）。
+   * - 不重算比赛、不调用 simulateMatch、不改变赛程/积分榜/球员统计/赛季状态；
+   * - 比分与事件来自已结算赛程的持久化真实数据（`fixture.homeGoals/awayGoals/events/matchSeed`）；
+   * - 旧档缺少 `matchSeed`/`events` 时：种子由 fixture 身份确定性派生（与引擎一致），事件缺失则优雅降级；
+   * - 未结算比赛返回演出模型（`played=false`，UI 提示尚未结算）。
+   * @param {string} fixtureId
+   * @returns {object|null} 演出模型；未知 fixture 返回 null
+   */
+  getMatchShow(fixtureId) {
+    if (!this.state) return null;
+    const world = this.state.static;
+    const teamName = (id) => world.teams.find((t) => t.id === id)?.name ?? id;
+    for (const comp of Object.values(this.state.runtime.competitions)) {
+      const f = comp.fixtures.find((x) => x.id === fixtureId);
+      if (!f) continue;
+      const seed = f.matchSeed ?? deriveMatchSeed({
+        worldId: this.state.worldId,
+        season: comp.season,
+        round: f.round,
+        homeId: f.homeId,
+        awayId: f.awayId,
+      });
+      return buildMatchShow({
+        seed,
+        fixtureId: f.id,
+        leagueId: comp.leagueId,
+        season: comp.season,
+        round: f.round,
+        date: f.date,
+        home: { id: f.homeId, name: teamName(f.homeId) },
+        away: { id: f.awayId, name: teamName(f.awayId) },
+        played: f.played,
+        homeGoals: f.homeGoals,
+        awayGoals: f.awayGoals,
+        events: f.events ?? [],
+        resolveName: (id) => getPlayerProfile(this.state, id)?.name ?? null,
+      });
+    }
+    return null;
   }
 
   /**

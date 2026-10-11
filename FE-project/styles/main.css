@@ -154,3 +154,89 @@ body {
 .career__btn { width: 100%; }
 
 .error { color: #f85149; white-space: pre-wrap; }
+
+/* ---------------------------------------------------------------------------
+   比赛中心（Batch B）：仅呈现层样式；球场为 SVG（viewBox 自适应），
+   移动端保证不超出屏幕、按钮不被遮挡。
+   --------------------------------------------------------------------------- */
+
+/* 比赛中心：已结算比赛列表 */
+.match-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.match-list__text {
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.match-list__item .btn { flex: 0 0 auto; }
+
+/* 比赛演出视图头部 */
+.match-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.match-head .btn { flex: 0 0 auto; }
+
+/* 比分板 */
+.scoreline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+  padding: var(--space-2);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+.scoreline__team {
+  flex: 1;
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scoreline__team--away { text-align: right; }
+.scoreline__score { flex: 0 0 auto; font-size: 1.2rem; font-weight: 700; }
+
+/* 俯视球场：宽度自适应，按 viewBox 等比缩放，永不超出容器 */
+.pitch { margin: var(--space-2) 0; }
+.pitch__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+}
+.pitch__bg { fill: #14361f; }
+.pitch__line { fill: none; stroke: #4a7a58; stroke-width: 0.4; }
+.pitch__goal { fill: #e6edf3; }
+.pitch__dot { stroke: #0f1419; stroke-width: 0.3; }
+.pitch__dot--home { fill: #3b82f6; }
+.pitch__dot--away { fill: #f59e0b; }
+.pitch__ball { fill: #ffffff; stroke: #0f1419; stroke-width: 0.3; }
+.pitch__legend { font-size: 0.68rem; margin-top: var(--space-1); }
+
+/* 当前事件旁白 */
+.narration {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--color-bg);
+  border-radius: var(--radius);
+}
+.narration__minute { flex: 0 0 auto; font-weight: 700; color: var(--color-accent); font-size: 0.82rem; }
+.narration__text { font-size: 0.85rem; }
+
+/* 文字直播时间轴 */
+.timeline { font-size: 0.78rem; }
+.timeline__item { color: var(--color-muted); }
+.timeline__item--current { color: var(--color-text); font-weight: 600; }
+.timeline__item--current::before { content: '▶ '; color: var(--color-accent); }

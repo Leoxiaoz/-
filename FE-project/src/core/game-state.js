@@ -39,6 +39,9 @@ import {
  *   为**加法式**变更，旧档经 `normalizeStatLine` 补齐为 0，非破坏性。
  * v10（Step 25）：新增 `contracts`（合同地基：playerId→合同）与 `clubs[].finance`（财政地基：cash/wageBudget/transferBudget）。
  *   为**加法式**变更，旧档经 `normalizeContracts` / `normalizeFinance` 确定性补齐，非破坏性。
+ * Batch B 追加（仍为 v10，纯加法式、非破坏性）：已结算赛程新增可选字段 `matchSeed` 与 `events`
+ *   （真实进球事件），用于比赛中心/赛后报告可重开。旧档的已结算赛程无这两个字段，
+ *   比赛中心以「无详细事件记录」优雅降级；不改变 v10 语义，故不提升版本号。
  */
 export const GAME_STATE_SCHEMA_VERSION = 10;
 
