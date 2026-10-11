@@ -14,14 +14,10 @@
 
 import { dist, pointSegmentDistance, clamp01 } from './player-situation.js';
 import { buildDecisionScope, createDecisionRng } from './decision-rng.js';
+import { clampToGoalAwareBounds } from './goal-geometry.js';
 import {
   PASS_RESOLUTION_CONFIG as C, PASS_RESOLUTION_RULE_VERSION, PASS_OUTCOMES,
 } from './pass-resolution-config.js';
-
-/** 半径夹取到 pitch。 */
-function clampPitch(v) {
-  return Math.min(C.PITCH_MAX, Math.max(C.PITCH_MIN, Number.isFinite(v) ? v : 0.5));
-}
 
 /** 取球员坐标（缺失回退球场中心）。 */
 function posOf(p) {
@@ -163,7 +159,10 @@ export function resolvePass(actionInstance, matchCore, options = {}) {
   const push = C.RISK_DESTINATION_PUSH[riskLevel] ?? 0;
   const bx = intendedDestination.x + Math.cos(angle) * errorMagnitude + push;
   const by = intendedDestination.y + Math.sin(angle) * errorMagnitude;
-  const actualDestination = { x: clampPitch(bx), y: clampPitch(by) };
+  // 门区感知夹取（复用 C-15 唯一门区几何）：普通落点仍遵守 [PITCH_MIN, PITCH_MAX]；
+  // 仅当落点位于球门开口（y ∈ mouth）且越线时允许进入有界门后区域（GOAL_MAX_DEPTH）。
+  const passDestination = clampToGoalAwareBounds({ x: bx, y: by }, { pitchMin: C.PITCH_MIN, pitchMax: C.PITCH_MAX });
+  const actualDestination = { x: passDestination.x, y: passDestination.y };
 
   // 4) 拦截暴露
   const lane = calculateInterceptionExposure(matchCore, actorId, origin, actualDestination);

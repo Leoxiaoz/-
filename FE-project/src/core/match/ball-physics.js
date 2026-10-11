@@ -22,6 +22,7 @@ import {
 } from './ball-physics-config.js';
 import { computeBallContact, sweptBallContact } from './ball-contact.js';
 import { resolveBallBoundary } from './ball-boundary.js';
+import { clampToGoalAwareBounds } from './goal-geometry.js';
 
 function finiteOr(v, fallback) {
   const n = Number(v);
@@ -30,6 +31,20 @@ function finiteOr(v, fallback) {
 
 function clampNum(v, lo, hi) {
   return Math.min(hi, Math.max(lo, v));
+}
+
+/**
+ * 位置夹取：球门方向飞行（IN_TRANSIT）开启门区通道（复用 C-15 唯一门区几何），
+ * 允许进入有界门后区域；其余状态与普通场内坐标仍遵守 [PITCH_MIN, PITCH_MAX]。
+ */
+function clampPosition(p, config, goalChannel) {
+  const min = finiteOr(config?.PITCH_MIN, 0);
+  const max = finiteOr(config?.PITCH_MAX, 1);
+  if (goalChannel) {
+    const c = clampToGoalAwareBounds(p, { pitchMin: min, pitchMax: max });
+    return { x: c.x, y: c.y };
+  }
+  return { x: clampNum(p.x, min, max), y: clampNum(p.y, min, max) };
 }
 
 function speedOf(v) {
@@ -46,15 +61,15 @@ function clampVelocity(v, config) {
 
 /** 规范化 BallState：保证 finite、边界内、状态合法、contacting 为有序唯一数组。不 mutate 输入。 */
 export function sanitizeBall(ball, config = BALL_PHYSICS_CONFIG) {
-  const min = finiteOr(config?.PITCH_MIN, 0);
-  const max = finiteOr(config?.PITCH_MAX, 1);
   const p = { x: finiteOr(ball?.position?.x, 0.5), y: finiteOr(ball?.position?.y, 0.5) };
   const state = Object.values(BALL_STATE).includes(ball?.state) ? ball.state : BALL_STATE.FREE;
   const contacting = Array.isArray(ball?.contacting)
     ? Array.from(new Set(ball.contacting.filter((id) => typeof id === 'string'))).sort()
     : [];
+  const goalChannel = state === BALL_STATE.IN_TRANSIT;
+  const pos = clampPosition(p, config, goalChannel);
   const out = {
-    position: { x: clampNum(p.x, min, max), y: clampNum(p.y, min, max) },
+    position: { x: pos.x, y: pos.y },
     velocity: clampVelocity(ball?.velocity, config),
     state,
     control: ball?.control ?? null,
@@ -121,6 +136,7 @@ export function stepBallPhysics(ball, dt, options = {}) {
   }
 
   const radius = finiteOr(config.CONTACT_RADIUS, 0.03);
+  const goalChannel = b.state === BALL_STATE.IN_TRANSIT;
   const orderedPlayers = players
     .filter((p) => p && typeof p.playerId === 'string')
     .slice()
@@ -207,7 +223,7 @@ export function stepBallPhysics(ball, dt, options = {}) {
           contactType: CONTACT_TYPE.CONTINUING,
         });
       }
-      pos = { x: clampNum(pos.x, config.PITCH_MIN, config.PITCH_MAX), y: clampNum(pos.y, config.PITCH_MIN, config.PITCH_MAX) };
+      pos = clampPosition(pos, config, goalChannel);
       vel = clampVelocity(vel, config);
       if (speedOf(vel) <= config.STOP_THRESHOLD) vel = { x: 0, y: 0 };
       continue; // 本子步已因接触提前终止
@@ -215,7 +231,7 @@ export function stepBallPhysics(ball, dt, options = {}) {
 
     // 3) 无接触：推进并按边界结算
     pos = to;
-    const br = resolveBallBoundary(pos, vel, config);
+    const br = resolveBallBoundary(pos, vel, config, { goalChannel });
     pos = br.position;
     vel = br.velocity;
     if (br.boundary.result !== BALL_BOUNDARY.IN_BOUNDS) {
@@ -235,9 +251,10 @@ export function stepBallPhysics(ball, dt, options = {}) {
     if (d > keep) contacting.delete(id);
   }
 
+  const outPos = clampPosition(pos, config, goalChannel);
   const outBall = {
     ...b,
-    position: { x: clampNum(pos.x, config.PITCH_MIN, config.PITCH_MAX), y: clampNum(pos.y, config.PITCH_MIN, config.PITCH_MAX) },
+    position: { x: outPos.x, y: outPos.y },
     velocity: clampVelocity(vel, config),
     contacting: Array.from(contacting).sort(),
     lastTouchPlayerId: lastTouch,

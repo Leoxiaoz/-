@@ -23,7 +23,9 @@
  */
 
 import { runMatchTickWithBallSegment } from './ball-tick-segment.js';
-import { deriveGoalGeometry, detectGoalLineCrossing, createGoalCandidateFromCrossing } from './goal-geometry.js';
+import {
+  deriveGoalGeometry, detectGoalLineCrossing, createGoalCandidateFromCrossing, resolveCrossingBallState,
+} from './goal-geometry.js';
 import { resolveGoal, applyGoalScoreUpdate } from './goal-resolution.js';
 
 export const GOAL_AWARE_TICK_RULE_VERSION = 'goal-aware-match-tick-v1';
@@ -64,7 +66,9 @@ export function resolveGoalFromSegment(matchCore, segment, options = {}) {
   if (!crossing.crossed) return noGoal(GOAL_AWARE_REASON.NO_CROSSING);
 
   const candidate = createGoalCandidateFromCrossing(crossing, matchCore, {               // C-15
-    ballState: segment.ballStateAtEnd,
+    // 状态时序：穿越发生在球路过程中，以 Tick 起始状态为准（FREE / IN_TRANSIT）；
+    // 完成 Tick 的结算状态（GOAL / CONTROLLED）不得反向当作几何证据（C-15 eligibility）。
+    ballState: resolveCrossingBallState(segment.ballStateAtStart, segment.ballStateAtEnd),
     playerId: options.playerId,
     goalId: options.goalId,
   });

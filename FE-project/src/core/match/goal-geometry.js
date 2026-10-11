@@ -17,11 +17,72 @@
 import {
   ALLOWED_CROSSING_BALL_STATES, GEOMETRY_EPSILON, GOAL_CROSSING_REASON, GOAL_CROSSING_SOURCE,
   GOAL_LINE_CROSSING_RULE_VERSION, GOAL_LINE_LEFT_X, GOAL_LINE_RIGHT_X, GOAL_MOUTH_Y_MIN, GOAL_MOUTH_Y_MAX,
+  GOAL_MAX_DEPTH,
 } from './goal-geometry-config.js';
 
 const EPS = GEOMETRY_EPSILON;
 
 const isFinite2 = (p) => p && Number.isFinite(p.x) && Number.isFinite(p.y);
+
+const clampNum = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+/** 点是否落在球门开口 Y 范围内（inclusive + epsilon）。 */
+function yInGoalMouth(y) {
+  return y >= GOAL_MOUTH_Y_MIN - EPS && y <= GOAL_MOUTH_Y_MAX + EPS;
+}
+
+/**
+ * 门区感知的水平坐标夹取（**唯一门区几何入口**；Resolution / Boundary / Physics 共用）。
+ *
+ * 冻结规则：
+ * - y 恒夹取到 [pitchMin, pitchMax]（垂直边界行为不变）。
+ * - 当且仅当点在球门开口内（y ∈ mouth）**且**越线（x > pitchMax 或 x < pitchMin）时，
+ *   允许 x 进入门后区域，越线深度上限 GOAL_MAX_DEPTH；左右两端对称处理。
+ * - 其余情况（含门框外越线、场内）x 夹取到 [pitchMin, pitchMax]（普通边界约束不变）。
+ *
+ * 纯函数：不做进球判定、不写 Score / Ball Truth、无副作用。
+ *
+ * @param {{x:number,y:number}} point
+ * @param {{pitchMin?:number, pitchMax?:number, maxDepth?:number}} [opts]
+ * @returns {{x:number, y:number, goalBehind:boolean}} 夹取后的坐标；goalBehind 表示落在门后区域
+ */
+export function clampToGoalAwareBounds(point, opts = {}) {
+  const min = Number.isFinite(opts.pitchMin) ? opts.pitchMin : 0;
+  const max = Number.isFinite(opts.pitchMax) ? opts.pitchMax : 1;
+  const depth = Number.isFinite(opts.maxDepth) ? opts.maxDepth : GOAL_MAX_DEPTH;
+
+  const rawX = Number.isFinite(point?.x) ? point.x : (min + max) / 2;
+  const rawY = Number.isFinite(point?.y) ? point.y : (min + max) / 2;
+  const y = clampNum(rawY, min, max);
+
+  let x;
+  let goalBehind = false;
+  if (yInGoalMouth(y) && rawX > max) {
+    x = Math.min(rawX, max + Math.max(0, depth));
+    goalBehind = true;
+  } else if (yInGoalMouth(y) && rawX < min) {
+    x = Math.max(rawX, min - Math.max(0, depth));
+    goalBehind = true;
+  } else {
+    x = clampNum(rawX, min, max);
+  }
+  return { x, y, goalBehind };
+}
+
+/**
+ * 选取「球路穿越发生时」的合规球状态（FREE / IN_TRANSIT）。
+ * 完成 Tick 的结算状态（GOAL / CONTROLLED）**不得**被反向当作几何证据；
+ * 优先取 Tick 起始状态（穿越发生在球运动过程中），仅在起始状态不合规时退回结束状态。
+ *
+ * @param {string|null} stateAtStart
+ * @param {string|null} stateAtEnd
+ * @returns {string|null}
+ */
+export function resolveCrossingBallState(stateAtStart, stateAtEnd) {
+  if (ALLOWED_CROSSING_BALL_STATES.includes(stateAtStart)) return stateAtStart;
+  if (ALLOWED_CROSSING_BALL_STATES.includes(stateAtEnd)) return stateAtEnd;
+  return stateAtStart ?? stateAtEnd ?? null;
+}
 
 /**
  * 从 MatchCore 派生 Goal Geometry（显式绑定 teamId 与球门方向；**不猜测**）。

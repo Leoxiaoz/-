@@ -16,6 +16,7 @@
 
 import { dist, pointSegmentDistance, clamp01 } from './player-situation.js';
 import { buildDecisionScope, createDecisionRng } from './decision-rng.js';
+import { clampToGoalAwareBounds } from './goal-geometry.js';
 import {
   SHOT_RESOLUTION_CONFIG as C, SHOT_RESOLUTION_RULE_VERSION, SHOT_OUTCOMES,
 } from './shot-resolution-config.js';
@@ -188,10 +189,13 @@ export function resolveShot(actionInstance, matchCore, options = {}) {
   const angle = rng.next() * Math.PI * 2;
   const push = C.RISK_DESTINATION_PUSH[riskLevel] ?? 0;
   const forward = goalX === 1 ? push : -push;
-  const actualDestination = {
-    x: clampPitch(intendedDestination.x + Math.cos(angle) * shotError + forward),
-    y: clampPitch(intendedDestination.y + Math.sin(angle) * shotError),
-  };
+  // 门区感知夹取（复用 C-15 唯一门区几何）：SHOT 恒为球门方向，落点位于球门开口（y ∈ mouth）
+  // 且越线时允许进入有界门后区域（GOAL_MAX_DEPTH），使真实球路可达门线；其余落点仍遵守 [PITCH_MIN, PITCH_MAX]。
+  const shotDestination = clampToGoalAwareBounds(
+    { x: intendedDestination.x + Math.cos(angle) * shotError + forward, y: intendedDestination.y + Math.sin(angle) * shotError },
+    { pitchMin: C.PITCH_MIN, pitchMax: C.PITCH_MAX },
+  );
+  const actualDestination = { x: shotDestination.x, y: shotDestination.y };
 
   const shotQuality = calculateShotQuality({ finishing, technique, distance: geo.distance, angleFactor: geo.angleFactor });
 

@@ -15,8 +15,18 @@ import {
   applyShotStateUpdate, advanceShotTransit, completeShotTransit,
 } from '../src/core/match/shot-state-update.js';
 import { SHOT_RESOLUTION_CONFIG as C, SHOT_OUTCOMES } from '../src/core/match/shot-resolution-config.js';
+import { GOAL_MAX_DEPTH, GOAL_MOUTH_Y_MIN, GOAL_MOUTH_Y_MAX } from '../src/core/match/goal-geometry-config.js';
 import { decidePlayerAction } from '../src/core/match/decision-pipeline.js';
 import { resolvePass } from '../src/core/match/pass-resolution.js';
+
+/**
+ * 门区感知落点边界（Goal-Line Reachability）：
+ * y ∈ [0,1]；x ∈ [-GOAL_MAX_DEPTH, 1+GOAL_MAX_DEPTH]；且仅当 y 位于球门开口时 x 才允许越线
+ * （其余情况仍必须落在 [0,1]）。用于断言真实球路可达门线且普通边界未被放宽。
+ */
+const inGoalAwareBounds = (d) => d.y >= 0 && d.y <= 1
+  && d.x >= -GOAL_MAX_DEPTH && d.x <= 1 + GOAL_MAX_DEPTH
+  && ((d.x >= 0 && d.x <= 1) || (d.y >= GOAL_MOUTH_Y_MIN && d.y <= GOAL_MOUTH_Y_MAX));
 
 const H = 'clb_h', A = 'clb_a';
 const ATTRS = (o = {}) => ({ pace: 70, technique: 70, passing: 70, defending: 70, finishing: 70, goalkeeping: 70, ...o });
@@ -126,7 +136,7 @@ test('SR-11/12. shotError 有界；actualDestination 在 pitch bounds；无 NaN'
   for (const s of ['a', 'b', 'c']) {
     const r = resolveShot(shot('h_fw'), weakGkCore(), { seed: s });
     assert(Number.isFinite(r.execution.shotError) && r.execution.shotError >= 0 && r.execution.shotError <= C.MAX_SHOT_ERROR);
-    assert(r.actualDestination.x >= 0 && r.actualDestination.x <= 1 && r.actualDestination.y >= 0 && r.actualDestination.y <= 1);
+    assert(inGoalAwareBounds(r.actualDestination), `落点应满足门区感知边界: ${JSON.stringify(r.actualDestination)}`);
   }
 });
 
@@ -316,7 +326,7 @@ test('SR-32. 不同 Seed 产生合法变化', () => {
   for (let s = 0; s < 300; s += 1) {
     const r = resolveShot(shot('h_fw'), blockCore(), { seed: `v${s}` });
     outcomes.add(r.outcome); errors.add(r.execution.shotError);
-    assert(r.actualDestination.x >= 0 && r.actualDestination.x <= 1);
+    assert(inGoalAwareBounds(r.actualDestination), `落点应满足门区感知边界: ${JSON.stringify(r.actualDestination)}`);
   }
   assert(outcomes.size >= 2 && errors.size > 1);
 });
@@ -357,7 +367,7 @@ test('SR-Boundary. 极值输入：距离/角度/能力/门将/风险/目标区�
           const r = resolveShot(shot('h_fw', zone, { risk }), core, { seed: `${fin}${gkAbl}${zone}${risk}` });
           assert(r.ok);
           assert(Number.isFinite(r.execution.shotError) && Number.isFinite(r.execution.saveProb) && Number.isFinite(r.transit.duration));
-          assert(r.actualDestination.x >= 0 && r.actualDestination.x <= 1 && r.actualDestination.y >= 0 && r.actualDestination.y <= 1);
+          assert(inGoalAwareBounds(r.actualDestination), `落点应满足门区感知边界: ${JSON.stringify(r.actualDestination)}`);
         }
       }
     }
@@ -388,7 +398,7 @@ test('SR-LongRun. 10000 Shot 分布；无 NaN/Infinity/非法坐标/非法 BallS
     if (!r.ok || !(r.outcome in dist)) { bad += 1; continue; }
     dist[r.outcome] += 1;
     if (!Number.isFinite(r.execution.shotError)) bad += 1;
-    if (r.actualDestination.x < 0 || r.actualDestination.x > 1 || r.actualDestination.y < 0 || r.actualDestination.y > 1) bad += 1;
+    if (!inGoalAwareBounds(r.actualDestination)) bad += 1;
     const next = applyShotStateUpdate(blockCore(), r);
     if (!(next.ball.state === 'IN_TRANSIT' && next.ball.control === null)) bad += 1;
   }
